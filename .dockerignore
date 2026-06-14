@@ -1,0 +1,23 @@
+# Segreti e dati locali: NON vanno dentro l'immagine
+.env
+*.db
+data/
+dati_test/
+
+# Bundle di deploy (contiene un'immagine .tar.gz: la includerebbe nell'immagine!)
+deploy_docker_compose/
+
+# Ambienti virtuali / build
+langgraph_env/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Git e varie
+.git/
+.gitignore
+*.log
+.DS_Store
+credentials.json

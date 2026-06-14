@@ -1,0 +1,42 @@
+services:
+  # ---------- Applicazione FastAPI ----------
+  app:
+    build: .
+    image: risponditore-condominio-app:latest
+    container_name: condominio-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Sovrascrive eventuali valori nel .env: in container ascoltiamo sempre su 0.0.0.0:9999
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "9999"
+      # DB SQLite e documenti caricati su volume persistente (./data)
+      DATABASE_URL: "sqlite:////app/data/condominio.db"
+      DOCUMENTI_DIR: "/app/data/documenti"
+    volumes:
+      - ./data:/app/data
+    ports:
+      # Endpoint raggiungibile anche direttamente dall'host (http://IP_SERVER:9999)
+      - "9999:9999"
+
+  # ---------- Tunnel ngrok (rende l'endpoint raggiungibile da Wazzup) ----------
+  # Sostituisce launch_ngrok_proxy.sh: invece di puntare a localhost:9999,
+  # tunnela verso il servizio "app" sulla rete interna di compose.
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: condominio-ngrok
+    restart: unless-stopped
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    # Default: URL casuale .ngrok-free.app (cambia ad ogni riavvio del container).
+    command: http app:9999
+    # CONSIGLIATO con dominio statico (il free tier ngrok ne include 1):
+    #   l'URL resta sempre lo stesso, così non devi riconfigurare Wazzup ad ogni riavvio.
+    #   Imposta NGROK_DOMAIN nel .env, poi commenta la riga "command" sopra e usa questa:
+    # command: http --url=${NGROK_DOMAIN} app:9999
+    ports:
+      # Dashboard ispezione ngrok: http://IP_SERVER:4040 (mostra l'URL pubblico)
+      - "4040:4040"
+    depends_on:
+      - app

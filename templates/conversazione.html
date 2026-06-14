@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Conversazione {{ inquilino.nome }}{% endblock %}
+
+{% block content %}
+
+<div class="mb-3">
+    <a href="/condomini/{{ condominio.id }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Torna al condominio
+    </a>
+</div>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-chat-dots"></i> {{ inquilino.cognome or '' }} {{ inquilino.nome }}</h4>
+        <span class="text-muted">
+            {{ inquilino.unita or '—' }} · {{ inquilino.telefono or 'nessun numero' }} · {{ condominio.nome }}
+        </span>
+    </div>
+    <span class="badge bg-secondary align-self-center">{{ messaggi|length }} messaggi</span>
+</div>
+
+<div class="card">
+    <div class="card-body" style="max-height:78vh; overflow:auto;">
+        {% if messaggi %}
+        {% for item in messaggi %}
+        {% set m = item.m %}
+        {% if m.direzione.value == 'IN' %}
+        <div class="d-flex justify-content-end mb-2">
+            <div class="bg-primary text-white rounded px-3 py-2" style="max-width:80%;">
+                {{ m.testo }}
+                <div class="small opacity-75 text-end">{{ m.timestamp.strftime('%d/%m %H:%M') if m.timestamp else '' }}</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="d-flex justify-content-start mb-2">
+            <div class="bg-light border rounded px-3 py-2" style="max-width:90%;">
+                <div>{{ m.testo|replace('\n', '<br>')|safe }}</div>
+                <div class="small text-muted">{{ m.timestamp.strftime('%d/%m %H:%M') if m.timestamp else '' }}</div>
+
+                {% if item.traccia %}
+                <details class="mt-2">
+                    <summary class="small text-primary" style="cursor:pointer;">
+                        <i class="bi bi-cpu"></i> Chiamate LLM ({{ item.traccia|length }})
+                    </summary>
+                    <div class="mt-2">
+                        {% for c in item.traccia %}
+                        <div class="border rounded p-2 mb-2 bg-white">
+                            <div class="fw-semibold small">
+                                {{ loop.index }}. {{ c.fase }}
+                                <span class="badge bg-light text-muted border ms-1">{{ c.modello }}</span>
+                            </div>
+                            <details class="mt-1">
+                                <summary class="small text-secondary" style="cursor:pointer;">input</summary>
+                                <pre class="small bg-light p-2 rounded mt-1" style="white-space:pre-wrap; max-height:30vh; overflow:auto;">{{ c.input }}</pre>
+                            </details>
+                            <details class="mt-1">
+                                <summary class="small text-secondary" style="cursor:pointer;">output</summary>
+                                <pre class="small bg-light p-2 rounded mt-1" style="white-space:pre-wrap; max-height:30vh; overflow:auto;">{{ c.output }}</pre>
+                            </details>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-chat-square-dots fs-1"></i>
+            <p class="mt-2 mb-0">Nessun messaggio: questo inquilino non ha ancora scritto su WhatsApp.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

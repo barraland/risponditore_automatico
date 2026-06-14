@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Chiamate {{ inquilino.nome }}{% endblock %}
+
+{% block content %}
+
+<div class="mb-3">
+    <a href="/condomini/{{ condominio.id }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Torna al condominio
+    </a>
+</div>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-telephone"></i> {{ inquilino.cognome or '' }} {{ inquilino.nome }}</h4>
+        <span class="text-muted">
+            {{ inquilino.unita or '—' }} · {{ inquilino.telefono or 'nessun numero' }} · {{ condominio.nome }}
+        </span>
+    </div>
+    <span class="badge bg-secondary align-self-center">{{ chiamate|length }} chiamate</span>
+</div>
+
+{% if chiamate %}
+{% for c in chiamate %}
+<div class="card mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">
+            <i class="bi bi-telephone-inbound"></i>
+            {{ c.iniziata_at.strftime('%d/%m/%Y %H:%M') if c.iniziata_at else '—' }}
+        </span>
+        {% if c.durata_sec is not none %}
+        <span class="text-muted small">durata: {{ '%d:%02d'|format(c.durata_sec // 60, c.durata_sec % 60) }}</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if c.riassunto %}
+        <p class="mb-2"><strong>Riassunto.</strong> {{ c.riassunto }}</p>
+        {% else %}
+        <p class="text-muted mb-2"><em>Nessun riassunto disponibile.</em></p>
+        {% endif %}
+        {% if c.trascrizione %}
+        <details>
+            <summary class="small text-primary" style="cursor:pointer;">
+                <i class="bi bi-card-text"></i> Trascrizione completa
+            </summary>
+            <pre class="small bg-light p-2 rounded mt-2" style="white-space:pre-wrap; max-height:50vh; overflow:auto;">{{ c.trascrizione }}</pre>
+        </details>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-telephone-x fs-1"></i>
+        <p class="mt-2 mb-0">Nessuna telefonata registrata per questo inquilino.</p>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

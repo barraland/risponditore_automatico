@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}{{ doc.nome_file }}{% endblock %}
+
+{% block content %}
+
+<div class="mb-3">
+    <a href="/condomini/{{ doc.condominio_id }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Torna al condominio
+    </a>
+</div>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-file-earmark-text"></i> {{ doc.nome_file }}</h4>
+        <span class="text-muted">{{ categoria_label }}{% if doc.n_pagine %} · {{ doc.n_pagine }} pagine{% endif %}</span>
+        <form method="post" action="/documenti/{{ doc.id }}/anno" class="d-inline-flex align-items-center gap-1 ms-2">
+            <span class="text-muted small">Anno:</span>
+            <input type="number" name="anno" value="{{ doc.anno or '' }}" min="1950" max="2049"
+                   class="form-control form-control-sm" style="width:90px;"
+                   placeholder="—" title="Anno di riferimento">
+            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Salva anno">
+                <i class="bi bi-check-lg"></i>
+            </button>
+            {% if not doc.anno %}<span class="badge bg-warning text-dark">anno mancante</span>{% endif %}
+        </form>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        {% set st = doc.stato.value %}
+        {% if st == 'processing' %}<span class="badge bg-secondary"><i class="bi bi-hourglass-split"></i> Indicizzazione…</span>
+        {% elif st == 'ready' %}<span class="badge bg-success"><i class="bi bi-check-circle"></i> Pronto</span>
+        {% elif st == 'needs_review' %}<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Da rivedere</span>
+        {% elif st == 'error' %}<span class="badge bg-danger"><i class="bi bi-x-circle"></i> Errore</span>{% endif %}
+        <a href="/documenti/{{ doc.id }}/download" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-download"></i> Scarica
+        </a>
+    </div>
+</div>
+
+{% if st == 'processing' %}
+<div class="alert alert-info">
+    <i class="bi bi-hourglass-split"></i> Indicizzazione in corso: estrazione testo e generazione dell'indice.
+    La pagina si aggiorna automaticamente.
+</div>
+{% elif st == 'error' %}
+<div class="alert alert-danger"><i class="bi bi-x-circle"></i> {{ doc.errore }}</div>
+{% elif st == 'needs_review' %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> L'indice generato non ha superato la validazione automatica
+    (copertura pagine). Output grezzo conservato qui sotto per ispezione: {{ doc.errore }}
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <!-- Anteprima documento -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-eye"></i> Anteprima</h6></div>
+            <div class="card-body p-0">
+                {% if doc.nome_file.lower().endswith('.pdf') %}
+                <iframe src="/documenti/{{ doc.id }}/preview" title="Anteprima documento"
+                        style="width:100%; height:75vh; border:0;"></iframe>
+                {% else %}
+                <div class="p-3 text-muted">
+                    Anteprima inline non disponibile per questo formato.
+                    <a href="/documenti/{{ doc.id }}/preview" target="_blank">Apri il file</a>.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Indice generato -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-list-ol"></i> Indice generato</h6>
+                {% if doc.sezioni %}<span class="badge bg-secondary">{{ doc.sezioni|length }} sezioni</span>{% endif %}
+            </div>
+            <div class="card-body" style="max-height:75vh; overflow:auto;">
+                {% if doc.sezioni %}
+                <div class="accordion accordion-flush" id="indice">
+                    {% for s in doc.sezioni %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#sez{{ s.id }}">
+                                <div>
+                                    <div class="fw-semibold">{{ s.titolo }}</div>
+                                    <div class="small text-muted">
+                                        pag. {{ s.page_start }}–{{ s.page_end }}
+                                        {% if s.contiene_tabelle %}
+                                        <span class="badge bg-info text-dark ms-1"><i class="bi bi-table"></i> tabelle</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </button>
+                        </h2>
+                        <div id="sez{{ s.id }}" class="accordion-collapse collapse" data-bs-parent="#indice">
+                            <div class="accordion-body">
+                                {% if s.summary %}
+                                <p class="small fst-italic text-secondary">{{ s.summary }}</p>
+                                {% endif %}
+                                <details>
+                                    <summary class="small text-primary" style="cursor:pointer;">Mostra testo della sezione</summary>
+                                    <pre class="small bg-light p-2 mt-2 rounded" style="white-space:pre-wrap; max-height:40vh; overflow:auto;">{{ s.content_md }}</pre>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% elif doc.indice_raw %}
+                <p class="small text-muted">Indice grezzo (non validato):</p>
+                <pre class="small bg-light p-2 rounded" style="white-space:pre-wrap;">{{ doc.indice_raw }}</pre>
+                {% elif st == 'processing' %}
+                <p class="text-muted">In attesa dell'indicizzazione…</p>
+                {% else %}
+                <p class="text-muted">Nessun indice disponibile.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if st == 'processing' %}
+<script>setTimeout(function(){ location.reload(); }, 4000);</script>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,42 @@
+/* Stile personalizzato - Studio Dentistico */
+
+body {
+    background-color: #f5f7fa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.navbar-brand {
+    font-weight: 600;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 0.5rem;
+}
+
+.card-header {
+    border-bottom: 1px solid #e9ecef;
+    border-radius: 0.5rem 0.5rem 0 0 !important;
+}
+
+.table th {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #6c757d;
+}
+
+.badge {
+    font-weight: 500;
+    padding: 0.4em 0.65em;
+}
+
+.form-select-sm {
+    font-size: 0.8rem;
+}
+
+footer {
+    font-size: 0.85rem;
+}

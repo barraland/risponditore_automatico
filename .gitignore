@@ -1,0 +1,38 @@
+# === Segreti: MAI nel repo ===
+.env
+credentials.json
+
+# === Database SQLite ===
+*.db
+
+# === Dati locali / caricati (possono contenere dati personali) ===
+data/
+dati_test/
+
+# === Immagine Docker esportata (troppo grande per git) ===
+*.tar.gz
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# === Ambienti virtuali ===
+langgraph_env/
+.venv/
+venv/
+env/
+
+# === Node / Electron ===
+node_modules/
+
+# === Log e file di sistema ===
+*.log
+.DS_Store
+
+# === Residui di altri progetti (non fanno parte del risponditore) ===
+Pipework Design System/
+electron-app/
+SPEC_SALES_CRM.md

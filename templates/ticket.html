@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Ticket{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-ticket-detailed"></i> Segnalazioni</h4>
+        <span class="text-muted">Aperte dall'assistente quando non sa rispondere o il condomino si lamenta — tutti i condomìni.</span>
+    </div>
+    <div class="btn-group">
+        <a href="/ticket" class="btn btn-sm {{ 'btn-primary' if not tutti else 'btn-outline-primary' }}">
+            Aperti <span class="badge bg-light text-dark">{{ n_aperti }}</span>
+        </a>
+        <a href="/ticket?tutti=1" class="btn btn-sm {{ 'btn-primary' if tutti else 'btn-outline-secondary' }}">Tutti</a>
+    </div>
+</div>
+
+{% if ticket %}
+<div class="row g-3">
+    {% for t in ticket %}
+    <div class="col-12">
+        <div class="card {{ 'border-danger' if t.stato.value == 'aperto' else '' }}">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div>
+                    {% if t.stato.value == 'aperto' %}
+                    <span class="badge bg-danger">Aperto</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Chiuso</span>
+                    {% endif %}
+                    {% if t.canale %}<span class="badge bg-info text-dark">{{ t.canale }}</span>{% endif %}
+                    <span class="fw-semibold ms-1">#{{ t.id }} — {{ t.titolo }}</span>
+                </div>
+                <span class="text-muted small">{{ t.created_at.strftime('%d/%m/%Y %H:%M') if t.created_at else '' }}</span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        {% if t.descrizione %}<p class="mb-2">{{ t.descrizione }}</p>{% endif %}
+                        {% if t.storia %}
+                        <details class="mb-2">
+                            <summary class="small text-primary" style="cursor:pointer;">
+                                <i class="bi bi-chat-left-text"></i> Storia conversazione
+                            </summary>
+                            <pre class="small bg-light p-2 rounded mt-2" style="white-space:pre-wrap; max-height:40vh; overflow:auto;">{{ t.storia }}</pre>
+                        </details>
+                        {% endif %}
+
+                        <!-- Thread risposte amministratore -->
+                        {% if t.risposte %}
+                        <div class="mt-2">
+                            {% for r in t.risposte %}
+                            <div class="border-start border-3 border-success ps-2 mb-2">
+                                <div class="small">{{ r.testo|replace('\n','<br>')|safe }}</div>
+                                <div class="text-muted" style="font-size:.75rem;">
+                                    <i class="bi bi-person-badge"></i> Amministratore ·
+                                    {{ r.created_at.strftime('%d/%m %H:%M') if r.created_at else '' }}
+                                    {% if r.inviata_email %}<span class="badge bg-success">inviata via email</span>{% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <!-- Form di risposta -->
+                        <form method="post" action="/ticket/{{ t.id }}/rispondi" class="mt-2">
+                            <textarea name="testo" class="form-control form-control-sm" rows="2"
+                                      placeholder="Rispondi al condomino…" required></textarea>
+                            <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+                                {% if t.inquilino and t.inquilino.email %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="invia_email" id="mail{{ t.id }}" checked>
+                                    <label class="form-check-label small" for="mail{{ t.id }}">
+                                        Invia via email a {{ t.inquilino.email }}
+                                    </label>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small"><i class="bi bi-envelope-slash"></i> nessuna email per inviare</span>
+                                {% endif %}
+                                {% if t.stato.value == 'aperto' %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="chiudi" id="close{{ t.id }}">
+                                    <label class="form-check-label small" for="close{{ t.id }}">e segna risolto</label>
+                                </div>
+                                {% endif %}
+                                <button type="submit" class="btn btn-sm btn-primary ms-auto">
+                                    <i class="bi bi-send"></i> Rispondi
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="col-md-4">
+                        <ul class="list-unstyled small mb-2">
+                            <li><i class="bi bi-buildings"></i>
+                                {% if t.condominio %}
+                                <a href="/condomini/{{ t.condominio_id }}">{{ t.condominio.nome }}</a>
+                                {% else %}<span class="text-muted">condominio n/d</span>{% endif %}
+                            </li>
+                            <li><i class="bi bi-person"></i>
+                                {% if t.inquilino %}
+                                {{ t.inquilino.cognome or '' }} {{ t.inquilino.nome }}
+                                {% if t.inquilino.unita %}<span class="text-muted">· {{ t.inquilino.unita }}</span>{% endif %}
+                                {% else %}<span class="text-muted">condomino n/d</span>{% endif %}
+                            </li>
+                        </ul>
+                        {% if t.stato.value == 'aperto' %}
+                        <form method="post" action="/ticket/{{ t.id }}/chiudi">
+                            <button class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-check2-circle"></i> Segna come risolto
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-check2-circle fs-1 text-success"></i>
+        <p class="mt-2 mb-0">{{ 'Nessun ticket.' if tutti else 'Nessun ticket aperto. Tutto sotto controllo.' }}</p>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

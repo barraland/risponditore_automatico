@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Impostazioni tecniche{% endblock %}
+
+{% macro campo(key, label, help, secret) %}
+<div class="mb-3">
+    <label class="form-label">{{ label }}</label>
+    <div class="input-group">
+        <input type="{{ 'password' if secret else 'text' }}" class="form-control"
+               name="{{ key }}" value="{{ valori[key] }}" autocomplete="off" spellcheck="false">
+        {% if secret %}
+        <button class="btn btn-outline-secondary btn-toggle" type="button" tabindex="-1"><i class="bi bi-eye"></i></button>
+        {% endif %}
+    </div>
+    {% if help %}<div class="form-text">{{ help }}</div>{% endif %}
+    <div class="form-text"><code>{{ key }}</code></div>
+</div>
+{% endmacro %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-gear-fill"></i> Impostazioni tecniche</h4>
+        <span class="text-muted">Endpoint da configurare nei provider e credenziali dei servizi.</span>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success"><i class="bi bi-check-circle"></i> {{ msg }}</div>{% endif %}
+
+<!-- Endpoint pubblici (sola lettura) -->
+<div class="card mb-4">
+    <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-link-45deg"></i> Endpoint pubblici (sola lettura)</h6></div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Questi URL vanno incollati nelle console dei provider. Il dominio pubblico arriva da ngrok
+            (<code>./launch_ngrok_proxy.sh</code>{% if not endpoints.dominio_impostato %} — imposta <code>NGROK_DOMAIN</code> nel .env per fissarlo{% endif %}).
+        </p>
+        <div class="mb-3">
+            <label class="form-label">Webhook WhatsApp (Meta → Configurazione → Webhook)</label>
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-whatsapp text-success"></i></span>
+                <input type="text" class="form-control bg-light" readonly value="{{ endpoints.whatsapp }}">
+                <button class="btn btn-outline-secondary btn-copy" type="button"><i class="bi bi-clipboard"></i></button>
+            </div>
+        </div>
+        <div class="mb-0">
+            <label class="form-label">Webhook voce Twilio (numero → Voice → A call comes in)</label>
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-telephone text-primary"></i></span>
+                <input type="text" class="form-control bg-light" readonly value="{{ endpoints.voce }}">
+                <button class="btn btn-outline-secondary btn-copy" type="button"><i class="bi bi-clipboard"></i></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="post" action="/impostazioni">
+    <!-- Motore di risposta (retriever) -->
+    <div class="card mb-4">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-robot"></i> Motore di risposta (retriever)</h6></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Modello LLM</label>
+                    <input type="text" class="form-control" name="AGENTE_MODEL" value="{{ valori['AGENTE_MODEL'] }}"
+                           autocomplete="off" spellcheck="false" placeholder="gpt-5-mini">
+                    <div class="form-text">Modello usato dal risponditore (pianificatore, sezioni, risposta finale). <code>AGENTE_MODEL</code></div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Reasoning effort</label>
+                    <select class="form-select" name="AGENTE_EFFORT">
+                        {% for e in effort_validi %}
+                        <option value="{{ e }}" {{ 'selected' if valori['AGENTE_EFFORT'] == e else '' }}>{{ e }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Più alto = risposte più accurate ma più lente/costose. <code>AGENTE_EFFORT</code></div>
+                </div>
+            </div>
+            <div class="form-text mt-2"><i class="bi bi-lightning-charge"></i> Modello e effort si applicano <strong>a runtime</strong> (nessun riavvio).</div>
+        </div>
+    </div>
+
+    <!-- Invio email -->
+    <div class="card mb-4">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-envelope-at"></i> Invio email</h6></div>
+        <div class="card-body">
+            {{ campo("GMAIL_FROM", "Indirizzo email mittente", "L'indirizzo Gmail da cui partono le mail ai condòmini.", false) }}
+            {{ campo("GMAIL_APP_PASSWORD", "App password Gmail", "App password Google (non la password normale). Generala dalle impostazioni di sicurezza Google.", true) }}
+        </div>
+    </div>
+
+    <!-- OpenAI -->
+    <div class="card mb-4">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-cpu"></i> OpenAI</h6></div>
+        <div class="card-body">
+            {{ campo("OPENAI_API_KEY", "OpenAI API Key", "Usata da ricerca documenti, riformulazione, riassunti e voce Realtime.", true) }}
+        </div>
+    </div>
+
+    <!-- WhatsApp -->
+    <div class="card mb-4">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-whatsapp"></i> WhatsApp (Meta Cloud API)</h6></div>
+        <div class="card-body">
+            {{ campo("WHATSAPP_TOKEN", "Token", "Token di accesso dell'app Meta (invio messaggi).", true) }}
+            {{ campo("WHATSAPP_PHONE_NUMBER_ID", "Phone Number ID", "ID del numero mittente WhatsApp.", false) }}
+            {{ campo("WHATSAPP_VERIFY_TOKEN", "Verify Token", "Token a tua scelta: lo stesso che metti nella verifica del webhook su Meta.", true) }}
+        </div>
+    </div>
+
+    <!-- ngrok -->
+    <div class="card mb-4">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-hdd-network"></i> ngrok</h6></div>
+        <div class="card-body">
+            {{ campo("NGROK_AUTHTOKEN", "Authtoken", "Authtoken dal dashboard ngrok (per esporre l'app).", true) }}
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <span class="text-muted small">
+            <i class="bi bi-info-circle"></i> Le modifiche sovrascrivono il <code>.env</code>. Il mittente email si applica subito;
+            per le altre chiavi riavvia l'app per applicarle ovunque.
+        </span>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salva nel .env</button>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Mostra/nascondi i campi password.
+document.querySelectorAll('.btn-toggle').forEach(function (b) {
+    b.addEventListener('click', function () {
+        const inp = b.parentElement.querySelector('input');
+        const icon = b.querySelector('i');
+        if (inp.type === 'password') { inp.type = 'text'; icon.className = 'bi bi-eye-slash'; }
+        else { inp.type = 'password'; icon.className = 'bi bi-eye'; }
+    });
+});
+// Copia negli appunti.
+document.querySelectorAll('.btn-copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+        const inp = b.parentElement.querySelector('input');
+        navigator.clipboard.writeText(inp.value).then(function () {
+            const icon = b.querySelector('i');
+            icon.className = 'bi bi-clipboard-check';
+            setTimeout(() => { icon.className = 'bi bi-clipboard'; }, 1200);
+        });
+    });
+});
+</script>
+{% endblock %}
