@@ -28,6 +28,7 @@ from services import agente
 from services import email as email_service
 from services import invii_email
 from services import ticket as ticket_service
+from services import istruzioni
 from services.contesto import contesto_temporale
 
 logger = logging.getLogger(__name__)
@@ -185,7 +186,7 @@ def riformula(client: OpenAI, inquilino: Inquilino, storia: list[MessaggioChat],
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": f"{RIFORMULA_SYSTEM}\n\n{contesto_temporale()}"},
+            {"role": "system", "content": f"{RIFORMULA_SYSTEM}\n\n{contesto_temporale()}{istruzioni.blocco_prompt()}"},
             {"role": "user", "content": user},
         ],
         response_format={
@@ -222,7 +223,7 @@ def classifica_conferma(client: OpenAI, testo: str, doc_nome: str, trace=None) -
     )
     resp = client.chat.completions.create(
         model=MODEL,
-        messages=[{"role": "system", "content": system},
+        messages=[{"role": "system", "content": system + istruzioni.blocco_prompt()},
                   {"role": "user", "content": testo}],
         response_format={"type": "json_schema",
                          "json_schema": {"name": "conferma", "strict": True, "schema": CONFERMA_SCHEMA}},

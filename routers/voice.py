@@ -34,6 +34,7 @@ from services import voice_log
 from services import email as email_service
 from services import invii_email
 from services import ticket as ticket_service
+from services import istruzioni
 from services.contesto import contesto_temporale
 
 logger = logging.getLogger(__name__)
@@ -193,6 +194,7 @@ def _build_voice_instructions(db, inquilino, condominio) -> str:
         "- SOLO se lo strumento risponde che serve l'indirizzo (nessuna email registrata), allora chiedilo "
         "a voce, fattelo scandire se non sei sicuro, e richiama lo strumento.\n"
         "- Non dire mai che non puoi inviare email."
+        f"{istruzioni.blocco_prompt()}"
     )
 
 

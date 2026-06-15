@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from database import Condominio, Documento, Sezione, StatoDocumento
 from services.contesto import contesto_temporale
+from services import istruzioni
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ def pianifica(client: OpenAI, domanda: str, catalogo: str, trace=None) -> dict:
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": f"{PLANNER_SYSTEM}\n\n{contesto_temporale()}"},
+            {"role": "system", "content": f"{PLANNER_SYSTEM}\n\n{contesto_temporale()}{istruzioni.blocco_prompt()}"},
             {"role": "user", "content": user},
         ],
         response_format={
@@ -171,7 +172,7 @@ def interroga_sezione(client: OpenAI, sotto_domanda: str, sezione: Sezione, trac
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": SECTION_SYSTEM},
+            {"role": "system", "content": f"{SECTION_SYSTEM}{istruzioni.blocco_prompt()}"},
             {"role": "user", "content": user},
         ],
         response_format={
@@ -231,7 +232,7 @@ def componi(client: OpenAI, domanda: str, contesto: str, trace=None) -> str:
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {"role": "system", "content": f"{FINAL_SYSTEM}\n\n{contesto_temporale()}"},
+            {"role": "system", "content": f"{FINAL_SYSTEM}\n\n{contesto_temporale()}{istruzioni.blocco_prompt()}"},
             {"role": "user", "content": user},
         ],
         reasoning_effort=EFFORT,

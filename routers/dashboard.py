@@ -24,6 +24,7 @@ from services import documenti as documenti_service
 from services import ingestion
 from services import agente
 from services import config as config_service
+from services import istruzioni as istruzioni_service
 from services import email as email_service
 
 logger = logging.getLogger(__name__)
@@ -470,6 +471,7 @@ async def impostazioni(request: Request, msg: str = "", db: Session = Depends(ge
         "segrete": config_service.SEGRETE,
         "effort_validi": config_service.EFFORT_VALIDI,
         "endpoints": config_service.endpoints(request.headers.get("host")),
+        "istruzioni": istruzioni_service.leggi(),
         "msg": msg,
     })
 
@@ -480,7 +482,8 @@ async def salva_impostazioni(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     updates = {k: form.get(k, "") for k in config_service.CHIAVI}
     config_service.aggiorna(updates)
-    return RedirectResponse(url="/impostazioni?msg=Impostazioni+salvate+nel+.env", status_code=303)
+    istruzioni_service.salva(form.get("ISTRUZIONI_ASSISTENTE", ""))
+    return RedirectResponse(url="/impostazioni?msg=Impostazioni+salvate", status_code=303)
 
 
 @router.get("/ticket", response_class=HTMLResponse)
