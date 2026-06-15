@@ -10,11 +10,9 @@ load_dotenv()
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from database import init_db, SessionLocal, Studio, Condominio, Inquilino, Ticket, StatoTicket
-from routers import webhook, api, dashboard, voice
-from services.reminder import controlla_e_invia_reminder
+from routers import webhook, dashboard, voice
 
 # ---------- Logging ----------
 
@@ -24,24 +22,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------- Scheduler ----------
-
-scheduler = AsyncIOScheduler()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup e shutdown dell'applicazione."""
-    # Startup
     logger.info("Avvio applicazione...")
     init_db()
     seed_data()
-    scheduler.add_job(controlla_e_invia_reminder, "interval", hours=1, id="reminder_job")
-    scheduler.start()
-    logger.info("Scheduler reminder avviato (ogni ora)")
     yield
-    # Shutdown
-    scheduler.shutdown()
     logger.info("Applicazione chiusa")
 
 
@@ -58,7 +46,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Routers
 app.include_router(webhook.router)
-app.include_router(api.router)
 app.include_router(dashboard.router)
 app.include_router(voice.router)
 
