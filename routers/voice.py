@@ -35,6 +35,7 @@ from services import profilo
 from services import retriever
 from services import crm
 from services import email as email_service
+from services import documenti as documenti_service
 from services.contesto import contesto_temporale
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,25 @@ REALTIME_TOOLS = [
     },
     {
         "type": "function",
+        "name": "invia_documento",
+        "description": (
+            "Invia al cliente, via EMAIL, i documenti caricati di una categoria (es. listino prezzi, "
+            "condizioni e costi di consegna, schede prodotto). Indica la categoria. Se il cliente non "
+            "ha un'email salvata, la funzione te lo segnala: chiedigliela, salvala con salva_contatto e "
+            "riprova. Usalo secondo le indicazioni dell'amministratore."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "categoria": {"type": "string",
+                              "enum": ["listino", "schede_prodotto", "contratti", "faq", "altro"],
+                              "description": "Categoria dei documenti da inviare."},
+            },
+            "required": ["categoria"],
+        },
+    },
+    {
+        "type": "function",
         "name": "apri_ticket",
         "description": (
             "Apre (o aggiorna) il TICKET di follow-up per questo lead, per il team commerciale. "
@@ -195,7 +215,9 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
         "COME PARLARE:\n"
         "- Sei al TELEFONO: una cosa alla volta, frasi naturali e brevi. Tono cordiale, dai del lei.\n"
         f"- APERTURA: saluta (es. «{saluto}»), presentati come l'assistente di {nome_az} e chiedi "
-        "come puoi aiutare. Se è un nuovo contatto, a un certo punto chiedi con garbo il suo nome.\n"
+        "come puoi aiutare. Poi FERMATI e aspetta che il chiamante dica di cosa ha bisogno: non "
+        "anticipare verifiche o domande di chiusura prima che abbia chiesto qualcosa. Se è un nuovo "
+        "contatto, a un certo punto chiedi con garbo il suo nome.\n"
         "- Leggi numeri, date e importi in modo naturale (es. 'cinquecento euro', 'il tre marzo').\n\n"
         "COME RISPONDERE:\n"
         "- Per domande su prodotti/servizi/costi/tempi usa le informazioni della sezione "
@@ -203,7 +225,10 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
         "chiama lo strumento consulta_documenti con una domanda chiara e usa la risposta che ricevi "
         "per rispondere al chiamante. Mentre attendi puoi dire qualcosa tipo «Verifico subito». Se "
         "nemmeno i documenti hanno il dato, dillo con onestà (non inventare) e rassicura che un "
-        "collega ricontatterà il chiamante.\n\n"
+        "collega ricontatterà il chiamante.\n"
+        "- Hai anche lo strumento invia_documento per inviare al cliente via email i documenti "
+        "caricati (es. listino, condizioni di consegna): usalo secondo le indicazioni "
+        "dell'amministratore.\n\n"
         "ORDINI:\n"
         "- Se il chiamante ordina o riordina prodotti (con quantità), chiama registra_ordine con "
         "l'elenco delle righe (prodotto, quantità, unità, prezzo se lo sai). Imposta conferma=true o "
@@ -223,10 +248,12 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
         "secondo i criteri della sezione 'COME ASSEGNARE LA PRIORITÀ'. Apri UN SOLO ticket per "
         "chiamata. Poi conferma a voce che un collega lo ricontatterà.\n\n"
         "NON LASCIARE SILENZI — chiudi sempre il turno:\n"
-        "- Dopo una risposta, verifica: «È questo che le serviva?». Quando la richiesta è soddisfatta "
-        "o il chiamante ringrazia, chiudi con cortesia: «C'è altro con cui posso esserle utile?». Se "
-        "risponde di no, salutalo e concludi.\n"
-        "- Non restare mai muto dopo aver parlato."
+        "- Usa «È questo che le serviva?» SOLO dopo aver effettivamente risposto a una richiesta o "
+        "svolto un'azione, mai all'inizio o quando il chiamante non ha ancora chiesto nulla. Quando "
+        "la richiesta è soddisfatta o il chiamante ringrazia, chiudi con cortesia: «C'è altro con cui "
+        "posso esserle utile?». Se risponde di no, salutalo e concludi.\n"
+        "- Non restare mai muto dopo aver parlato, ma dopo il saluto iniziale aspetta che il "
+        "chiamante parli invece di riempire il silenzio con domande di chiusura."
         f"{profilo.blocco_prompt(db)}"
         f"{istruzioni.blocco_prompt()}"
     )
@@ -400,6 +427,13 @@ async def media_stream(twilio_ws: WebSocket):
         return {"registrato": True, "aggiornato": not creato, "ordine_id": ordine.id,
                 "stato": ordine.stato.value, "articoli": ordine.n_articoli, "totale": ordine.totale}
 
+    def _invia_documento(categoria: str) -> dict:
+        """Invia via email al cliente i documenti della categoria indicata (gira in thread)."""
+        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
+        if not contatto:
+            return {"errore": "Contatto non disponibile."}
+        return documenti_service.invia_documenti_email(db, contatto, categoria, profilo.nome_azienda(db))
+
     def _invia_riepilogo_ordine(ordine_id) -> dict:
         """Invia al cliente via email il riepilogo dell'ordine (sincrona, gira in thread).
         Se manca l'email del contatto, lo segnala così il modello può chiederla."""
@@ -478,6 +512,8 @@ async def media_stream(twilio_ws: WebSocket):
                 _registra_ordine, args.get("righe", []), args.get("note", ""), bool(args.get("conferma")))
         elif name == "invia_riepilogo_ordine":
             result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
+        elif name == "invia_documento":
+            result = await asyncio.to_thread(_invia_documento, args.get("categoria", ""))
         elif name == "apri_ticket":
             result = await asyncio.to_thread(
                 _apri_ticket, args.get("titolo", ""), args.get("priorita", ""), args.get("descrizione", ""))

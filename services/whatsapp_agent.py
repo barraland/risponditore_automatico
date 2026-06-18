@@ -33,6 +33,7 @@ from services import profilo
 from services import retriever
 from services import crm
 from services import email as email_service
+from services import documenti as documenti_service
 from services.contesto import contesto_temporale
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,11 @@ REGOLE:
   dell'anagrafica); se non ce l'hai, chiedila nel messaggio e lascia invia_email=false per ora.
   Riepiloga nel messaggio cosa hai registrato. Se NON è un ordine: registra=false, conferma=false,
   invia_email=false, righe=[].
+- INVIO DOCUMENTI: hai a disposizione l'invio via email dei documenti caricati (es. listino,
+  condizioni/costi di consegna). Se devi inviarne uno, imposta documento.invia=true e documento.categoria
+  (tra: listino, schede_prodotto, contratti, faq, altro), SOLO se conosci l'email del cliente; se non ce
+  l'hai, chiedila nel messaggio e lascia invia=false per ora. Usalo secondo le indicazioni
+  dell'amministratore. Se non serve: documento.invia=false e documento.categoria="".
 
 Compila SEMPRE tutti i campi dell'output: usa "" per i valori non noti."""
 
@@ -223,8 +229,18 @@ SCHEMA = {
             "required": ["registra", "conferma", "invia_email", "righe", "note"],
             "additionalProperties": False,
         },
+        "documento": {
+            "type": "object",
+            "properties": {
+                "invia": {"type": "boolean"},
+                "categoria": {"type": "string",
+                              "enum": ["listino", "schede_prodotto", "contratti", "faq", "altro", ""]},
+            },
+            "required": ["invia", "categoria"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["risposta", "consulta_documenti", "anagrafica", "ticket", "ordine"],
+    "required": ["risposta", "consulta_documenti", "anagrafica", "ticket", "ordine", "documento"],
     "additionalProperties": False,
 }
 
@@ -334,6 +350,22 @@ def _applica_ordine(db: Session, contatto: Contatto, dati: dict, traccia: list) 
             _invia_email_ordine(db, contatto, ordine, traccia)
 
 
+def _applica_documento(db: Session, contatto: Contatto, dati: dict, traccia: list) -> None:
+    """Invia al cliente, via email, i documenti della categoria richiesta dall'agente."""
+    if not dati.get("invia"):
+        return
+    categoria = (dati.get("categoria") or "").strip()
+    if not categoria:
+        return
+    res = documenti_service.invia_documenti_email(db, contatto, categoria, profilo.nome_azienda(db))
+    if res.get("inviato"):
+        esito = f"Inviati a {res['email']}: {', '.join(res['documenti'])}"
+    else:
+        esito = res.get("messaggio") or res.get("errore") or "Non inviato."
+    traccia.append({"fase": "Invio documenti via email", "modello": "—",
+                    "input": f"Categoria: {categoria}", "output": esito})
+
+
 def _invia_email_ordine(db: Session, contatto: Contatto, ordine, traccia: list) -> None:
     """Invia al cliente il riepilogo dell'ordine via email (se ha un indirizzo)."""
     email = (contatto.email or "").strip()
@@ -440,6 +472,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     # Storia aggiornata (include il messaggio appena ricevuto) per il ticket.
     _applica_ticket(db, contatto, out.get("ticket") or {}, _storia_testo(_storia_recente(db, contatto.id)))
     _applica_ordine(db, contatto, out.get("ordine") or {}, traccia)
+    _applica_documento(db, contatto, out.get("documento") or {}, traccia)
 
     risposta = (out.get("risposta") or "").strip() or "Come posso aiutarla?"
     _log(db, contatto.id, DirezioneMessaggio.OUT, risposta, traccia=traccia)

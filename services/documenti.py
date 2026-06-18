@@ -9,9 +9,15 @@ import logging
 import os
 import re
 
+from database import Documento
+from services import email as email_service
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.getenv("DOCUMENTI_DIR", "data/documenti")
+
+# Categorie note (allineate a routers/dashboard.CATEGORIE_DOCUMENTI).
+CATEGORIE_KEYS = ["listino", "schede_prodotto", "contratti", "faq", "altro"]
 
 ESTENSIONI_AMMESSE = (".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx", ".xls")
 
@@ -96,6 +102,39 @@ def _estrai_excel(percorso: str) -> str:
         corpo = df.to_csv(index=False).strip()
         blocchi.append(f"===== Foglio: {nome_foglio} =====\n{corpo}")
     return "\n\n".join(blocchi).strip()
+
+
+def invia_documenti_email(db, contatto, categoria: str, nome_azienda: str) -> dict:
+    """Invia al contatto, via email, i documenti caricati nella `categoria` indicata.
+
+    Ritorna un dict di esito (per i risponditori):
+      {"inviato": True, "email": ..., "documenti": [...]}
+      oppure {"email_mancante": True, "messaggio": ...} se il contatto non ha email
+      oppure {"errore": ...}.
+    """
+    cat = (categoria or "").strip()
+    docs = (db.query(Documento).filter(Documento.categoria == cat)
+            .order_by(Documento.caricato_at.desc()).all())
+    allegati = [(d.nome_file, d.percorso) for d in docs if d.percorso and os.path.exists(d.percorso)]
+    if not allegati:
+        return {"errore": f"Nessun documento disponibile nella categoria '{cat}'."}
+
+    email = (contatto.email or "").strip()
+    if not email:
+        return {"email_mancante": True,
+                "messaggio": "Il cliente non ha un'email salvata: chiedigliela, salvala con "
+                             "salva_contatto e riprova."}
+
+    nomi = [n for n, _ in allegati]
+    oggetto = f"Documenti richiesti - {nome_azienda}"
+    corpo = (f"Gentile {contatto.nome or contatto.nome_completo},\n\n"
+             f"in allegato i documenti richiesti: {', '.join(nomi)}.\n\n"
+             f"Cordiali saluti,\n{nome_azienda}")
+    inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
+                                        allegati=[p for _, p in allegati])
+    if not inviata:
+        return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
+    return {"inviato": True, "email": email, "documenti": nomi}
 
 
 def elimina_file(percorso: str) -> None:

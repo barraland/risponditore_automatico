@@ -2,8 +2,8 @@ services:
   # ---------- Applicazione FastAPI ----------
   app:
     build: .
-    image: risponditore-condominio-app:latest
-    container_name: condominio-app
+    image: risponditore-automatico-app:latest
+    container_name: automatico-app
     restart: unless-stopped
     env_file:
       - .env
@@ -25,7 +25,7 @@ services:
   # tunnela verso il servizio "app" sulla rete interna di compose.
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: condominio-ngrok
+    container_name: automatico-ngrok
     restart: unless-stopped
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
