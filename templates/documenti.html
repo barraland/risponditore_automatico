@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Documenti{% endblock %}
+
+{% block content %}
+
+{% if msg %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i> {{ msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if err %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ err }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="mb-4">
+    <h4 class="mb-1"><i class="bi bi-folder2-open"></i> Base documenti</h4>
+    <span class="text-muted">
+        Carica qui i documenti aziendali (listini, schede, contratti…). Vengono indicizzati e conservati.
+        Per ogni categoria puoi anche scrivere del <strong>testo libero</strong> (note, precisazioni,
+        risposte tipo) che accompagna i documenti.
+        <em>Funzionalità parcheggiata:</em> per ora il risponditore non li usa per rispondere.
+    </span>
+</div>
+
+<!-- Banco di prova: agente retriever (separato dal risponditore) -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-robot"></i> Prova l'agente retriever</h6>
+        <span class="small text-muted">Interroga i documenti caricati</span>
+    </div>
+    <div class="card-body">
+        <div id="chat-messaggi" class="mb-3" style="max-height:50vh; overflow:auto;">
+            <div class="text-muted small">
+                Fai una domanda: l'agente guarda titoli, indici dei PDF e anteprime di Excel/CSV,
+                sceglie i documenti utili e risponde leggendone il contenuto.
+            </div>
+        </div>
+        <form id="chat-form" class="d-flex gap-2">
+            <input type="text" id="chat-domanda" class="form-control" autocomplete="off"
+                   placeholder="Es. Quanto costa il servizio di pulizia?">
+            <button type="submit" id="chat-invia" class="btn btn-primary">
+                <i class="bi bi-send"></i>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3">
+    {% for key, label, icon in categorie_documenti %}
+    {% set docs = doc_per_categoria.get(key, []) %}
+    {% set testo = testo_per_categoria.get(key) %}
+    <div class="col-md-6 col-lg-4">
+        <div class="border rounded p-3 h-100 d-flex flex-column">
+            <div class="mb-2">
+                <i class="bi {{ icon }} fs-4 text-primary"></i>
+                <span class="fw-semibold ms-1">{{ label }}</span>
+                {% if docs %}<span class="badge bg-secondary ms-1">{{ docs|length }}</span>{% endif %}
+                {% if testo %}<span class="badge bg-info text-dark ms-1" title="Testo libero presente"><i class="bi bi-card-text"></i></span>{% endif %}
+            </div>
+
+            {% if docs %}
+            <ul class="list-unstyled small mb-2">
+                {% for d in docs %}
+                <li class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                    <a href="/documenti/{{ d.id }}" class="text-decoration-none text-truncate me-2" title="{{ d.nome_file }}">
+                        <i class="bi bi-file-earmark"></i> {{ d.nome_file }}
+                        {% set st = d.stato.value %}
+                        {% if st == 'processing' %}<span class="badge bg-secondary"><i class="bi bi-hourglass-split"></i></span>
+                        {% elif st == 'ready' %}<span class="badge bg-success">{{ d.sezioni|length }} sez.</span>
+                        {% elif st == 'needs_review' %}<span class="badge bg-warning text-dark">da rivedere</span>
+                        {% elif st == 'error' %}<span class="badge bg-danger">errore</span>{% endif %}
+                    </a>
+                    <form method="post" action="/documenti/{{ d.id }}/elimina"
+                          onsubmit="return confirm('Eliminare questo documento?');">
+                        <button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <details class="mb-2 mt-auto" {% if testo %}open{% endif %}>
+                <summary class="small text-primary" style="cursor:pointer;">
+                    <i class="bi bi-card-text"></i> Testo libero
+                </summary>
+                <form method="post" action="/documenti/testo" class="mt-2">
+                    <input type="hidden" name="categoria" value="{{ key }}">
+                    <textarea name="testo" class="form-control form-control-sm" rows="4"
+                              placeholder="Note, precisazioni, risposte tipo per questa categoria…">{{ testo or '' }}</textarea>
+                    <button type="submit" class="btn btn-sm btn-outline-primary mt-2">
+                        <i class="bi bi-save"></i> Salva testo
+                    </button>
+                </form>
+            </details>
+
+            <form method="post" action="/documenti" enctype="multipart/form-data">
+                <input type="hidden" name="categoria" value="{{ key }}">
+                <div class="input-group input-group-sm">
+                    <input type="file" name="file" class="form-control" required accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls">
+                    <button type="submit" class="btn btn-outline-primary"><i class="bi bi-upload"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-domanda');
+    const invia = document.getElementById('chat-invia');
+    const box = document.getElementById('chat-messaggi');
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : s;
+        return d.innerHTML;
+    }
+
+    function scrollGiu() { box.scrollTop = box.scrollHeight; }
+
+    function aggiungiUtente(testo) {
+        const el = document.createElement('div');
+        el.className = 'd-flex justify-content-end mb-2';
+        el.innerHTML = '<div class="bg-primary text-white rounded px-3 py-2" style="max-width:80%;">'
+            + esc(testo) + '</div>';
+        box.appendChild(el);
+        scrollGiu();
+    }
+
+    function aggiungiAssistente() {
+        const el = document.createElement('div');
+        el.className = 'd-flex justify-content-start mb-2';
+        el.innerHTML = '<div class="bg-light border rounded px-3 py-2" style="max-width:90%;">'
+            + '<span class="spinner-border spinner-border-sm text-secondary"></span> '
+            + '<span class="text-muted">sto consultando i documenti…</span></div>';
+        box.appendChild(el);
+        scrollGiu();
+        return el.querySelector('div');
+    }
+
+    function renderFonti(piano, fonti) {
+        let h = '';
+        const rag = (piano && piano.ragionamento || '').trim();
+        const items = (fonti || []).map(function (f) {
+            const pag = f.is_pdf && f.pagine ? ' (pp. ' + esc(f.pagine) + ')' : '';
+            const sez = f.is_pdf && f.sezione ? ' › ' + esc(f.sezione) : '';
+            return '<li><i class="bi bi-file-earmark"></i> ' + esc(f.documento) + sez + pag + '</li>';
+        }).join('');
+        if (rag || items) {
+            h += '<details class="mt-2"><summary class="small text-primary" style="cursor:pointer;">'
+                + 'Come ci sono arrivato (' + (fonti || []).length + ' fonti)</summary>'
+                + '<div class="small text-muted mt-1">';
+            if (rag) h += '<div class="mb-1"><em>' + esc(rag) + '</em></div>';
+            if (items) h += '<ul class="mb-0 ps-3">' + items + '</ul>';
+            h += '</div></details>';
+        }
+        return h;
+    }
+
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const domanda = input.value.trim();
+        if (!domanda) return;
+        input.value = '';
+        invia.disabled = true;
+        aggiungiUtente(domanda);
+        const bolla = aggiungiAssistente();
+        try {
+            const body = new URLSearchParams({ domanda: domanda });
+            const resp = await fetch('/documenti/chat', { method: 'POST', body: body });
+            const data = await resp.json();
+            bolla.innerHTML = esc(data.risposta).replace(/\n/g, '<br>') + renderFonti(data.piano, data.fonti);
+        } catch (err) {
+            bolla.innerHTML = '<span class="text-danger">Errore di rete: ' + esc(String(err)) + '</span>';
+        } finally {
+            invia.disabled = false;
+            input.focus();
+            scrollGiu();
+        }
+    });
+})();
+</script>
+
+{% endblock %}

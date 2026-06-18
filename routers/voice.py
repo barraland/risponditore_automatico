@@ -1,19 +1,15 @@
-"""Chiamate vocali (Twilio Media Streams <-> OpenAI Realtime) per il condominio.
+"""Chiamate vocali (Twilio Media Streams <-> OpenAI Realtime) per la lead capture.
 
 Speech-to-speech nativo: l'audio del chiamante va al modello Realtime, che risponde
-in audio. Quando il condomino chiede un'informazione che sta nei documenti, il modello
-chiama il TOOL `cerca_nei_documenti`, che invoca l'agente RISPONDITORE (lo stesso usato
-da WhatsApp/mail). Il risponditore resta puro: qui c'è solo il trasporto vocale.
+in audio. L'assistente risponde alle domande su prodotti/servizi usando il profilo
+aziendale (testo libero), qualifica il lead, COMPILA l'anagrafica del contatto via il
+tool `salva_contatto` e a fine chiamata APRE un ticket di follow-up con `apri_ticket`
+(titolo riassuntivo + priorità + trascrizione).
 
 Flusso:
   1. Twilio -> POST /voice/incoming -> TwiML che apre un Media Stream verso /voice/stream.
   2. /voice/stream fa da ponte audio bidirezionale Twilio <-> OpenAI Realtime.
-  3. function_call `cerca_nei_documenti(domanda)` -> agente.rispondi(...) in background
-     (la ricerca dura qualche secondo: NON deve bloccare l'audio) -> risultato verbalizzato.
-
-Naturalezza dell'attesa: il modello avvisa a voce che sta controllando prima di chiamare
-il tool, e — poiché la ricerca gira in un task separato — può continuare a rassicurare il
-chiamante impaziente mentre la risposta viene preparata.
+  3. I tool (salva_contatto, apri_ticket) girano in background per non bloccare l'audio.
 """
 
 import os
@@ -27,14 +23,18 @@ from fastapi import APIRouter, WebSocket, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.websockets import WebSocketState
 
-from database import SessionLocal, Inquilino, Condominio, Documento, StatoDocumento
-from services import agente
+from database import (
+    SessionLocal, Contatto, ContattoStato, Ordine,
+    CanaleOrdine, OrigineOrdine, StatoOrdine,
+)
 from services import whatsapp_agent
 from services import voice_log
-from services import email as email_service
-from services import invii_email
 from services import ticket as ticket_service
 from services import istruzioni
+from services import profilo
+from services import retriever
+from services import crm
+from services import email as email_service
 from services.contesto import contesto_temporale
 
 logger = logging.getLogger(__name__)
@@ -46,53 +46,100 @@ REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "alloy")
 OPENAI_WS_URL = f"wss://api.openai.com/v1/realtime?model={REALTIME_MODEL}"
 
 
-# ---------- Tool Realtime: cerca nei documenti ----------
+# ---------- Tool Realtime ----------
 
 REALTIME_TOOLS = [
     {
         "type": "function",
-        "name": "cerca_nei_documenti",
+        "name": "salva_contatto",
         "description": (
-            "Cerca la risposta a una domanda del condomino nei documenti del suo condominio "
-            "(bilanci, riparti, consumi, verbali, regolamento, avvisi, polizza, ecc.). "
-            "Usa SEMPRE questo strumento quando il condomino chiede un'informazione che può stare "
-            "nei documenti. L'operazione richiede qualche secondo: PRIMA di chiamarla avvisa a voce "
-            "il chiamante che stai controllando."
+            "Salva o aggiorna in anagrafica i dati del lead con cui stai parlando. Chiamalo "
+            "ogni volta che apprendi un dato nuovo (nome, azienda, email, ecc.), anche più volte "
+            "durante la chiamata: i campi che ometti restano invariati. NON inventare dati: passa "
+            "solo ciò che il chiamante ti ha detto."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "domanda": {
-                    "type": "string",
-                    "description": (
-                        "La domanda completa e autosufficiente da cercare. Se il chiamante usa la prima "
-                        "persona ('quanto ho consumato', 'la mia rata'), includi il suo NOME e UNITÀ "
-                        "(es. 'Quanto ha consumato Mario Rossi, unità Scala A interno 1, nel 2025?')."
-                    ),
-                }
+                "nome": {"type": "string", "description": "Nome della persona."},
+                "cognome": {"type": "string", "description": "Cognome della persona."},
+                "ragione_sociale": {"type": "string", "description": "Ragione sociale della società."},
+                "ruolo": {"type": "string", "description": "Ruolo della persona nella società."},
+                "email": {"type": "string", "description": "Email di contatto."},
+                "telefono": {"type": "string", "description": "Telefono, se diverso da quello della chiamata."},
+                "sede": {"type": "string", "description": "Sede / località."},
+                "stato": {"type": "string", "enum": ["cliente", "prospect"],
+                          "description": "cliente se è già cliente, prospect se potenziale."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "type": "function",
+        "name": "consulta_documenti",
+        "description": (
+            "Consulta i DOCUMENTI caricati (listini, schede prodotto, contratti, condizioni, FAQ, "
+            "file Excel/CSV...) per rispondere a domande su prezzi, condizioni, dettagli di "
+            "prodotti/servizi che non conosci già. Passa una domanda chiara e autosufficiente "
+            "(con tutto il contesto utile); ricevi una risposta sintetica basata sui documenti, da "
+            "riferire a voce al chiamante. Usalo ogni volta che servono dati di dettaglio."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "domanda": {"type": "string",
+                            "description": "La domanda a cui rispondere consultando i documenti."},
             },
             "required": ["domanda"],
         },
     },
     {
         "type": "function",
-        "name": "invia_documento_via_email",
+        "name": "registra_ordine",
         "description": (
-            "Invia al condomino, via email con allegato, il documento di cui avete appena parlato "
-            "(l'ultimo trovato con cerca_nei_documenti). Usa questo strumento quando il condomino "
-            "chiede di ricevere il documento per email. Se conosci già la sua email la usi; altrimenti "
-            "CHIEDIGLI a voce l'indirizzo e passalo nel parametro 'email'."
+            "Registra un ORDINE del cliente con cui stai parlando (ristorante/bar/hotel). Chiamalo "
+            "quando il chiamante ordina o riordina prodotti con le quantità. Passa l'elenco delle "
+            "righe. Imposta conferma=true per registrarlo come CONFERMATO, false per lasciarlo in "
+            "bozza: segui le indicazioni dell'amministratore su quando confermare. Dopo, riferisci a "
+            "voce cosa hai registrato."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "email": {
-                    "type": "string",
-                    "description": (
-                        "Indirizzo email del destinatario, se il condomino lo detta a voce. "
-                        "Ometti se va usato l'indirizzo già presente in archivio."
-                    ),
-                }
+                "righe": {
+                    "type": "array",
+                    "description": "I prodotti ordinati.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "descrizione": {"type": "string", "description": "Nome del prodotto."},
+                            "quantita": {"type": "number"},
+                            "unita": {"type": "string", "description": "Unità (pz, kg, casse, bottiglie, sacchi...)."},
+                            "prezzo_unitario": {"type": "number", "description": "Prezzo unitario se noto, altrimenti 0."},
+                        },
+                        "required": ["descrizione"],
+                    },
+                },
+                "note": {"type": "string", "description": "Eventuali note sull'ordine (consegna, urgenze...)."},
+                "conferma": {"type": "boolean",
+                             "description": "true = ordine confermato; false/omesso = bozza."},
+            },
+            "required": ["righe"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "invia_riepilogo_ordine",
+        "description": (
+            "Invia via EMAIL al cliente il riepilogo dell'ordine appena registrato. Usa l'ordine_id "
+            "restituito da registra_ordine (se lo ometti, usa l'ultimo ordine del cliente). Se il "
+            "cliente non ha un'email salvata, la funzione te lo segnala: in quel caso chiedigli "
+            "l'indirizzo, salvalo con salva_contatto e riprova."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ordine_id": {"type": "number", "description": "ID dell'ordine da riepilogare (opzionale)."},
             },
             "required": [],
         },
@@ -101,17 +148,19 @@ REALTIME_TOOLS = [
         "type": "function",
         "name": "apri_ticket",
         "description": (
-            "Apre una SEGNALAZIONE per l'amministratore. Usalo quando: (a) non riesci a "
-            "rispondere perché il dato non è nei documenti; (b) il condomino non è convinto "
-            "della risposta, si lamenta, contesta o insiste; (c) segnala un problema/guasto. "
-            "Dopo averlo aperto, di' al condomino che hai registrato la segnalazione e che "
-            "l'amministratore lo ricontatterà."
+            "Apre (o aggiorna) il TICKET di follow-up per questo lead, per il team commerciale. "
+            "Chiamalo quando hai capito di cosa ha bisogno il lead — tipicamente verso la fine "
+            "della chiamata. Riepiloga in titolo e descrizione la richiesta e assegna la priorità "
+            "secondo i criteri ricevuti. Dopo averlo aperto, di' al chiamante che un collega lo "
+            "ricontatterà."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "titolo": {"type": "string", "description": "Titolo breve della segnalazione (max ~10 parole)."},
-                "descrizione": {"type": "string", "description": "Descrizione del problema o della richiesta, con i dettagli utili."},
+                "titolo": {"type": "string", "description": "Titolo breve riassuntivo (max ~10 parole)."},
+                "priorita": {"type": "string", "enum": ["alta", "media", "bassa"],
+                             "description": "Priorità del lead secondo i criteri dell'azienda."},
+                "descrizione": {"type": "string", "description": "Sintesi della richiesta e dei dati utili raccolti."},
             },
             "required": ["titolo", "descrizione"],
         },
@@ -121,79 +170,64 @@ REALTIME_TOOLS = [
 
 # ---------- Istruzioni vocali ----------
 
-def _build_voice_instructions(db, inquilino, condominio) -> str:
-    studio = None
-    try:
-        from database import Studio
-        studio = db.query(Studio).first()
-    except Exception:
-        pass
-    nome_studio = (studio.nome if studio else None) or "lo studio di amministrazione"
+def _scheda_contatto(c: Contatto) -> str:
+    campi = [
+        ("Nome", c.nome), ("Cognome", c.cognome), ("Ragione sociale", c.ragione_sociale),
+        ("Ruolo", c.ruolo), ("Email", c.email), ("Sede", c.sede),
+        ("Stato", c.stato.value if c.stato else None),
+    ]
+    noti = [f"{k}: {v}" for k, v in campi if v]
+    return "\n".join(noti) if noti else "(nessun dato ancora: è un nuovo lead)"
 
-    if not inquilino:
-        return (
-            f'Sei l\'assistente telefonico di "{nome_studio}", che amministra condomìni. '
-            "Parli in italiano, al telefono, con frasi brevi e cordiali (dai del lei).\n"
-            "ATTENZIONE: il numero del chiamante NON risulta tra i condòmini registrati. "
-            "Saluta con gentilezza, spiega che non puoi fornire informazioni perché il numero non è "
-            "registrato, e invita a contattare l'amministratore. Non usare strumenti."
-        )
 
-    n_ready = sum(1 for d in (condominio.documenti if condominio else []) if d.stato == StatoDocumento.READY)
-    nome = f"{inquilino.nome} {inquilino.cognome or ''}".strip()
-    unita = inquilino.unita or "non specificata"
-    # Appellativo per il saluto: cognome se c'è, altrimenti nome.
-    appellativo = (inquilino.cognome or inquilino.nome or "").strip()
+def _build_voice_instructions(db, contatto: Contatto) -> str:
+    nome_az = profilo.nome_azienda(db)
+    appellativo = (contatto.cognome or contatto.nome or "").strip()
+    saluto = f"Buongiorno signor {appellativo}" if appellativo else "Buongiorno"
 
     return (
-        f'Sei l\'assistente telefonico di "{nome_studio}", che amministra condomìni. '
-        f"Stai parlando con {nome}, del condominio «{condominio.nome}», unità {unita}.\n"
-        f"Documenti disponibili per questo condominio: {n_ready}.\n"
+        f'Sei l\'assistente telefonico di "{nome_az}". Parli in italiano, al telefono, con frasi '
+        "BREVI e cordiali (dai del lei). Ti occupi di LEAD CAPTURE: rispondi a chi chiama per "
+        "informazioni su prodotti, servizi, ordini, costi e tempi, e nel frattempo raccogli i suoi "
+        "dati e qualifichi il lead per il team commerciale.\n"
         f"{contesto_temporale()}\n\n"
+        f"DATI GIÀ NOTI DEL CHIAMANTE:\n{_scheda_contatto(contatto)}\n\n"
         "COME PARLARE:\n"
-        "- Sei al TELEFONO: frasi BREVI e naturali, una cosa alla volta, in italiano. Dai del lei, tono cordiale.\n"
-        f"- APERTURA: la PRIMA cosa che dici, salutalo per cognome, es. «Buongiorno signor {appellativo}». "
-        "Poi presentati come l'assistente del condominio e chiedi come puoi aiutarlo. "
-        "Usa il suo nome anche più avanti, quando è naturale.\n"
+        "- Sei al TELEFONO: una cosa alla volta, frasi naturali e brevi. Tono cordiale, dai del lei.\n"
+        f"- APERTURA: saluta (es. «{saluto}»), presentati come l'assistente di {nome_az} e chiedi "
+        "come puoi aiutare. Se è un nuovo contatto, a un certo punto chiedi con garbo il suo nome.\n"
         "- Leggi numeri, date e importi in modo naturale (es. 'cinquecento euro', 'il tre marzo').\n\n"
-        "COME RISPONDERE ALLE DOMANDE:\n"
-        "- Per qualsiasi informazione che può stare nei documenti (rate, spese, riparti, consumi, "
-        "verbali, regolamento, scadenze, fornitori...) usa lo strumento cerca_nei_documenti.\n"
-        "- IMPORTANTE: la ricerca richiede qualche secondo. PRIMA di chiamare lo strumento, di' a voce "
-        "una frase breve tipo 'Un attimo, controllo nei documenti…'. Se il chiamante si spazientisce "
-        "mentre aspetti, rassicuralo ('ci sono, sto ancora controllando, un secondo').\n"
-        "- Lo strumento ti restituisce una risposta dettagliata con le fonti: NON leggerla parola per "
-        "parola. Riassumila al telefono in modo breve e chiaro, e se utile cita la fonte "
-        "('lo trovo nel bilancio 2025'). \n"
-        "- Se lo strumento non trova la risposta, dillo con onestà, APRI una segnalazione con "
-        "apri_ticket (così l'amministratore se ne occupa) e di' al condomino che lo ricontatteranno. "
-        "Non inventare mai dati.\n"
-        "- SEGNALAZIONI (apri_ticket): aprine una anche quando il condomino NON è convinto della "
-        "risposta, si lamenta, contesta o segnala un problema/guasto. Conferma a voce che hai "
-        "registrato la segnalazione e che l'amministratore lo ricontatterà.\n"
-        "- Se la domanda è in prima persona ('quanto ho speso io'), quando chiami lo strumento includi "
-        f"nel testo il nome e l'unità del chiamante ({nome}, unità {unita}).\n\n"
-        "NON LASCIARE SILENZI — chiudi sempre il turno (è sgradevole se taci):\n"
-        "- Dopo una risposta presa dai documenti, VERIFICA che sia utile: «È questa l'informazione che le "
-        "serviva?». Se dice di no o non è convinto, approfondisci oppure apri una segnalazione (apri_ticket).\n"
-        "- Quando la richiesta sembra soddisfatta o il chiamante ringrazia, chiudi con cortesia: «C'è altro "
-        "con cui posso esserle utile?». Se risponde di no, salutalo per nome e concludi la chiamata.\n"
-        "- Usa con buon senso: la verifica DOPO una risposta informativa, il «c'è altro?» per CHIUDERE. "
-        "Non ripeterle a ogni frase, ma non restare mai muto dopo aver parlato.\n\n"
-        "INVIO DEI DOCUMENTI VIA EMAIL:\n"
-        "- Quando hai risposto usando un documento (lo strumento cerca_nei_documenti restituisce il campo "
-        "'documento'), PROPONI tu, senza aspettare che lo chieda: «Vuole che le invii [nome documento] "
-        "via email?».\n"
-        "- ECCEZIONE: se lo strumento restituisce 'gia_inviato_via_email' = true, NON proporre di inviarlo di "
-        "nuovo. Di' invece che il dato si trova nel documento «[nome documento]» che gli hai GIÀ inviato via "
-        "email in precedenza.\n"
-        "- Per inviare chiama SUBITO invia_documento_via_email SENZA chiedere a quale indirizzo: di default "
-        "va all'email registrata del condomino. Quando lo strumento conferma l'invio, DI' a voce l'indirizzo "
-        "a cui l'hai mandato (es. «Gliel'ho inviato a mario.rossi@email.it»), utile se non ricorda quale "
-        "email ha registrato.\n"
-        "- SOLO se lo strumento risponde che serve l'indirizzo (nessuna email registrata), allora chiedilo "
-        "a voce, fattelo scandire se non sei sicuro, e richiama lo strumento.\n"
-        "- Non dire mai che non puoi inviare email."
+        "COME RISPONDERE:\n"
+        "- Per domande su prodotti/servizi/costi/tempi usa le informazioni della sezione "
+        "'COSA OFFRIAMO'. Se servono DETTAGLI che non sono lì (prezzi specifici, condizioni, schede), "
+        "chiama lo strumento consulta_documenti con una domanda chiara e usa la risposta che ricevi "
+        "per rispondere al chiamante. Mentre attendi puoi dire qualcosa tipo «Verifico subito». Se "
+        "nemmeno i documenti hanno il dato, dillo con onestà (non inventare) e rassicura che un "
+        "collega ricontatterà il chiamante.\n\n"
+        "ORDINI:\n"
+        "- Se il chiamante ordina o riordina prodotti (con quantità), chiama registra_ordine con "
+        "l'elenco delle righe (prodotto, quantità, unità, prezzo se lo sai). Imposta conferma=true o "
+        "false secondo le indicazioni dell'amministratore su quando confermare un ordine. Se devi "
+        "inviare il riepilogo via email usa invia_riepilogo_ordine; se il cliente non ha un'email "
+        "registrata, chiedigliela e salvala con salva_contatto, poi invia. Riferisci sempre a voce "
+        "cosa hai registrato.\n\n"
+        "RACCOLTA DATI (anagrafica):\n"
+        "- Raccogli con naturalezza, senza interrogatori, le informazioni della sezione 'COME "
+        "QUALIFICARE IL LEAD'. Poche per volta.\n"
+        "- Ogni volta che apprendi un dato (nome, azienda, ruolo, email, sede, esigenza...) chiama "
+        "SUBITO lo strumento salva_contatto con i campi che hai appreso. Se ti detta l'email, "
+        "fattela ripetere se non sei sicuro.\n\n"
+        "TICKET DI FOLLOW-UP (apri_ticket):\n"
+        "- Quando hai capito di cosa ha bisogno il lead (di solito verso la fine), chiama apri_ticket "
+        "con un titolo riassuntivo, una descrizione della richiesta e la PRIORITÀ (alta/media/bassa) "
+        "secondo i criteri della sezione 'COME ASSEGNARE LA PRIORITÀ'. Apri UN SOLO ticket per "
+        "chiamata. Poi conferma a voce che un collega lo ricontatterà.\n\n"
+        "NON LASCIARE SILENZI — chiudi sempre il turno:\n"
+        "- Dopo una risposta, verifica: «È questo che le serviva?». Quando la richiesta è soddisfatta "
+        "o il chiamante ringrazia, chiudi con cortesia: «C'è altro con cui posso esserle utile?». Se "
+        "risponde di no, salutalo e concludi.\n"
+        "- Non restare mai muto dopo aver parlato."
+        f"{profilo.blocco_prompt(db)}"
         f"{istruzioni.blocco_prompt()}"
     )
 
@@ -238,18 +272,15 @@ async def media_stream(twilio_ws: WebSocket):
     stato = {
         "stream_sid": None,
         "telefono": None,
-        "condominio_id": None,
-        "inquilino_id": None,
+        "contatto_id": None,
         "iniziata_at": None,
         "response_active": False,   # c'è una risposta del modello in corso?
         "speak_pending": False,     # un risultato di tool attende di essere verbalizzato
-        "tasks": set(),             # task di ricerca in background
+        "tasks": set(),             # task in background
         "trascrizione": [],         # [{ruolo, testo, item}, ...] per il log chiamata
         "ordine_item": {},          # item_id -> sequenza di creazione (per ordinare la trascrizione)
         "seq_item": 0,
         "assist_buf": "",           # accumulo del transcript dell'assistente nel turno corrente
-        "ultimo_doc_id": None,      # documento-fonte dell'ultima risposta (per l'invio email)
-        "ultimo_doc_nome": None,
     }
 
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
@@ -265,21 +296,16 @@ async def media_stream(twilio_ws: WebSocket):
         return
 
     async def configura_sessione():
-        """Identifica il chiamante, imposta audio/voce/VAD/tool/istruzioni, fa salutare."""
-        inquilino = whatsapp_agent.trova_inquilino(db, stato["telefono"] or "")
-        condominio = inquilino.condominio if inquilino else None
-        stato["condominio_id"] = inquilino.condominio_id if inquilino else None
-        stato["inquilino_id"] = inquilino.id if inquilino else None
-        if inquilino:
-            logger.info("Chiamante riconosciuto: %s (cond %s)", inquilino.nome, stato["condominio_id"])
-        else:
-            logger.info("Chiamante NON registrato: %s", stato["telefono"])
+        """Identifica/crea il contatto, imposta audio/voce/VAD/tool/istruzioni, fa salutare."""
+        contatto = whatsapp_agent.trova_o_crea_contatto(db, stato["telefono"] or "sconosciuto")
+        stato["contatto_id"] = contatto.id
+        logger.info("Chiamante: contatto id %s (%s)", contatto.id, contatto.nome_completo)
 
         await openai_ws.send(json.dumps({
             "type": "session.update",
             "session": {
                 "type": "realtime",
-                "instructions": _build_voice_instructions(db, inquilino, condominio),
+                "instructions": _build_voice_instructions(db, contatto),
                 "output_modalities": ["audio"],
                 "audio": {
                     "input": {
@@ -304,102 +330,135 @@ async def media_stream(twilio_ws: WebSocket):
         await openai_ws.send(json.dumps({"type": "response.create"}))
 
     async def richiedi_risposta():
-        """Chiede al modello di generare una risposta, rispettando la concorrenza:
-        se ce n'è già una attiva, rimanda finché non finisce (response.done)."""
+        """Chiede al modello di generare una risposta, rispettando la concorrenza."""
         if stato["response_active"]:
             stato["speak_pending"] = True
         else:
             stato["response_active"] = True
             await openai_ws.send(json.dumps({"type": "response.create"}))
 
-    def _cerca(domanda: str) -> dict:
-        """Ricerca documentale (sincrona, gira in thread). Memorizza la fonte primaria."""
-        domanda = (domanda or "").strip()
-        cond_id = stato["condominio_id"]
-        if not cond_id:
-            return {"errore": "Chiamante non registrato: nessun condominio associato."}
-        if not domanda:
-            return {"errore": "Domanda mancante."}
-        try:
-            esito = agente.rispondi(db, cond_id, domanda)
-        except Exception as e:
-            logger.error("  errore ricerca documentale: %s", e)
-            return {"errore": str(e)}
-        # Log accessi del risponditore nella trascrizione (subito prima della risposta).
-        stato["trascrizione"].append({
-            "ruolo": "Risponditore", "ord": stato["seq_item"] - 0.5,
-            "testo": f"[ricerca: {domanda}]\n{agente.formatta_accessi(esito)}",
-        })
-        fonti_passi = [p for p in esito.get("passi", []) if p.get("trovato") and p.get("documento_id")]
-        doc_nome = None
-        gia_inviato = False
-        if fonti_passi:
-            stato["ultimo_doc_id"] = fonti_passi[0]["documento_id"]
-            stato["ultimo_doc_nome"] = doc_nome = fonti_passi[0]["documento"]
-            gia_inviato = invii_email.gia_inviato(db, stato.get("inquilino_id"), fonti_passi[0]["documento_id"])
-        fonti = sorted({f"{p['documento']} pp.{p['pagine']}" for p in fonti_passi})
-        # 'documento' valorizzato => c'è un documento-fonte che puoi proporre di inviare via email.
-        # 'gia_inviato_via_email' True => NON rioffrirlo, citalo come già spedito.
-        return {"risposta": esito.get("risposta", ""), "fonti": fonti,
-                "documento": doc_nome, "gia_inviato_via_email": gia_inviato}
-
-    def _invia_documento(email_arg: str | None) -> dict:
-        """Invia via email l'ultimo documento citato (sincrona, gira in thread)."""
-        doc_id = stato.get("ultimo_doc_id")
-        if not doc_id:
-            return {"errore": "Non c'è un documento da inviare: prima cerca l'informazione nei documenti."}
-        doc = db.get(Documento, doc_id)
-        if not doc:
-            return {"errore": "Il documento non è più disponibile."}
-        inq = db.get(Inquilino, stato["inquilino_id"]) if stato.get("inquilino_id") else None
-
-        email = whatsapp_agent._estrai_email(email_arg or "")
-        if not email and inq and inq.email:
-            email = inq.email
-        if not email:
-            return {"serve_email": True}  # il modello chiederà l'indirizzo a voce
-
-        if inq and email and inq.email != email:
-            inq.email = email  # salva/aggiorna in anagrafica
+    def _salva_contatto(args: dict) -> dict:
+        """Crea/aggiorna l'anagrafica del contatto (sincrona, gira in thread)."""
+        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
+        if not contatto:
+            return {"errore": "Contatto non disponibile."}
+        campi = ["nome", "cognome", "ragione_sociale", "ruolo", "email", "telefono", "sede"]
+        cambiato = False
+        for c in campi:
+            val = (args.get(c) or "").strip()
+            if val and getattr(contatto, c) != val:
+                setattr(contatto, c, val)
+                cambiato = True
+        st = (args.get("stato") or "").strip()
+        if st in (ContattoStato.CLIENTE.value, ContattoStato.PROSPECT.value):
+            nuovo = ContattoStato(st)
+            if contatto.stato != nuovo:
+                contatto.stato = nuovo
+                cambiato = True
+        if cambiato:
             db.commit()
+        # Registrazione prospect: crea/aggancia la società corrispondente (find-or-create,
+        # niente duplicati). Avviene solo quando si conosce la ragione sociale.
+        societa = crm.societa_di_contatto(db, contatto)
+        risultato = {"salvato": True, "contatto_id": contatto.id}
+        if societa:
+            risultato["societa"] = societa.nome
+        return risultato
 
-        ok = email_service.invia_email(
-            destinatario=email,
-            oggetto=f"Documento del condominio: {doc.nome_file}",
-            corpo=(f"Gentile {inq.nome if inq else ''},\n\n"
-                   f"in allegato il documento richiesto: {doc.nome_file}.\n\n"
-                   f"Cordiali saluti,\nL'assistente del condominio"),
-            allegati=[doc.percorso],
+    def _consulta_documenti(domanda: str) -> dict:
+        """Interroga l'agente retriever sui documenti caricati (sincrona, gira in thread)."""
+        if not (domanda or "").strip():
+            return {"errore": "Domanda mancante."}
+        esito = retriever.rispondi(db, domanda)
+        return {
+            "risposta": esito.get("risposta", ""),
+            "fonti": [f.get("documento") for f in (esito.get("fonti") or [])],
+        }
+
+    def _registra_ordine(righe: list, note: str, conferma: bool) -> dict:
+        """Registra un ordine sulla società del chiamante (sincrona, gira in thread).
+        Lo stato (confermato/bozza) lo decide il modello via `conferma`."""
+        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
+        if not contatto:
+            return {"errore": "Contatto non disponibile."}
+        righe = [r for r in (righe or []) if (r.get("descrizione") or "").strip()]
+        if not righe:
+            return {"errore": "Nessun prodotto da registrare."}
+        societa = crm.societa_di_contatto(db, contatto) or crm.trova_o_crea_societa(db, insegna=contatto.nome_completo)
+        if not contatto.societa_id:
+            contatto.societa_id = societa.id
+            contatto.is_primario = True
+            db.commit()
+        ordine, creato = crm.registra_ordine_conversazione(
+            db, societa_id=societa.id, righe=righe, contatto_id=contatto.id,
+            origine=OrigineOrdine.CLIENTE, canale=CanaleOrdine.VOCE,
+            note=(note or "").strip() or None,
+            stato=StatoOrdine.CONFERMATO if conferma else StatoOrdine.BOZZA,
         )
-        if ok and inq:
-            invii_email.registra_invio(db, inq.id, doc.id, email)
-        logger.info("  voce: invio email %s -> %s (%s)", doc.nome_file, email, "ok" if ok else "FALLITO")
-        return {"inviato": bool(ok), "email": email, "documento": doc.nome_file}
+        if not ordine:
+            return {"errore": "Non sono riuscito a registrare l'ordine."}
+        return {"registrato": True, "aggiornato": not creato, "ordine_id": ordine.id,
+                "stato": ordine.stato.value, "articoli": ordine.n_articoli, "totale": ordine.totale}
+
+    def _invia_riepilogo_ordine(ordine_id) -> dict:
+        """Invia al cliente via email il riepilogo dell'ordine (sincrona, gira in thread).
+        Se manca l'email del contatto, lo segnala così il modello può chiederla."""
+        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
+        if not contatto:
+            return {"errore": "Contatto non disponibile."}
+        ordine = None
+        if ordine_id:
+            try:
+                ordine = db.get(Ordine, int(ordine_id))
+            except (ValueError, TypeError):
+                ordine = None
+        if not ordine:
+            ordine = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
+                      .order_by(Ordine.data.desc()).first())
+        if not ordine:
+            return {"errore": "Nessun ordine da riepilogare."}
+        email = (contatto.email or "").strip()
+        if not email:
+            return {"email_mancante": True,
+                    "messaggio": "Il cliente non ha un'email salvata: chiedigliela e salvala con salva_contatto, poi riprova."}
+        oggetto = f"Riepilogo ordine #{ordine.id} - {profilo.nome_azienda(db)}"
+        corpo = (f"Gentile {contatto.nome or contatto.nome_completo},\n\n"
+                 f"come da accordi telefonici, le confermiamo il suo ordine:\n\n"
+                 f"{crm.riepilogo_ordine(ordine)}\n\n"
+                 f"Cordiali saluti,\n{profilo.nome_azienda(db)}")
+        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo)
+        if not inviata:
+            return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
+        return {"inviato": True, "email": email, "ordine_id": ordine.id}
 
     def _trascrizione_ordinata() -> list:
-        """Trascrizione riordinata per ordine di creazione degli item (cronologico),
-        non per ordine di arrivo degli eventi: la trascrizione del chiamante (Whisper)
-        può arrivare in ritardo rispetto alle risposte dell'assistente. Le righe con
-        'ord' esplicito (es. log del risponditore) usano quello."""
+        """Trascrizione riordinata per ordine di creazione degli item (cronologico)."""
         ordine = stato["ordine_item"]
         def _key(d):
             return d["ord"] if "ord" in d else ordine.get(d.get("item"), 10**9)
         return sorted(stato["trascrizione"], key=_key)
 
-    def _apri_ticket(titolo: str, descrizione: str) -> dict:
-        """Apre un ticket usando la trascrizione corrente come storia (sincrona)."""
+    def _apri_ticket(titolo: str, priorita: str, descrizione: str) -> dict:
+        """Apre/aggiorna il ticket di follow-up usando la trascrizione come storia (sincrona)."""
         storia = ticket_service.formatta_storia(_trascrizione_ordinata())
+        contatto_id = stato.get("contatto_id")
+        esistente = whatsapp_agent._ticket_aperto(db, contatto_id) if contatto_id else None
+        if esistente:
+            esistente.titolo = (titolo or esistente.titolo).strip()[:300]
+            p = ticket_service.normalizza_priorita(priorita)
+            if p:
+                esistente.priorita = p
+            esistente.descrizione = (descrizione or "").strip() or esistente.descrizione
+            esistente.storia = storia or esistente.storia
+            db.commit()
+            return {"aperto": True, "ticket_id": esistente.id}
         t = ticket_service.apri_ticket(
-            db,
-            condominio_id=stato.get("condominio_id"),
-            inquilino_id=stato.get("inquilino_id"),
-            titolo=titolo or "Segnalazione telefonica",
-            descrizione=descrizione or "",
-            storia=storia,
-            canale="voce",
+            db, contatto_id=contatto_id,
+            titolo=titolo or "Lead telefonico", priorita=priorita,
+            descrizione=descrizione or "", storia=storia, canale="voce",
         )
         if not t:
-            return {"errore": "Non sono riuscito a registrare la segnalazione."}
+            return {"errore": "Non sono riuscito a registrare il follow-up."}
         return {"aperto": True, "ticket_id": t.id}
 
     async def esegui_tool(name: str, call_id: str, arguments: str):
@@ -410,12 +469,18 @@ async def media_stream(twilio_ws: WebSocket):
             args = {}
         logger.info("  voce tool: %s(%s)", name, args)
 
-        if name == "cerca_nei_documenti":
-            result = await asyncio.to_thread(_cerca, args.get("domanda", ""))
-        elif name == "invia_documento_via_email":
-            result = await asyncio.to_thread(_invia_documento, args.get("email"))
+        if name == "salva_contatto":
+            result = await asyncio.to_thread(_salva_contatto, args)
+        elif name == "consulta_documenti":
+            result = await asyncio.to_thread(_consulta_documenti, args.get("domanda", ""))
+        elif name == "registra_ordine":
+            result = await asyncio.to_thread(
+                _registra_ordine, args.get("righe", []), args.get("note", ""), bool(args.get("conferma")))
+        elif name == "invia_riepilogo_ordine":
+            result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
         elif name == "apri_ticket":
-            result = await asyncio.to_thread(_apri_ticket, args.get("titolo", ""), args.get("descrizione", ""))
+            result = await asyncio.to_thread(
+                _apri_ticket, args.get("titolo", ""), args.get("priorita", ""), args.get("descrizione", ""))
         else:
             result = {"errore": f"Strumento sconosciuto: {name}"}
 
@@ -486,14 +551,12 @@ async def media_stream(twilio_ws: WebSocket):
 
                 elif etype == "response.done":
                     stato["response_active"] = False
-                    # Se un risultato di tool era in attesa di essere detto, verbalizzalo ora.
                     if stato["speak_pending"]:
                         stato["speak_pending"] = False
                         stato["response_active"] = True
                         await openai_ws.send(json.dumps({"type": "response.create"}))
 
                 elif etype == "conversation.item.created":
-                    # Registra l'ordine cronologico di creazione degli item della conversazione.
                     item_id = (evt.get("item") or {}).get("id")
                     if item_id and item_id not in stato["ordine_item"]:
                         stato["ordine_item"][item_id] = stato["seq_item"]
@@ -510,8 +573,7 @@ async def media_stream(twilio_ws: WebSocket):
                             {"ruolo": "Assistente", "testo": testo, "item": evt.get("item_id")})
 
                 elif etype == "input_audio_buffer.speech_started":
-                    # Barge-in: il chiamante riprende a parlare -> svuota l'audio in coda e
-                    # annulla la risposta in corso.
+                    # Barge-in: il chiamante riprende a parlare -> svuota l'audio in coda e annulla.
                     if stato["stream_sid"]:
                         await twilio_ws.send_text(json.dumps({
                             "event": "clear", "streamSid": stato["stream_sid"],
@@ -520,7 +582,6 @@ async def media_stream(twilio_ws: WebSocket):
                         await openai_ws.send(json.dumps({"type": "response.cancel"}))
 
                 elif etype == "response.function_call_arguments.done":
-                    # Esegui il tool SENZA bloccare questo loop (audio + barge-in restano vivi).
                     avvia_tool(evt.get("name"), evt.get("call_id"), evt.get("arguments", "{}"))
 
                 elif etype == "conversation.item.input_audio_transcription.completed":
@@ -528,7 +589,7 @@ async def media_stream(twilio_ws: WebSocket):
                     logger.info("  chiamante: %s", trascr)
                     if trascr:
                         stato["trascrizione"].append(
-                            {"ruolo": "Condomino", "testo": trascr, "item": evt.get("item_id")})
+                            {"ruolo": "Cliente", "testo": trascr, "item": evt.get("item_id")})
 
                 elif etype == "error":
                     logger.error("  OpenAI error: %s", evt.get("error"))
@@ -540,15 +601,14 @@ async def media_stream(twilio_ws: WebSocket):
     finally:
         for t in list(stato["tasks"]):
             t.cancel()
-        # Salva il log della chiamata (trascrizione + riassunto) se il chiamante è
-        # registrato e c'è stato dialogo. Il riassunto è bloccante (LLM): in thread.
-        if stato["inquilino_id"] and stato["trascrizione"]:
+        # Salva il log della chiamata (trascrizione + riassunto) se c'è stato dialogo.
+        if stato["contatto_id"] and stato["trascrizione"]:
             durata = None
             if stato["iniziata_at"]:
                 durata = int((datetime.utcnow() - stato["iniziata_at"]).total_seconds())
             try:
                 await asyncio.to_thread(
-                    voice_log.salva_chiamata, db, stato["inquilino_id"], stato["telefono"],
+                    voice_log.salva_chiamata, db, stato["contatto_id"], stato["telefono"],
                     _trascrizione_ordinata(), stato["iniziata_at"], durata,
                 )
             except Exception as e:

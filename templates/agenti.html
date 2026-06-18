@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Agenti{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0"><i class="bi bi-person-badge"></i> Agenti di commercio</h4>
+        <small class="text-muted">{{ agenti|length }} agenti · portafoglio società e ordini</small>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuovoAgente">
+        <i class="bi bi-plus-lg"></i> Nuovo agente
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if agenti %}
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>Agente</th><th>Zona</th><th>Telefono</th><th>Email</th><th class="text-center">Società</th><th class="text-center">Provvigione</th></tr></thead>
+            <tbody>
+                {% for a in agenti %}
+                <tr style="cursor:pointer" onclick="location.href='/agenti/{{ a.id }}'">
+                    <td class="fw-semibold"><i class="bi bi-person-badge text-primary"></i> {{ a.nome_completo }}</td>
+                    <td>{{ a.zona or "—" }}</td>
+                    <td>{{ a.telefono or "—" }}</td>
+                    <td>{{ a.email or "—" }}</td>
+                    <td class="text-center">{{ a.societa|length }}</td>
+                    <td class="text-center">{{ ('%.1f%%'|format(a.percentuale_provvigione)) if a.percentuale_provvigione else "—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-5 text-muted"><i class="bi bi-person-badge fs-1"></i><p class="mt-2">Nessun agente.</p></div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="modalNuovoAgente" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/agenti">
+                <div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-badge"></i> Nuovo agente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body row g-3">
+                    <div class="col-6"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control"></div>
+                    <div class="col-6"><label class="form-label">Cognome</label><input type="text" name="cognome" class="form-control"></div>
+                    <div class="col-12"><label class="form-label">Zona</label><input type="text" name="zona" class="form-control" placeholder="Es. Lombardia Ovest"></div>
+                    <div class="col-6"><label class="form-label">Telefono</label><input type="text" name="telefono" class="form-control"></div>
+                    <div class="col-6"><label class="form-label">Email</label><input type="email" name="email" class="form-control"></div>
+                    <div class="col-6"><label class="form-label">Provvigione %</label><input type="text" name="percentuale_provvigione" class="form-control" placeholder="Es. 5"></div>
+                    <div class="col-12"><label class="form-label">Note</label><textarea name="note" class="form-control" rows="2"></textarea></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button><button class="btn btn-primary">Crea agente</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

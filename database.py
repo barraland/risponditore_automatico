@@ -1,15 +1,15 @@
 import enum
 import os
-from datetime import datetime, date
+from datetime import datetime
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, DateTime, Date,
+    create_engine, Column, Integer, String, Float, DateTime,
     ForeignKey, Enum, Text, Boolean,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 # Path del DB configurabile via env (utile in Docker per puntare a un volume persistente).
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./condominio.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assistente.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -28,113 +28,140 @@ class StatoTicket(str, enum.Enum):
     CHIUSO = "chiuso"
 
 
-# ---------- Models ----------
+class PrioritaTicket(str, enum.Enum):
+    ALTA = "alta"
+    MEDIA = "media"
+    BASSA = "bassa"
 
-class Studio(Base):
-    __tablename__ = "studi"
+
+class ContattoStato(str, enum.Enum):
+    CLIENTE = "cliente"
+    PROSPECT = "prospect"
+
+
+class StatoRelazione(str, enum.Enum):
+    """Stato commerciale della SOCIETÀ (non della persona): è la società a essere
+    prospect finché non arriva il primo ordine, poi diventa cliente."""
+    PROSPECT = "prospect"
+    CLIENTE = "cliente"
+    INATTIVO = "inattivo"
+
+
+class TipoAttivita(str, enum.Enum):
+    RISTORANTE = "ristorante"
+    PIZZERIA = "pizzeria"
+    BAR = "bar"
+    HOTEL = "hotel"
+    GASTRONOMIA = "gastronomia"
+    ALTRO = "altro"
+
+
+class CanaleOrdine(str, enum.Enum):
+    WHATSAPP = "whatsapp"
+    VOCE = "voce"
+    EMAIL = "email"
+    AGENTE = "agente"
+    MANUALE = "manuale"
+
+
+class StatoOrdine(str, enum.Enum):
+    BOZZA = "bozza"             # estratto dalla conversazione, da confermare
+    CONFERMATO = "confermato"
+    EVASO = "evaso"
+    ANNULLATO = "annullato"
+
+
+class OrigineOrdine(str, enum.Enum):
+    CLIENTE = "cliente"        # inserito da un contatto del locale
+    AGENTE = "agente"          # inserito da un agente di commercio
+
+
+# ---------- Modelli ----------
+
+class Azienda(Base):
+    """Profilo dell'azienda che usa il risponditore + configurazione comportamentale
+    (in linguaggio naturale) usata per rispondere, qualificare i lead e dare priorità.
+
+    Singleton: esiste una sola riga. Modificabile dalla pagina Impostazioni.
+    """
+    __tablename__ = "azienda"
 
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(200), nullable=False)
     telefono = Column(String(30))
     indirizzo = Column(String(300))
-    orario_apertura = Column(String(5), default="09:00")
-    orario_chiusura = Column(String(5), default="18:00")
-    giorni_lavorativi = Column(String(50), default="lun,mar,mer,gio,ven")
-    nome_dottore = Column(String(200), nullable=True)
-    durata_slot_default = Column(Integer, default=30)
-    max_giorni_prenotazione = Column(Integer, default=14)
+
+    # Testo libero: cosa offre l'azienda (prodotti/servizi, cosa fa e non fa, dove, come,
+    # orari, tempi di consegna...). Il risponditore lo usa per rispondere ai lead.
+    descrizione_servizi = Column(Text, nullable=True)
+    # Testo libero: cosa caratterizza un lead a priorità alta / media / bassa.
+    criteri_priorita = Column(Text, nullable=True)
+    # Testo libero: info minime da raccogliere per qualificare il lead.
+    info_qualificazione = Column(Text, nullable=True)
 
 
-# ---------- Modelli Amministrazione Condomini ----------
-
-class Condominio(Base):
-    __tablename__ = "condomini"
-
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String(200), nullable=False)
-    indirizzo = Column(String(300))
-    citta = Column(String(120))
-    cap = Column(String(10))
-    codice_fiscale = Column(String(20))
-    iban = Column(String(40))
-    note = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    inquilini = relationship(
-        "Inquilino",
-        back_populates="condominio",
-        cascade="all, delete-orphan",
-        order_by="Inquilino.cognome",
-    )
-    documenti = relationship(
-        "Documento",
-        back_populates="condominio",
-        cascade="all, delete-orphan",
-        order_by="Documento.caricato_at.desc()",
-    )
-    ticket = relationship(
-        "Ticket",
-        back_populates="condominio",
-        cascade="all, delete-orphan",
-        order_by="Ticket.created_at.desc()",
-    )
-
-
-class Inquilino(Base):
-    __tablename__ = "inquilini"
+class Contatto(Base):
+    """Cliente o potenziale cliente (prospect). Entità centrale: la home ne mostra la lista.
+    L'anagrafica viene compilata a mano o dal risponditore durante una chiamata/chat."""
+    __tablename__ = "contatti"
 
     id = Column(Integer, primary_key=True, index=True)
-    condominio_id = Column(Integer, ForeignKey("condomini.id"), nullable=False)
-    nome = Column(String(100), nullable=False)
+    nome = Column(String(100))
     cognome = Column(String(100))
-    unita = Column(String(120))          # es. "Scala A - Interno 3"
-    millesimi = Column(Float, nullable=True)
-    telefono = Column(String(30))
+    ragione_sociale = Column(String(200))      # ragione sociale della società
+    ruolo = Column(String(150))                # ruolo nella società
     email = Column(String(150))
+    telefono = Column(String(30))
+    sede = Column(String(200))                 # sede / località
+    stato = Column(Enum(ContattoStato), default=ContattoStato.PROSPECT, nullable=False)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Stato "offerta documento via email" (gestito dall'agente WhatsApp)
-    offerta_doc_id = Column(Integer, nullable=True)               # documento offerto, in attesa di conferma
-    offerta_attende_email = Column(Boolean, default=False)        # True = in attesa che il condomino indichi l'email
+    # HORECA: la persona appartiene a una Società (ristorante/bar/hotel...). Nullable per
+    # i contatti non ancora associati o creati al volo dal risponditore.
+    # Nome fisico colonna invariato ("locale_id") per non migrare i DB esistenti.
+    societa_id = Column("locale_id", Integer, ForeignKey("locali.id"), nullable=True, index=True)
+    is_primario = Column(Boolean, default=False)   # referente principale della società
 
-    condominio = relationship("Condominio", back_populates="inquilini")
+    societa = relationship("Societa", back_populates="contatti")
+
     messaggi = relationship(
         "MessaggioChat",
-        back_populates="inquilino",
+        back_populates="contatto",
         cascade="all, delete-orphan",
         order_by="MessaggioChat.timestamp",
     )
     chiamate = relationship(
         "ChiamataVoce",
-        back_populates="inquilino",
+        back_populates="contatto",
         cascade="all, delete-orphan",
         order_by="ChiamataVoce.iniziata_at.desc()",
     )
-    invii = relationship(
-        "InvioDocumentoEmail",
-        back_populates="inquilino",
-        cascade="all, delete-orphan",
-    )
     ticket = relationship(
         "Ticket",
-        back_populates="inquilino",
+        back_populates="contatto",
         cascade="all, delete-orphan",
+        order_by="Ticket.created_at.desc()",
     )
+
+    @property
+    def nome_completo(self) -> str:
+        n = f"{self.nome or ''} {self.cognome or ''}".strip()
+        return n or (self.ragione_sociale or "Contatto senza nome")
 
 
 class MessaggioChat(Base):
-    """Storia conversazione WhatsApp di un inquilino (per il contesto)."""
+    """Storia conversazione WhatsApp di un contatto (per il contesto)."""
     __tablename__ = "messaggi_chat"
 
     id = Column(Integer, primary_key=True, index=True)
-    inquilino_id = Column(Integer, ForeignKey("inquilini.id"), nullable=False)
-    direzione = Column(Enum(DirezioneMessaggio), nullable=False)   # IN = dal condomino, OUT = assistente
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False)
+    direzione = Column(Enum(DirezioneMessaggio), nullable=False)   # IN = dal contatto, OUT = assistente
     testo = Column(Text, nullable=False)
     traccia = Column(Text, nullable=True)   # JSON: chiamate LLM (fase, input, output) del turno (sulle OUT)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-    inquilino = relationship("Inquilino", back_populates="messaggi")
+    contatto = relationship("Contatto", back_populates="messaggi")
 
 
 class ChiamataVoce(Base):
@@ -142,46 +169,32 @@ class ChiamataVoce(Base):
     __tablename__ = "chiamate_voce"
 
     id = Column(Integer, primary_key=True, index=True)
-    inquilino_id = Column(Integer, ForeignKey("inquilini.id"), nullable=False)
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False)
     telefono = Column(String(30))
     iniziata_at = Column(DateTime, default=datetime.utcnow)
     durata_sec = Column(Integer, nullable=True)
     trascrizione = Column(Text, nullable=True)   # dialogo completo
     riassunto = Column(Text, nullable=True)       # riassunto generato dall'LLM
 
-    inquilino = relationship("Inquilino", back_populates="chiamate")
-
-
-class InvioDocumentoEmail(Base):
-    """Storico dei documenti inviati via email a un inquilino (per non rioffrirli)."""
-    __tablename__ = "invii_documento_email"
-
-    id = Column(Integer, primary_key=True, index=True)
-    inquilino_id = Column(Integer, ForeignKey("inquilini.id"), nullable=False)
-    documento_id = Column(Integer, index=True, nullable=False)   # no FK: lo storico resta anche se il doc viene rimosso
-    email = Column(String(150))
-    inviato_at = Column(DateTime, default=datetime.utcnow)
-
-    inquilino = relationship("Inquilino", back_populates="invii")
+    contatto = relationship("Contatto", back_populates="chiamate")
 
 
 class Ticket(Base):
-    """Segnalazione aperta dall'assistente (voce/WhatsApp) quando non sa rispondere
-    o il condomino si lamenta. Visibile in dashboard finché è aperta."""
+    """Segnalazione / scheda di follow-up aperta dall'assistente (voce/WhatsApp) o a mano.
+    Per ogni lead gestito si apre un ticket con titolo riassuntivo, priorità e trascrizione."""
     __tablename__ = "ticket"
 
     id = Column(Integer, primary_key=True, index=True)
-    condominio_id = Column(Integer, ForeignKey("condomini.id"), nullable=True)
-    inquilino_id = Column(Integer, ForeignKey("inquilini.id"), nullable=True)
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=True)
     canale = Column(String(20))                    # whatsapp | voce | dashboard
     titolo = Column(String(300), nullable=False)
-    descrizione = Column(Text, nullable=True)
+    priorita = Column(Enum(PrioritaTicket), nullable=True, index=True)
+    descrizione = Column(Text, nullable=True)      # sintesi della richiesta
     storia = Column(Text, nullable=True)           # storia chat / trascrizione chiamata
     stato = Column(Enum(StatoTicket), default=StatoTicket.APERTO, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
-    condominio = relationship("Condominio", back_populates="ticket")
-    inquilino = relationship("Inquilino", back_populates="ticket")
+    contatto = relationship("Contatto", back_populates="ticket")
     risposte = relationship(
         "RispostaTicket",
         back_populates="ticket",
@@ -191,17 +204,141 @@ class Ticket(Base):
 
 
 class RispostaTicket(Base):
-    """Risposta dell'amministratore a un ticket (thread)."""
+    """Risposta dell'operatore a un ticket (thread)."""
     __tablename__ = "risposte_ticket"
 
     id = Column(Integer, primary_key=True, index=True)
     ticket_id = Column(Integer, ForeignKey("ticket.id"), nullable=False)
     testo = Column(Text, nullable=False)
-    inviata_email = Column(Boolean, default=False)   # inoltrata al condomino via email?
+    inviata_email = Column(Boolean, default=False)   # inoltrata al contatto via email?
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ticket = relationship("Ticket", back_populates="risposte")
 
+
+# ---------- HORECA: agenti, locali, ordini ----------
+
+class Agente(Base):
+    """Agente di commercio: gestisce un portafoglio di Locali e può inserire ordini
+    per loro conto. L'ordine può essere attribuito a un agente per la provvigione."""
+    __tablename__ = "agenti"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100))
+    cognome = Column(String(100))
+    telefono = Column(String(30))
+    email = Column(String(150))
+    zona = Column(String(150))                          # area di competenza
+    percentuale_provvigione = Column(Float, nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    societa = relationship("Societa", back_populates="agente_referente")
+    ordini = relationship("Ordine", back_populates="agente")
+
+    @property
+    def nome_completo(self) -> str:
+        n = f"{self.nome or ''} {self.cognome or ''}".strip()
+        return n or "Agente senza nome"
+
+
+class Societa(Base):
+    """Il cliente HORECA: la società/locale (ristorante, bar, hotel...) che ordina e consuma.
+    Entità aggregante: ha più contatti (persone) e più ordini. Lo stato commerciale
+    (prospect/cliente) vive QUI, non sulla singola persona.
+
+    Tabella fisica "locali" (invariata) per non migrare i DB esistenti."""
+    __tablename__ = "locali"
+
+    id = Column(Integer, primary_key=True, index=True)
+    insegna = Column(String(200), nullable=False)       # nome (es. "Trattoria da Gino")
+    ragione_sociale = Column(String(200))               # ragione sociale / P.IVA holder
+    tipo = Column(Enum(TipoAttivita), default=TipoAttivita.RISTORANTE, nullable=False)
+    piva = Column(String(20))
+    indirizzo = Column(String(300))
+    citta = Column(String(120), index=True)
+    stato_relazione = Column(Enum(StatoRelazione), default=StatoRelazione.PROSPECT, nullable=False, index=True)
+    agente_referente_id = Column(Integer, ForeignKey("agenti.id"), nullable=True, index=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    agente_referente = relationship("Agente", back_populates="societa")
+    contatti = relationship(
+        "Contatto",
+        back_populates="societa",
+        order_by="Contatto.is_primario.desc()",
+    )
+    ordini = relationship(
+        "Ordine",
+        back_populates="societa",
+        cascade="all, delete-orphan",
+        order_by="Ordine.data.desc()",
+    )
+
+    @property
+    def nome(self) -> str:
+        return self.insegna or self.ragione_sociale or "Società senza nome"
+
+
+class Ordine(Base):
+    """Ordine di una Società. È ancorato alla SOCIETÀ; la persona (contatto) e l'agente
+    sono il 'chi/come'. Così ordini della stessa società da agente o da cliente diretto
+    convergono sulla stessa scheda."""
+    __tablename__ = "ordini"
+
+    id = Column(Integer, primary_key=True, index=True)
+    societa_id = Column("locale_id", Integer, ForeignKey("locali.id"), nullable=False, index=True)
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=True)   # persona che ha ordinato
+    agente_id = Column(Integer, ForeignKey("agenti.id"), nullable=True)       # agente (inserimento e/o attribuzione)
+    origine = Column(Enum(OrigineOrdine), default=OrigineOrdine.CLIENTE, nullable=False)
+    canale = Column(Enum(CanaleOrdine), default=CanaleOrdine.MANUALE, nullable=False)
+    stato = Column(Enum(StatoOrdine), default=StatoOrdine.BOZZA, nullable=False, index=True)
+    data = Column(DateTime, default=datetime.utcnow, index=True)
+    note = Column(Text, nullable=True)
+    # Contesto/motivazione fornita dall'agente quando ordina per conto del cliente.
+    # Opzionale in generale, obbligatorio (lato GUI) quando origine = AGENTE.
+    descrizione_agente = Column(Text, nullable=True)
+
+    societa = relationship("Societa", back_populates="ordini")
+    contatto = relationship("Contatto")
+    agente = relationship("Agente", back_populates="ordini")
+    righe = relationship(
+        "RigaOrdine",
+        back_populates="ordine",
+        cascade="all, delete-orphan",
+        order_by="RigaOrdine.id",
+    )
+
+    @property
+    def totale(self) -> float:
+        return round(sum((r.subtotale or 0) for r in self.righe), 2)
+
+    @property
+    def n_articoli(self) -> int:
+        return len(self.righe)
+
+
+class RigaOrdine(Base):
+    """Riga di un ordine: prodotto/descrizione + quantità + prezzo."""
+    __tablename__ = "righe_ordine"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ordine_id = Column(Integer, ForeignKey("ordini.id"), nullable=False)
+    descrizione = Column(String(400), nullable=False)   # nome prodotto / descrizione libera
+    quantita = Column(Float, default=1)
+    unita = Column(String(30))                          # pz, kg, casse, bottiglie...
+    prezzo_unitario = Column(Float, nullable=True)
+
+    ordine = relationship("Ordine", back_populates="righe")
+
+    @property
+    def subtotale(self) -> float | None:
+        if self.prezzo_unitario is None:
+            return None
+        return round((self.quantita or 0) * self.prezzo_unitario, 2)
+
+
+# ---------- Documenti (parcheggiati: base di conoscenza per riuso futuro) ----------
 
 class StatoDocumento(str, enum.Enum):
     PROCESSING = "processing"     # ingestion in corso
@@ -214,8 +351,8 @@ class Documento(Base):
     __tablename__ = "documenti"
 
     id = Column(Integer, primary_key=True, index=True)
-    condominio_id = Column(Integer, ForeignKey("condomini.id"), nullable=False)
-    categoria = Column(String(40), nullable=False)   # chiave: verbali, bilanci, regolamento, ...
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True)
+    categoria = Column(String(40), nullable=False)   # listino, schede_prodotto, contratti, faq, altro
     anno = Column(Integer, nullable=True, index=True) # anno di riferimento (per la catalogazione)
     nome_file = Column(String(300), nullable=False)  # nome originale del file
     percorso = Column(String(500), nullable=False)   # path su disco (PDF originale, sempre conservato)
@@ -226,7 +363,6 @@ class Documento(Base):
     indice_raw = Column(Text, nullable=True)         # output grezzo del sezionatore (per ispezione / needs_review)
     caricato_at = Column(DateTime, default=datetime.utcnow)
 
-    condominio = relationship("Condominio", back_populates="documenti")
     sezioni = relationship(
         "Sezione",
         back_populates="documento",
@@ -251,6 +387,22 @@ class Sezione(Base):
     documento = relationship("Documento", back_populates="sezioni")
 
 
+class TestoCategoria(Base):
+    """Testo libero che l'amministratore associa a una categoria di documenti.
+
+    Accompagna i documenti caricati (listini, FAQ, contratti…): note, precisazioni,
+    risposte tipo. Una sola riga per categoria. Il risponditore (in futuro) lo
+    consulterà insieme ai documenti indicizzati per rispondere all'utente.
+    """
+    __tablename__ = "testi_categoria"
+
+    id = Column(Integer, primary_key=True, index=True)
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True)
+    categoria = Column(String(40), nullable=False, unique=True, index=True)
+    testo = Column(Text, nullable=True)
+    aggiornato_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ---------- Helpers ----------
 
 def get_db():
@@ -262,6 +414,36 @@ def get_db():
         db.close()
 
 
+# Colonne aggiunte a tabelle preesistenti: create_all NON le aggiunge ai DB già creati,
+# quindi le applichiamo a mano (ALTER TABLE) all'avvio. (table, colonna, DDL).
+_MIGRAZIONI_COLONNE = [
+    ("contatti", "locale_id", "INTEGER"),
+    ("contatti", "is_primario", "BOOLEAN DEFAULT 0"),
+    ("ordini", "descrizione_agente", "TEXT"),
+]
+
+
+def _migra_colonne(engine):
+    """Aggiunge a SQLite le colonne mancanti su tabelle già esistenti (migrazione leggera)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    tabelle = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for tabella, colonna, ddl in _MIGRAZIONI_COLONNE:
+            if tabella not in tabelle:
+                continue
+            esistenti = {c["name"] for c in insp.get_columns(tabella)}
+            if colonna not in esistenti:
+                conn.execute(text(f"ALTER TABLE {tabella} ADD COLUMN {colonna} {ddl}"))
+
+
 def init_db():
-    """Crea tutte le tabelle."""
+    """Crea tutte le tabelle e applica le migrazioni leggere di colonna."""
+    # Assicura che la cartella del DB SQLite esista (es. ./data).
+    if DATABASE_URL.startswith("sqlite:///"):
+        path = DATABASE_URL.replace("sqlite:///", "", 1)
+        cartella = os.path.dirname(path)
+        if cartella:
+            os.makedirs(cartella, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    _migra_colonne(engine)

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Società{% endblock %}
+{% block content %}
+
+{% set tipo_icona = {'ristorante':'bi-shop','pizzeria':'bi-fire','bar':'bi-cup-straw','hotel':'bi-building','gastronomia':'bi-basket','altro':'bi-shop'} %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0"><i class="bi bi-shop"></i> Società</h4>
+        <small class="text-muted">{{ societa|length }} società HORECA (clienti e prospect)</small>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuovaSocieta">
+        <i class="bi bi-plus-lg"></i> Nuova società
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <form method="get" action="/societa" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <input type="text" name="q" class="form-control form-control-sm"
+                       placeholder="Cerca per insegna, ragione sociale o città..." value="{{ query }}">
+            </div>
+            <div class="col-md-3">
+                <select name="stato" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Tutti gli stati</option>
+                    {% for s in stati %}<option value="{{ s.value }}" {% if stato==s.value %}selected{% endif %}>{{ s.value }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="agente" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Tutti gli agenti</option>
+                    {% for a in agenti %}<option value="{{ a.id }}" {% if agente==a.id|string %}selected{% endif %}>{{ a.nome_completo }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-sm btn-outline-primary w-100"><i class="bi bi-search"></i></button>
+            </div>
+        </form>
+    </div>
+    <div class="card-body p-0">
+        {% if societa %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Società</th><th>Tipo</th><th>Città</th><th>Agente</th>
+                        <th class="text-center">Contatti</th><th class="text-center">Ordini</th>
+                        <th class="text-center">Stato</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in societa %}
+                    <tr style="cursor:pointer" onclick="location.href='/societa/{{ s.id }}'">
+                        <td class="fw-semibold"><i class="bi {{ tipo_icona.get(s.tipo.value,'bi-shop') }} text-primary"></i> {{ s.nome }}</td>
+                        <td class="text-capitalize">{{ s.tipo.value }}</td>
+                        <td>{{ s.citta or "—" }}</td>
+                        <td>{{ s.agente_referente.nome_completo if s.agente_referente else "—" }}</td>
+                        <td class="text-center">{{ s.contatti|length }}</td>
+                        <td class="text-center">{{ s.ordini|length }}</td>
+                        <td class="text-center">
+                            {% if s.stato_relazione.value == 'cliente' %}<span class="badge bg-success">cliente</span>
+                            {% elif s.stato_relazione.value == 'inattivo' %}<span class="badge bg-secondary">inattivo</span>
+                            {% else %}<span class="badge bg-warning text-dark">prospect</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-shop fs-1"></i>
+            <p class="mt-2">Nessuna società. Creane una o lascia che il risponditore le crei dalle conversazioni.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal nuova società -->
+<div class="modal fade" id="modalNuovaSocieta" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/societa">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-shop"></i> Nuova società</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body row g-3">
+                    <div class="col-md-7">
+                        <label class="form-label">Insegna *</label>
+                        <input type="text" name="insegna" class="form-control" required placeholder="Es. Trattoria da Gino">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Tipo attività</label>
+                        <select name="tipo" class="form-select">
+                            {% for t in tipi %}<option value="{{ t.value }}" class="text-capitalize">{{ t.value }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label">Ragione sociale</label>
+                        <input type="text" name="ragione_sociale" class="form-control">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">P. IVA</label>
+                        <input type="text" name="piva" class="form-control">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Indirizzo</label>
+                        <input type="text" name="indirizzo" class="form-control">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Città</label>
+                        <input type="text" name="citta" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Stato relazione</label>
+                        <select name="stato_relazione" class="form-select">
+                            {% for s in stati %}<option value="{{ s.value }}">{{ s.value }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Agente di riferimento</label>
+                        <select name="agente_referente_id" class="form-select">
+                            <option value="">—</option>
+                            {% for a in agenti %}<option value="{{ a.id }}">{{ a.nome_completo }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Note</label>
+                        <textarea name="note" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Crea società</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

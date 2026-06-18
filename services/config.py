@@ -19,6 +19,7 @@ ENV_PATH = os.getenv("ENV_FILE", os.path.join(
 CHIAVI = [
     "AGENTE_MODEL",
     "AGENTE_EFFORT",
+    "OPENAI_REALTIME_VOICE",
     "GMAIL_FROM",
     "GMAIL_APP_PASSWORD",
     "OPENAI_API_KEY",
@@ -32,9 +33,13 @@ CHIAVI = [
 DEFAULTS = {
     "AGENTE_MODEL": "gpt-5-mini",
     "AGENTE_EFFORT": "medium",
+    "OPENAI_REALTIME_VOICE": "alloy",
 }
 
 EFFORT_VALIDI = ["minimal", "low", "medium", "high"]
+
+# Voci disponibili per l'assistente vocale (gpt Realtime).
+VOCI_VALIDE = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"]
 
 # Chiavi il cui valore è segreto (mascherato nelle stampe / input password).
 SEGRETE = {
@@ -100,11 +105,9 @@ def aggiorna(updates: dict) -> None:
 def _applica_live(updates: dict) -> None:
     """Aggiorna i valori già cacheati nei moduli importati (best-effort)."""
     try:
-        from services import agente
-        if "AGENTE_MODEL" in updates and updates["AGENTE_MODEL"]:
-            agente.MODEL = updates["AGENTE_MODEL"]
-        if "AGENTE_EFFORT" in updates and updates["AGENTE_EFFORT"]:
-            agente.EFFORT = updates["AGENTE_EFFORT"]
+        from routers import voice
+        if "OPENAI_REALTIME_VOICE" in updates and updates["OPENAI_REALTIME_VOICE"]:
+            voice.REALTIME_VOICE = updates["OPENAI_REALTIME_VOICE"]
     except Exception:
         pass
     try:

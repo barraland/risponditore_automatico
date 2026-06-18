@@ -56,36 +56,16 @@
 </div>
 
 <form method="post" action="/impostazioni">
-    <!-- Istruzioni in linguaggio naturale per l'assistente -->
-    <div class="card mb-4 border-primary">
-        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-chat-left-text"></i> Istruzioni per l'assistente</h6></div>
-        <div class="card-body">
-            <p class="text-muted small mb-2">
-                Scrivi qui, in linguaggio naturale, come vuoi che l'assistente si comporti con i condòmini:
-                tono, priorità, cosa dire o non dire, quando aprire una segnalazione, ecc.
-                Queste indicazioni vengono passate a <strong>tutti</strong> i motori (ricerca documenti,
-                WhatsApp e voce) e si applicano <strong>a runtime</strong> (nessun riavvio).
-            </p>
-            <textarea class="form-control" name="ISTRUZIONI_ASSISTENTE" rows="6"
-                      spellcheck="false"
-                      placeholder="Es: Usa sempre un tono molto formale e dai del lei. Per domande sui pagamenti, ricorda l'IBAN del condominio. Se un condomino è arrabbiato, apri subito una segnalazione e rassicuralo che l'amministratore lo richiamerà entro 48 ore.">{{ istruzioni }}</textarea>
-            <div class="form-text">
-                <i class="bi bi-shield-check"></i> L'assistente sa che questo testo viene dall'amministratore
-                (non dal condomino) e che resta vincolato a non inventare dati né rivelare informazioni riservate.
-            </div>
-        </div>
-    </div>
-
-    <!-- Motore di risposta (retriever) -->
+    <!-- Motore documenti (parcheggiato) -->
     <div class="card mb-4">
-        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-robot"></i> Motore di risposta (retriever)</h6></div>
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-robot"></i> Motore documenti (parcheggiato)</h6></div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Modello LLM</label>
                     <input type="text" class="form-control" name="AGENTE_MODEL" value="{{ valori['AGENTE_MODEL'] }}"
                            autocomplete="off" spellcheck="false" placeholder="gpt-5-mini">
-                    <div class="form-text">Modello usato dal risponditore (pianificatore, sezioni, risposta finale). <code>AGENTE_MODEL</code></div>
+                    <div class="form-text">Modello del motore di ricerca documenti (non usato dal risponditore lead). <code>AGENTE_MODEL</code></div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Reasoning effort</label>
@@ -115,6 +95,15 @@
         <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-cpu"></i> OpenAI</h6></div>
         <div class="card-body">
             {{ campo("OPENAI_API_KEY", "OpenAI API Key", "Usata da ricerca documenti, riformulazione, riassunti e voce Realtime.", true) }}
+            <div class="mb-1">
+                <label class="form-label">Voce assistente telefonico (Realtime)</label>
+                <select class="form-select" name="OPENAI_REALTIME_VOICE">
+                    {% for v in voci_valide %}
+                    <option value="{{ v }}" {{ 'selected' if valori['OPENAI_REALTIME_VOICE'] == v else '' }}>{{ v }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Voce usata dall'assistente vocale (gpt Realtime). Si applica alle nuove chiamate. <code>OPENAI_REALTIME_VOICE</code></div>
+            </div>
         </div>
     </div>
 

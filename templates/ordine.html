@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Ordine #{{ o.id }}{% endblock %}
+{% block content %}
+
+<div class="mb-3"><a href="/societa/{{ o.societa_id }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> {{ o.societa.nome }}</a></div>
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-bag-check text-primary"></i> Ordine #{{ o.id }}</h4>
+        <span class="text-muted">
+            <a href="/societa/{{ o.societa_id }}" class="text-decoration-none">{{ o.societa.nome }}</a>
+            · {{ o.data.strftime('%d/%m/%Y %H:%M') if o.data else '' }}
+            · <span class="badge bg-light text-dark">{{ o.canale.value }}</span>
+        </span>
+    </div>
+    <div class="text-end">
+        {% if o.stato.value == 'confermato' %}<span class="badge bg-success fs-6">confermato</span>
+        {% elif o.stato.value == 'evaso' %}<span class="badge bg-primary fs-6">evaso</span>
+        {% elif o.stato.value == 'annullato' %}<span class="badge bg-secondary fs-6">annullato</span>
+        {% else %}<span class="badge bg-warning text-dark fs-6">bozza</span>{% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-list-ul"></i> Righe</h6></div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light"><tr><th>Prodotto</th><th class="text-end">Qtà</th><th>Unità</th><th class="text-end">Prezzo</th><th class="text-end">Subtotale</th></tr></thead>
+                    <tbody>
+                        {% for r in o.righe %}
+                        <tr>
+                            <td>{{ r.descrizione }}</td>
+                            <td class="text-end">{{ '%g'|format(r.quantita or 0) }}</td>
+                            <td>{{ r.unita or "—" }}</td>
+                            <td class="text-end">{% if r.prezzo_unitario is not none %}€ {{ '%.2f'|format(r.prezzo_unitario) }}{% else %}—{% endif %}</td>
+                            <td class="text-end">{% if r.subtotale is not none %}€ {{ '%.2f'|format(r.subtotale) }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% else %}<tr><td colspan="5" class="text-muted">Nessuna riga.</td></tr>{% endfor %}
+                    </tbody>
+                    <tfoot class="table-light"><tr><th colspan="4" class="text-end">Totale</th><th class="text-end">€ {{ '%.2f'|format(o.totale) }}</th></tr></tfoot>
+                </table>
+            </div>
+        </div>
+        {% if o.note %}<div class="card mt-3"><div class="card-body small"><span class="text-muted">Note:</span> {{ o.note }}</div></div>{% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-body small">
+                <div class="mb-2"><span class="text-muted">Origine</span><br><span class="text-capitalize">{{ o.origine.value }}</span></div>
+                <div class="mb-2"><span class="text-muted">Referente</span><br>
+                    {% if o.contatto %}<a href="/contatti/{{ o.contatto.id }}">{{ o.contatto.nome_completo }}</a>{% else %}—{% endif %}</div>
+                <div class="mb-2"><span class="text-muted">Agente</span><br>
+                    {% if o.agente %}<a href="/agenti/{{ o.agente.id }}">{{ o.agente.nome_completo }}</a>{% else %}—{% endif %}</div>
+                {% if o.descrizione_agente %}
+                <div class="mb-0"><span class="text-muted">Descrizione dell'agente</span><br>{{ o.descrizione_agente }}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header bg-white"><h6 class="mb-0">Stato ordine</h6></div>
+            <div class="card-body">
+                <form method="post" action="/ordini/{{ o.id }}/stato" class="d-flex gap-2">
+                    <select name="stato" class="form-select form-select-sm">
+                        {% for s in stati %}<option value="{{ s.value }}" {% if o.stato==s %}selected{% endif %}>{{ s.value }}</option>{% endfor %}
+                    </select>
+                    <button class="btn btn-sm btn-primary">Aggiorna</button>
+                </form>
+                <form method="post" action="/ordini/{{ o.id }}/elimina" class="mt-2" onsubmit="return confirm('Eliminare l\'ordine #{{ o.id }}?');">
+                    <button class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-trash"></i> Elimina ordine</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

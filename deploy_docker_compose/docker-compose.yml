@@ -2,8 +2,8 @@ services:
   # ---------- Applicazione FastAPI (assistente condominio) ----------
   app:
     # NB: usa l'immagine già pronta (caricata con `docker load`), NON ricostruisce nulla
-    image: risponditore-condominio-app:latest
-    container_name: condominio-app
+    image: risponditore-automatico-app:latest
+    container_name: automatico-app
     restart: unless-stopped
     env_file:
       - .env
@@ -11,7 +11,7 @@ services:
       APP_HOST: "0.0.0.0"
       APP_PORT: "9999"
       # DB SQLite e documenti caricati: persistiti sul volume ./data
-      DATABASE_URL: "sqlite:////app/data/condominio.db"
+      DATABASE_URL: "sqlite:////app/data/assistente.db"
       DOCUMENTI_DIR: "/app/data/documenti"
     volumes:
       - ./data:/app/data
@@ -21,7 +21,7 @@ services:
   # ---------- Tunnel ngrok (rende l'endpoint raggiungibile da WhatsApp / Twilio) ----------
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: condominio-ngrok
+    container_name: automatico-ngrok
     restart: unless-stopped
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}

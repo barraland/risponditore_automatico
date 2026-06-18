@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}{{ contatto.nome_completo }}{% endblock %}
+
+{% block content %}
+
+<div class="mb-3">
+    <a href="/contatti" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Tutti i contatti
+    </a>
+</div>
+
+{% if msg %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i> {{ msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if err %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ err }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h4 class="mb-1">
+            <i class="bi bi-person-circle"></i> {{ contatto.nome_completo }}
+            {% if contatto.stato.value == 'cliente' %}
+            <span class="badge bg-success align-middle">cliente</span>
+            {% else %}
+            <span class="badge bg-warning text-dark align-middle">prospect</span>
+            {% endif %}
+        </h4>
+        <span class="text-muted">
+            {% if contatto.societa %}<i class="bi bi-shop"></i> <a href="/societa/{{ contatto.societa.id }}" class="text-decoration-none">{{ contatto.societa.nome }}</a>{% endif %}{% if contatto.ruolo %} · {{ contatto.ruolo }}{% endif %}
+        </span>
+    </div>
+    <form method="post" action="/contatti/{{ contatto.id }}/elimina"
+          onsubmit="return confirm('Eliminare questo contatto e tutta la sua storia?');">
+        <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Elimina</button>
+    </form>
+</div>
+
+<div class="row g-4">
+    <!-- Anagrafica -->
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-info-circle"></i> Anagrafica</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/contatti/{{ contatto.id }}">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nome</label>
+                            <input type="text" name="nome" class="form-control" value="{{ contatto.nome or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Cognome</label>
+                            <input type="text" name="cognome" class="form-control" value="{{ contatto.cognome or '' }}">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Società</label>
+                            <select name="societa_id" class="form-select">
+                                <option value="">— nessuna —</option>
+                                {% for s in societa %}<option value="{{ s.id }}" {% if contatto.societa_id==s.id %}selected{% endif %}>{{ s.nome }}{% if s.citta %} ({{ s.citta }}){% endif %}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Ruolo</label>
+                            <input type="text" name="ruolo" class="form-control" value="{{ contatto.ruolo or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="email" class="form-control" value="{{ contatto.email or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telefono</label>
+                            <input type="text" name="telefono" class="form-control" value="{{ contatto.telefono or '' }}">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Sede</label>
+                            <input type="text" name="sede" class="form-control" value="{{ contatto.sede or '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Stato</label>
+                            <select name="stato" class="form-select">
+                                {% for s in stati %}
+                                <option value="{{ s.value }}" {{ 'selected' if contatto.stato == s else '' }}>{{ s.value }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Note</label>
+                            <textarea name="note" class="form-control" rows="2">{{ contatto.note or '' }}</textarea>
+                        </div>
+                    </div>
+                    <div class="text-end mt-3">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salva anagrafica</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Ticket del contatto -->
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-ticket-detailed"></i> Ticket di follow-up</h6>
+                <span class="badge bg-secondary">{{ contatto.ticket|length }}</span>
+            </div>
+            <div class="card-body p-0">
+                {% if contatto.ticket %}
+                <ul class="list-group list-group-flush">
+                    {% for t in contatto.ticket %}
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <span>
+                                {% if t.stato.value == 'aperto' %}<span class="badge bg-danger">aperto</span>
+                                {% else %}<span class="badge bg-secondary">chiuso</span>{% endif %}
+                                {% if t.priorita %}
+                                {% set p = t.priorita.value %}
+                                <span class="badge {{ 'bg-danger' if p=='alta' else ('bg-warning text-dark' if p=='media' else 'bg-info text-dark') }}">{{ p }}</span>
+                                {% endif %}
+                                <a href="/ticket?tutti=1#t{{ t.id }}" class="text-decoration-none">#{{ t.id }} {{ t.titolo }}</a>
+                            </span>
+                            <span class="text-muted small">{{ t.created_at.strftime('%d/%m %H:%M') if t.created_at else '' }}</span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-3 text-muted small">Nessun ticket per questo contatto.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Storico interazioni -->
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-chat-dots"></i> Conversazione WhatsApp</h6>
+                <a href="/contatti/{{ contatto.id }}/chiamate" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-telephone"></i> Telefonate
+                    {% if contatto.chiamate %}<span class="badge bg-success">{{ contatto.chiamate|length }}</span>{% endif %}
+                </a>
+            </div>
+            <div class="card-body" style="max-height:70vh; overflow:auto;">
+                {% if messaggi %}
+                {% for item in messaggi %}
+                {% set m = item.m %}
+                {% if m.direzione.value == 'IN' %}
+                <div class="d-flex justify-content-start mb-2">
+                    <div class="bg-light border rounded px-3 py-2" style="max-width:85%;">
+                        {{ m.testo|replace('\n','<br>')|safe }}
+                        <div class="text-muted" style="font-size:.7rem;">{{ m.timestamp.strftime('%d/%m %H:%M') if m.timestamp else '' }}</div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="d-flex justify-content-end mb-2">
+                    <div class="bg-primary text-white rounded px-3 py-2" style="max-width:85%;">
+                        {{ m.testo|replace('\n','<br>')|safe }}
+                        <div class="opacity-75" style="font-size:.7rem;">{{ m.timestamp.strftime('%d/%m %H:%M') if m.timestamp else '' }}</div>
+                        {% if item.traccia %}
+                        <details class="mt-1">
+                            <summary class="small" style="cursor:pointer;">Dietro le quinte</summary>
+                            {% for fase in item.traccia %}
+                            <div class="bg-white text-dark rounded p-2 mt-1 small">
+                                <div class="fw-semibold">{{ fase.fase }} <span class="text-muted">({{ fase.modello }})</span></div>
+                                {% if fase.input %}<pre class="mb-1" style="white-space:pre-wrap;">{{ fase.input }}</pre>{% endif %}
+                                {% if fase.output %}<pre class="mb-0 text-success" style="white-space:pre-wrap;">{{ fase.output }}</pre>{% endif %}
+                            </div>
+                            {% endfor %}
+                        </details>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-chat-square-dots fs-3"></i>
+                    <p class="mt-2 mb-0 small">Nessun messaggio WhatsApp.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

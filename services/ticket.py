@@ -1,17 +1,29 @@
 """Gestione ticket / segnalazioni.
 
-L'assistente (voce o WhatsApp) apre un ticket quando non riesce a rispondere
-(dato mancante) o quando il condomino si lamenta / insiste. I ticket aperti
-sono visibili in dashboard, in vista trasversale su tutti i condomìni.
+Il risponditore (voce o WhatsApp) apre un ticket per ogni lead gestito: una scheda di
+follow-up con titolo riassuntivo, priorità (alta/media/bassa) e trascrizione della
+conversazione. I ticket aperti sono visibili in dashboard.
 """
 
 import logging
 
 from sqlalchemy.orm import Session
 
-from database import Ticket, StatoTicket
+from database import Ticket, StatoTicket, PrioritaTicket
 
 logger = logging.getLogger(__name__)
+
+
+def normalizza_priorita(valore) -> PrioritaTicket | None:
+    """Converte una stringa ('alta'/'media'/'bassa', case-insensitive) in PrioritaTicket."""
+    if isinstance(valore, PrioritaTicket):
+        return valore
+    if not valore:
+        return None
+    try:
+        return PrioritaTicket(str(valore).strip().lower())
+    except ValueError:
+        return None
 
 
 def formatta_storia(turni) -> str:
@@ -29,15 +41,15 @@ def formatta_storia(turni) -> str:
     return "\n".join(righe)
 
 
-def apri_ticket(db: Session, condominio_id, inquilino_id, titolo: str,
+def apri_ticket(db: Session, contatto_id, titolo: str, priorita=None,
                 descrizione: str = "", storia: str = "", canale: str = "") -> Ticket | None:
     """Crea un ticket aperto. Non solleva."""
     try:
         t = Ticket(
-            condominio_id=condominio_id,
-            inquilino_id=inquilino_id,
+            contatto_id=contatto_id,
             canale=canale or None,
             titolo=(titolo or "Segnalazione").strip()[:300],
+            priorita=normalizza_priorita(priorita),
             descrizione=(descrizione or "").strip() or None,
             storia=(storia or "").strip() or None,
             stato=StatoTicket.APERTO,
@@ -45,7 +57,8 @@ def apri_ticket(db: Session, condominio_id, inquilino_id, titolo: str,
         db.add(t)
         db.commit()
         db.refresh(t)
-        logger.info("Ticket #%s aperto (cond=%s, inq=%s, canale=%s)", t.id, condominio_id, inquilino_id, canale)
+        logger.info("Ticket #%s aperto (contatto=%s, priorità=%s, canale=%s)",
+                    t.id, contatto_id, t.priorita.value if t.priorita else "-", canale)
         return t
     except Exception as e:
         logger.error("Apertura ticket fallita: %s", e)

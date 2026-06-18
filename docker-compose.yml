@@ -12,7 +12,7 @@ services:
       APP_HOST: "0.0.0.0"
       APP_PORT: "9999"
       # DB SQLite e documenti caricati su volume persistente (./data)
-      DATABASE_URL: "sqlite:////app/data/condominio.db"
+      DATABASE_URL: "sqlite:////app/data/assistente.db"
       DOCUMENTI_DIR: "/app/data/documenti"
     volumes:
       - ./data:/app/data

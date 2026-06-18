@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ ag.nome_completo }}{% endblock %}
+{% block content %}
+
+{% if msg %}<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle"></i> {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>{% endif %}
+
+<div class="mb-3"><a href="/agenti" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Agenti</a></div>
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-person-badge text-primary"></i> {{ ag.nome_completo }}</h4>
+        <span class="text-muted">{{ ag.zona or "—" }}{% if ag.telefono %} · {{ ag.telefono }}{% endif %}{% if ag.email %} · {{ ag.email }}{% endif %}</span>
+    </div>
+    <div class="text-end">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalMod"><i class="bi bi-pencil"></i> Modifica</button>
+        <form method="post" action="/agenti/{{ ag.id }}/elimina" class="d-inline" onsubmit="return confirm('Eliminare questo agente? Locali e ordini verranno scollegati.');">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-4"><div class="card text-center"><div class="card-body"><div class="text-muted small">Società in portafoglio</div><div class="fs-3 fw-semibold">{{ ag.societa|length }}</div></div></div></div>
+    <div class="col-md-4"><div class="card text-center"><div class="card-body"><div class="text-muted small">Fatturato ordini</div><div class="fs-3 fw-semibold">€ {{ '%.0f'|format(fatturato) }}</div></div></div></div>
+    <div class="col-md-4"><div class="card text-center"><div class="card-body"><div class="text-muted small">Provvigione stimata{% if ag.percentuale_provvigione %} ({{ '%.1f'|format(ag.percentuale_provvigione) }}%){% endif %}</div><div class="fs-3 fw-semibold">€ {{ '%.0f'|format(provvigione) }}</div></div></div></div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-shop"></i> Portafoglio società</h6></div>
+            <ul class="list-group list-group-flush">
+                {% for s in ag.societa %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <a href="/societa/{{ s.id }}" class="text-decoration-none">{{ s.nome }}</a>
+                    {% if s.stato_relazione.value == 'cliente' %}<span class="badge bg-success">cliente</span>{% else %}<span class="badge bg-warning text-dark">prospect</span>{% endif %}
+                </li>
+                {% else %}<li class="list-group-item text-muted small">Nessuna società assegnata.</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-bag"></i> Ordini attribuiti</h6></div>
+            <div class="card-body p-0">
+                {% if ordini %}
+                <table class="table table-hover table-sm mb-0 align-middle">
+                    <thead class="table-light"><tr><th>#</th><th>Società</th><th>Data</th><th class="text-end">Totale</th><th class="text-center">Stato</th></tr></thead>
+                    <tbody>
+                        {% for o in ordini %}
+                        <tr style="cursor:pointer" onclick="location.href='/ordini/{{ o.id }}'">
+                            <td>#{{ o.id }}</td><td>{{ o.societa.nome }}</td><td>{{ o.data.strftime('%d/%m/%Y') if o.data else '' }}</td>
+                            <td class="text-end">€ {{ '%.2f'|format(o.totale) }}</td>
+                            <td class="text-center"><span class="badge bg-light text-dark">{{ o.stato.value }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<p class="text-muted small p-3 mb-0">Nessun ordine attribuito.</p>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalMod" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/agenti/{{ ag.id }}">
+                <div class="modal-header"><h5 class="modal-title">Modifica agente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body row g-3">
+                    <div class="col-6"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control" value="{{ ag.nome or '' }}"></div>
+                    <div class="col-6"><label class="form-label">Cognome</label><input type="text" name="cognome" class="form-control" value="{{ ag.cognome or '' }}"></div>
+                    <div class="col-12"><label class="form-label">Zona</label><input type="text" name="zona" class="form-control" value="{{ ag.zona or '' }}"></div>
+                    <div class="col-6"><label class="form-label">Telefono</label><input type="text" name="telefono" class="form-control" value="{{ ag.telefono or '' }}"></div>
+                    <div class="col-6"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="{{ ag.email or '' }}"></div>
+                    <div class="col-6"><label class="form-label">Provvigione %</label><input type="text" name="percentuale_provvigione" class="form-control" value="{{ ag.percentuale_provvigione or '' }}"></div>
+                    <div class="col-12"><label class="form-label">Note</label><textarea name="note" class="form-control" rows="2">{{ ag.note or '' }}</textarea></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button><button class="btn btn-primary">Salva</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

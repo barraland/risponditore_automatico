@@ -32,31 +32,15 @@ async def verify_webhook(
 
 
 async def _gestisci_messaggio(telefono: str, testo: str):
-    """Processa il messaggio con l'agente WhatsApp e invia la/le risposta/e.
+    """Processa il messaggio con l'agente di lead capture e invia la risposta.
 
-    Due fasi: interpreta() (identifica + riformula + decide), poi — se serve
-    cercare nei documenti — invia un messaggio interlocutorio e infine completa()
-    invoca l'agente risponditore. Sessione DB propria; lavoro LLM nel threadpool.
+    Sessione DB propria; la chiamata LLM (bloccante) gira nel threadpool.
     """
     db = SessionLocal()
     try:
-        res = await run_in_threadpool(whatsapp_agent.interpreta, db, telefono, testo)
-        if res.get("azione") == "cerca":
-            # Messaggio di attesa PRIMA della ricerca (la parte lenta).
-            if res.get("messaggio_attesa"):
-                await invia_messaggio(telefono, res["messaggio_attesa"])
-            out = await run_in_threadpool(
-                whatsapp_agent.completa, db,
-                res["inquilino_id"], res["condominio_id"], res["domanda"], res["traccia"],
-            )
-            if out.get("risposta"):
-                await invia_messaggio(telefono, out["risposta"])
-            # Secondo messaggio: offerta del documento via email (se la risposta è fondata su un doc).
-            if out.get("offerta"):
-                await invia_messaggio(telefono, out["offerta"])
-        else:
-            if res.get("testo"):
-                await invia_messaggio(telefono, res["testo"])
+        out = await run_in_threadpool(whatsapp_agent.gestisci, db, telefono, testo)
+        if out.get("risposta"):
+            await invia_messaggio(telefono, out["risposta"])
     except Exception as e:
         logger.error("Errore gestione messaggio da %s: %s", telefono, e)
     finally:

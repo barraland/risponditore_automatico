@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}{{ soc.nome }}{% endblock %}
+{% block content %}
+
+{% set tipo_icona = {'ristorante':'bi-shop','pizzeria':'bi-fire','bar':'bi-cup-straw','hotel':'bi-building','gastronomia':'bi-basket','altro':'bi-shop'} %}
+
+{% if msg %}
+<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle"></i> {{ msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endif %}
+{% if err %}
+<div class="alert alert-danger alert-dismissible fade show"><i class="bi bi-exclamation-triangle"></i> {{ err }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+{% endif %}
+
+<div class="mb-3"><a href="/societa" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Società</a></div>
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h4 class="mb-1"><i class="bi {{ tipo_icona.get(soc.tipo.value,'bi-shop') }} text-primary"></i> {{ soc.nome }}</h4>
+        <span class="text-muted text-capitalize">{{ soc.tipo.value }}{% if soc.citta %} · {{ soc.citta }}{% endif %}</span>
+        {% if soc.stato_relazione.value == 'cliente' %}<span class="badge bg-success ms-1">cliente</span>
+        {% elif soc.stato_relazione.value == 'inattivo' %}<span class="badge bg-secondary ms-1">inattivo</span>
+        {% else %}<span class="badge bg-warning text-dark ms-1">prospect</span>{% endif %}
+    </div>
+    <div class="text-end">
+        {% if soc.stato_relazione.value != 'cliente' %}
+        <form method="post" action="/societa/{{ soc.id }}/stato" class="d-inline">
+            <input type="hidden" name="stato" value="cliente">
+            <button class="btn btn-sm btn-success"><i class="bi bi-person-check"></i> Promuovi a cliente</button>
+        </form>
+        {% else %}
+        <form method="post" action="/societa/{{ soc.id }}/stato" class="d-inline"
+              onsubmit="return confirm('Riportare la società a prospect?');">
+            <input type="hidden" name="stato" value="prospect">
+            <button class="btn btn-sm btn-outline-warning" title="Riporta a prospect"><i class="bi bi-arrow-counterclockwise"></i> A prospect</button>
+        </form>
+        {% endif %}
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalModifica"><i class="bi bi-pencil"></i> Modifica</button>
+        <form method="post" action="/societa/{{ soc.id }}/elimina" class="d-inline"
+              onsubmit="return confirm('Eliminare {{ soc.nome }}? Gli ordini verranno rimossi, i contatti scollegati.');">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- Colonna sinistra: dati, agente, contatti, nuovo ordine -->
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row small">
+                    <div class="col-6 mb-2"><span class="text-muted">Ragione sociale</span><br>{{ soc.ragione_sociale or "—" }}</div>
+                    <div class="col-6 mb-2"><span class="text-muted">P. IVA</span><br>{{ soc.piva or "—" }}</div>
+                    <div class="col-12 mb-2"><span class="text-muted">Indirizzo</span><br>{{ soc.indirizzo or "—" }}</div>
+                    <div class="col-12 mb-2"><span class="text-muted">Agente di riferimento</span><br>
+                        {% if soc.agente_referente %}<a href="/agenti/{{ soc.agente_referente.id }}"><i class="bi bi-person-badge"></i> {{ soc.agente_referente.nome_completo }}</a>{% else %}—{% endif %}
+                    </div>
+                    {% if soc.note %}<div class="col-12"><span class="text-muted">Note</span><br>{{ soc.note }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Contatti -->
+        <div class="card mb-3">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-people"></i> Referenti ({{ soc.contatti|length }})</h6>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalContatto"><i class="bi bi-person-plus"></i></button>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for c in soc.contatti %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="/contatti/{{ c.id }}" class="text-decoration-none fw-semibold">{{ c.nome_completo }}</a>
+                        {% if c.is_primario %}<span class="badge bg-primary ms-1">principale</span>{% endif %}
+                        <div class="small text-muted">{{ c.ruolo or "—" }}{% if c.telefono %} · {{ c.telefono }}{% endif %}</div>
+                    </div>
+                </li>
+                {% else %}
+                <li class="list-group-item text-muted small">Nessun referente collegato.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Nuovo ordine -->
+        <div class="card">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-bag-plus"></i> Nuovo ordine</h6></div>
+            <div class="card-body">
+                <form method="post" action="/ordini" id="form-ordine">
+                    <input type="hidden" name="societa_id" value="{{ soc.id }}">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small">Inserito da</label>
+                            <select name="origine" id="ord-origine" class="form-select form-select-sm">
+                                <option value="cliente" selected>cliente</option>
+                                <option value="agente">agente (per conto del cliente)</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Referente</label>
+                            <select name="contatto_id" class="form-select form-select-sm">
+                                <option value="">—</option>
+                                {% for c in soc.contatti %}<option value="{{ c.id }}">{{ c.nome_completo }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Agente <span class="text-muted" id="ord-agente-req" style="display:none;">(obbligatorio)</span></label>
+                            <select name="agente_id" id="ord-agente" class="form-select form-select-sm">
+                                <option value="">—</option>
+                                {% for a in agenti %}<option value="{{ a.id }}" {% if soc.agente_referente_id==a.id %}selected{% endif %}>{{ a.nome_completo }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12" id="ord-desc-wrap" style="display:none;">
+                            <label class="form-label small">Descrizione dell'agente <span class="text-muted">(obbligatoria se ordina l'agente)</span></label>
+                            <textarea name="descrizione_agente" id="ord-desc-agente" class="form-control form-control-sm" rows="2"
+                                      placeholder="Es. ordine raccolto in visita del 18/06; cliente conferma consegna giovedì."></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Righe <span class="text-muted">(una per riga: <code>descrizione | qtà | unità | prezzo</code>)</span></label>
+                            <textarea name="righe" class="form-control form-control-sm" rows="4"
+                                      placeholder="Farina 00 | 10 | sacchi | 12.50&#10;Olio EVO | 6 | latte | 45"></textarea>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Stato</label>
+                            <select name="stato" class="form-select form-select-sm">
+                                <option value="confermato" selected>confermato</option>
+                                <option value="bozza">bozza</option>
+                                <option value="evaso">evaso</option>
+                            </select>
+                        </div>
+                        <div class="col-6 d-flex align-items-end">
+                            <button class="btn btn-sm btn-primary w-100"><i class="bi bi-check-lg"></i> Crea ordine</button>
+                        </div>
+                    </div>
+                </form>
+                <script>
+                (function () {
+                    var orig = document.getElementById('ord-origine');
+                    function toggle() {
+                        var ag = orig.value === 'agente';
+                        document.getElementById('ord-desc-wrap').style.display = ag ? '' : 'none';
+                        document.getElementById('ord-agente-req').style.display = ag ? '' : 'none';
+                        document.getElementById('ord-desc-agente').required = ag;
+                        document.getElementById('ord-agente').required = ag;
+                    }
+                    orig.addEventListener('change', toggle); toggle();
+                })();
+                </script>
+            </div>
+        </div>
+    </div>
+
+    <!-- Colonna destra: timeline omnicanale -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-clock-history"></i> Timeline · tutti i canali e referenti</h6></div>
+            <div class="card-body" style="max-height:75vh; overflow:auto;">
+                {% if timeline %}
+                {% for e in timeline %}
+                <div class="d-flex mb-3">
+                    <div class="me-3"><span class="badge rounded-pill bg-{{ e.colore }}"><i class="bi {{ e.icona }}"></i></span></div>
+                    <div class="flex-grow-1 border-bottom pb-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="fw-semibold small">
+                                {% if e.link %}<a href="{{ e.link }}" class="text-decoration-none">{{ e.titolo }}</a>{% else %}{{ e.titolo }}{% endif %}
+                            </span>
+                            <span class="text-muted small">{{ e.ts.strftime('%d/%m %H:%M') if e.ts else '' }}</span>
+                        </div>
+                        {% if e.testo %}<div class="small text-muted text-truncate-2">{{ e.testo }}</div>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="text-muted">Nessuna interazione ancora. Messaggi, telefonate, ticket e ordini compariranno qui.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ordini della società -->
+<div class="card mt-3">
+    <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-bag"></i> Ordini ({{ soc.ordini|length }})</h6></div>
+    <div class="card-body p-0">
+        {% if soc.ordini %}
+        <table class="table table-hover table-sm mb-0 align-middle">
+            <thead class="table-light"><tr><th>#</th><th>Data</th><th>Origine</th><th>Canale</th><th class="text-center">Articoli</th><th class="text-end">Totale</th><th class="text-center">Stato</th></tr></thead>
+            <tbody>
+                {% for o in soc.ordini %}
+                <tr style="cursor:pointer" onclick="location.href='/ordini/{{ o.id }}'">
+                    <td>#{{ o.id }}</td>
+                    <td>{{ o.data.strftime('%d/%m/%Y') if o.data else '' }}</td>
+                    <td class="text-capitalize">{{ o.origine.value }}{% if o.agente %} ({{ o.agente.nome_completo }}){% endif %}</td>
+                    <td><span class="badge bg-light text-dark">{{ o.canale.value }}</span></td>
+                    <td class="text-center">{{ o.n_articoli }}</td>
+                    <td class="text-end">€ {{ '%.2f'|format(o.totale) }}</td>
+                    <td class="text-center">
+                        {% if o.stato.value == 'confermato' %}<span class="badge bg-success">confermato</span>
+                        {% elif o.stato.value == 'evaso' %}<span class="badge bg-primary">evaso</span>
+                        {% elif o.stato.value == 'annullato' %}<span class="badge bg-secondary">annullato</span>
+                        {% else %}<span class="badge bg-warning text-dark">bozza</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted small p-3 mb-0">Nessun ordine.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal modifica società -->
+<div class="modal fade" id="modalModifica" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/societa/{{ soc.id }}">
+                <div class="modal-header"><h5 class="modal-title">Modifica società</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body row g-3">
+                    <div class="col-md-7"><label class="form-label">Insegna</label><input type="text" name="insegna" class="form-control" value="{{ soc.insegna }}"></div>
+                    <div class="col-md-5"><label class="form-label">Tipo attività</label>
+                        <select name="tipo" class="form-select">{% for t in tipi %}<option value="{{ t.value }}" {% if soc.tipo==t %}selected{% endif %}>{{ t.value }}</option>{% endfor %}</select></div>
+                    <div class="col-md-7"><label class="form-label">Ragione sociale</label><input type="text" name="ragione_sociale" class="form-control" value="{{ soc.ragione_sociale or '' }}"></div>
+                    <div class="col-md-5"><label class="form-label">P. IVA</label><input type="text" name="piva" class="form-control" value="{{ soc.piva or '' }}"></div>
+                    <div class="col-md-8"><label class="form-label">Indirizzo</label><input type="text" name="indirizzo" class="form-control" value="{{ soc.indirizzo or '' }}"></div>
+                    <div class="col-md-4"><label class="form-label">Città</label><input type="text" name="citta" class="form-control" value="{{ soc.citta or '' }}"></div>
+                    <div class="col-md-6"><label class="form-label">Stato relazione</label>
+                        <select name="stato_relazione" class="form-select">{% for s in stati %}<option value="{{ s.value }}" {% if soc.stato_relazione==s %}selected{% endif %}>{{ s.value }}</option>{% endfor %}</select></div>
+                    <div class="col-md-6"><label class="form-label">Agente di riferimento</label>
+                        <select name="agente_referente_id" class="form-select"><option value="">—</option>{% for a in agenti %}<option value="{{ a.id }}" {% if soc.agente_referente_id==a.id %}selected{% endif %}>{{ a.nome_completo }}</option>{% endfor %}</select></div>
+                    <div class="col-12"><label class="form-label">Note</label><textarea name="note" class="form-control" rows="2">{{ soc.note or '' }}</textarea></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button><button class="btn btn-primary">Salva</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal nuovo contatto -->
+<div class="modal fade" id="modalContatto" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/societa/{{ soc.id }}/contatti">
+                <div class="modal-header"><h5 class="modal-title">Nuovo referente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body row g-3">
+                    <div class="col-6"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control"></div>
+                    <div class="col-6"><label class="form-label">Cognome</label><input type="text" name="cognome" class="form-control"></div>
+                    <div class="col-12"><label class="form-label">Ruolo</label><input type="text" name="ruolo" class="form-control" placeholder="Titolare, Chef, Acquisti..."></div>
+                    <div class="col-6"><label class="form-label">Telefono</label><input type="text" name="telefono" class="form-control"></div>
+                    <div class="col-6"><label class="form-label">Email</label><input type="email" name="email" class="form-control"></div>
+                    <div class="col-12 form-check ms-2"><input type="checkbox" name="is_primario" class="form-check-input" id="prim"><label class="form-check-label" for="prim">Referente principale</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button><button class="btn btn-primary">Aggiungi</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>.text-truncate-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}</style>
+{% endblock %}

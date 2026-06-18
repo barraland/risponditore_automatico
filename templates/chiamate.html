@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}Chiamate {{ inquilino.nome }}{% endblock %}
+{% block title %}Chiamate {{ contatto.nome_completo }}{% endblock %}
 
 {% block content %}
 
 <div class="mb-3">
-    <a href="/condomini/{{ condominio.id }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Torna al condominio
+    <a href="/contatti/{{ contatto.id }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Torna al contatto
     </a>
 </div>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
-        <h4 class="mb-1"><i class="bi bi-telephone"></i> {{ inquilino.cognome or '' }} {{ inquilino.nome }}</h4>
+        <h4 class="mb-1"><i class="bi bi-telephone"></i> {{ contatto.nome_completo }}</h4>
         <span class="text-muted">
-            {{ inquilino.unita or '—' }} · {{ inquilino.telefono or 'nessun numero' }} · {{ condominio.nome }}
+            {{ contatto.ragione_sociale or '—' }} · {{ contatto.telefono or 'nessun numero' }}
         </span>
     </div>
     <span class="badge bg-secondary align-self-center">{{ chiamate|length }} chiamate</span>

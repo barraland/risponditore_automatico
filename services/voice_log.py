@@ -1,7 +1,7 @@
 """Persistenza e riassunto delle telefonate (log chiamate vocali).
 
 A fine chiamata salviamo la trascrizione completa (dialogo chiamante/assistente)
-e un breve riassunto generato via LLM, collegati all'inquilino.
+e un breve riassunto generato via LLM, collegati al contatto.
 """
 
 import logging
@@ -18,14 +18,15 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 MODEL = os.getenv("VOICE_LOG_MODEL", "gpt-5-mini")
 
 RIASSUNTO_SYSTEM = (
-    "Riassumi questa telefonata tra un condomino e l'assistente vocale del condominio, in 2-4 frasi: "
-    "cosa ha chiesto il condomino, cosa è stato risposto e se è rimasto qualcosa in sospeso "
-    "(es. richiamo dell'amministratore). Tono neutro e sintetico."
+    "Riassumi questa telefonata tra un potenziale cliente (lead) e l'assistente vocale "
+    "dell'azienda, in 2-4 frasi: cosa ha chiesto il lead, cosa è stato risposto, quali dati "
+    "sono stati raccolti e se è rimasto qualcosa in sospeso (es. richiamo del commerciale). "
+    "Tono neutro e sintetico."
 )
 
 
 def _formatta_trascrizione(turni: list[dict]) -> str:
-    """turni: [{'ruolo': 'Condomino'|'Assistente', 'testo': str}, ...]"""
+    """turni: [{'ruolo': 'Cliente'|'Assistente', 'testo': str}, ...]"""
     return "\n".join(f"{t['ruolo']}: {t['testo'].strip()}" for t in turni if t.get("testo", "").strip())
 
 
@@ -49,7 +50,7 @@ def riassumi(trascrizione: str) -> str | None:
         return None
 
 
-def salva_chiamata(db: Session, inquilino_id: int, telefono: str | None,
+def salva_chiamata(db: Session, contatto_id: int, telefono: str | None,
                    turni: list[dict], iniziata_at, durata_sec: int | None = None) -> None:
     """Crea il record ChiamataVoce con trascrizione + riassunto. Non solleva."""
     try:
@@ -58,7 +59,7 @@ def salva_chiamata(db: Session, inquilino_id: int, telefono: str | None,
             return
         riassunto = riassumi(trascrizione)
         db.add(ChiamataVoce(
-            inquilino_id=inquilino_id,
+            contatto_id=contatto_id,
             telefono=telefono,
             iniziata_at=iniziata_at,
             durata_sec=durata_sec,
@@ -66,7 +67,7 @@ def salva_chiamata(db: Session, inquilino_id: int, telefono: str | None,
             riassunto=riassunto,
         ))
         db.commit()
-        logger.info("Chiamata salvata per inquilino %s (%d turni)", inquilino_id, len(turni))
+        logger.info("Chiamata salvata per contatto %s (%d turni)", contatto_id, len(turni))
     except Exception as e:
         logger.error("Salvataggio chiamata fallito: %s", e)
         db.rollback()

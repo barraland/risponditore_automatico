@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Contatti{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0"><i class="bi bi-people"></i> Contatti</h4>
+        <small class="text-muted">{{ contatti|length }} tra clienti e potenziali clienti</small>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuovoContatto">
+        <i class="bi bi-plus-lg"></i> Nuovo contatto
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <form method="get" action="/contatti" class="d-flex gap-2">
+            <input type="text" name="q" class="form-control form-control-sm"
+                   placeholder="Cerca per nome, società, email o telefono..." value="{{ query }}"
+                   style="max-width: 360px;">
+            <button type="submit" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-search"></i>
+            </button>
+        </form>
+    </div>
+    <div class="card-body p-0">
+        {% if contatti %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome</th>
+                        <th>Società</th>
+                        <th>Ruolo</th>
+                        <th>Telefono</th>
+                        <th>Email</th>
+                        <th>Sede</th>
+                        <th class="text-center">Stato</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in contatti %}
+                    <tr>
+                        <td>
+                            <a href="/contatti/{{ c.id }}" class="fw-semibold text-decoration-none">
+                                <i class="bi bi-person"></i> {{ c.nome_completo }}
+                            </a>
+                        </td>
+                        <td>{% if c.societa %}<a href="/societa/{{ c.societa.id }}" class="text-decoration-none" onclick="event.stopPropagation()">{{ c.societa.nome }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{{ c.ruolo or "—" }}</td>
+                        <td>{{ c.telefono or "—" }}</td>
+                        <td>{{ c.email or "—" }}</td>
+                        <td>{{ c.sede or "—" }}</td>
+                        <td class="text-center">
+                            {% if c.stato.value == 'cliente' %}
+                            <span class="badge bg-success">cliente</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">prospect</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <a href="/contatti/{{ c.id }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i> Apri
+                            </a>
+                            <form method="post" action="/contatti/{{ c.id }}/elimina" class="d-inline"
+                                  onsubmit="return confirm('Eliminare {{ c.nome_completo }} e tutta la sua storia?');">
+                                <button class="btn btn-sm btn-outline-danger" title="Elimina contatto">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-people fs-1"></i>
+            {% if query %}
+            <p class="mt-2">Nessun contatto trovato per "{{ query }}"</p>
+            {% else %}
+            <p class="mt-2">Nessun contatto ancora. Verranno creati anche dal risponditore quando un lead chiama o scrive.</p>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuovoContatto">
+                <i class="bi bi-plus-lg"></i> Aggiungi il primo contatto
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal nuovo contatto -->
+<div class="modal fade" id="modalNuovoContatto" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/contatti">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-plus"></i> Nuovo contatto</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nome</label>
+                            <input type="text" name="nome" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Cognome</label>
+                            <input type="text" name="cognome" class="form-control">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Società</label>
+                            <select name="societa_id" class="form-select">
+                                <option value="">— nessuna —</option>
+                                {% for s in societa %}<option value="{{ s.id }}">{{ s.nome }}{% if s.citta %} ({{ s.citta }}){% endif %}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Ruolo</label>
+                            <input type="text" name="ruolo" class="form-control" placeholder="Es. Ufficio acquisti">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="email" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telefono</label>
+                            <input type="text" name="telefono" class="form-control">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Sede</label>
+                            <input type="text" name="sede" class="form-control" placeholder="Es. Milano">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Stato</label>
+                            <select name="stato" class="form-select">
+                                <option value="prospect" selected>prospect</option>
+                                <option value="cliente">cliente</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Note</label>
+                            <textarea name="note" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> Crea contatto
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

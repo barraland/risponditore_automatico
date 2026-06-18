@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Assistente{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-robot"></i> Assistente</h4>
+        <span class="text-muted">Cosa sa e come si comporta il risponditore con i lead (voce e WhatsApp).</span>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success"><i class="bi bi-check-circle"></i> {{ msg }}</div>{% endif %}
+
+<form method="post" action="/assistente">
+    <!-- Profilo aziendale: di cosa parla il risponditore -->
+    <div class="card mb-4 border-primary">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-building"></i> Profilo aziendale</h6></div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-8">
+                    <label class="form-label">Nome azienda</label>
+                    <input type="text" class="form-control" name="AZIENDA_NOME"
+                           value="{{ azienda.nome if azienda else '' }}" autocomplete="off">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Telefono</label>
+                    <input type="text" class="form-control" name="AZIENDA_TELEFONO"
+                           value="{{ azienda.telefono if azienda else '' }}" autocomplete="off">
+                </div>
+            </div>
+
+            <label class="form-label fw-semibold"><i class="bi bi-box-seam"></i> Cosa offriamo (prodotti / servizi)</label>
+            <p class="text-muted small mb-2">
+                Descrivi in linguaggio naturale prodotti e servizi offerti, cosa fate e cosa NON fate, dove,
+                come, orari, tempi di consegna, costi… Il risponditore usa <strong>solo</strong> queste informazioni
+                per rispondere ai lead.
+            </p>
+            <textarea class="form-control mb-3" name="descrizione_servizi" rows="7" spellcheck="false"
+                      placeholder="Es: Vendiamo e installiamo impianti fotovoltaici per aziende in Lombardia. Sopralluogo gratuito entro 5 giorni. Non ci occupiamo di privati né di manutenzione di impianti di terzi. Orari ufficio 9-18 lun-ven…">{{ azienda.descrizione_servizi if azienda else '' }}</textarea>
+
+            <label class="form-label fw-semibold"><i class="bi bi-flag"></i> Criteri di priorità del lead</label>
+            <p class="text-muted small mb-2">
+                Cosa rende un lead a priorità <strong>alta / media / bassa</strong>. Il risponditore assegna la
+                priorità al ticket di follow-up in base a questo testo.
+            </p>
+            <textarea class="form-control mb-3" name="criteri_priorita" rows="5" spellcheck="false"
+                      placeholder="Es: ALTA se è un'azienda con più di 50 dipendenti o chiede un preventivo entro il mese. MEDIA se è interessata ma senza tempistiche. BASSA se chiede solo informazioni generiche o è fuori zona.">{{ azienda.criteri_priorita if azienda else '' }}</textarea>
+
+            <label class="form-label fw-semibold"><i class="bi bi-clipboard-check"></i> Info da raccogliere (qualificazione)</label>
+            <p class="text-muted small mb-2">
+                Informazioni minime che il risponditore deve raccogliere dal lead durante la conversazione.
+            </p>
+            <textarea class="form-control" name="info_qualificazione" rows="6" spellcheck="false"
+                      placeholder="{{ info_qualificazione_default }}">{{ azienda.info_qualificazione if azienda else '' }}</textarea>
+            <div class="form-text">Se lasci vuoto, vengono usate le info minime predefinite (anagrafica + esigenza).</div>
+        </div>
+    </div>
+
+    <!-- Istruzioni in linguaggio naturale per l'assistente -->
+    <div class="card mb-4 border-primary">
+        <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-chat-left-text"></i> Istruzioni per l'assistente</h6></div>
+        <div class="card-body">
+            <p class="text-muted small mb-2">
+                Indicazioni libere su come deve comportarsi l'assistente con i lead: tono, cosa dire o non dire,
+                regole particolari. Vengono passate a <strong>tutti</strong> i motori (WhatsApp e voce) e si applicano
+                <strong>a runtime</strong> (nessun riavvio).
+            </p>
+            <textarea class="form-control" name="ISTRUZIONI_ASSISTENTE" rows="5"
+                      spellcheck="false"
+                      placeholder="Es: Dai sempre del lei, tono cordiale ma sintetico. Non promettere mai sconti. Se il lead è già cliente, salutalo con calore e dai priorità alta.">{{ istruzioni }}</textarea>
+            <div class="form-text">
+                <i class="bi bi-shield-check"></i> L'assistente sa che questo testo viene dall'azienda (non dal lead)
+                e resta vincolato a non inventare dati né rivelare informazioni riservate.
+            </div>
+        </div>
+    </div>
+
+    <div class="text-end mb-4">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salva</button>
+    </div>
+</form>
+
+{% endblock %}
