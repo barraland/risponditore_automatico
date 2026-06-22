@@ -28,6 +28,7 @@ export default function Assistente() {
       criteri_priorita: (az.criteri_priorita || '').trim() || null,
       istruzioni_admin: (az.istruzioni_admin || '').trim() || null,
       regole_commerciali: (az.regole_commerciali || '').trim() || null,
+      saluto: (az.saluto || '').trim() || null,
     }).eq('id', az.id)
     setBusy(false)
     if (error) setErr(error.message); else setOk(true)
@@ -56,6 +57,18 @@ export default function Assistente() {
         <div className="pw-card-body pw-row" style={{ gap: 12 }}>
           <div className="pw-field" style={{ flex: 2 }}><label>Nome</label><input className="pw-input" value={az.nome || ''} onChange={e => set('nome', e.target.value)} /></div>
           <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={az.telefono || ''} onChange={e => set('telefono', e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="pw-card"><div className="pw-card-head"><h3>Formula di saluto (voce)</h3></div>
+        <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
+          <div className="pw-muted" style={{ fontSize: 13 }}>
+            Il primo messaggio che l'assistente vocale dice in apertura. Segnaposto disponibili:{' '}
+            <code>{'{nome}'}</code> <code>{'{cognome}'}</code> <code>{'{azienda}'}</code> (vuoti se il chiamante non è riconosciuto).
+            Lascia vuoto per usare il saluto predefinito.
+          </div>
+          <input className="pw-input" placeholder="Es. Buongiorno {nome}, grazie per aver chiamato {azienda}, come posso aiutarla?"
+            value={az.saluto || ''} onChange={e => set('saluto', e.target.value)} />
         </div>
       </div>
 

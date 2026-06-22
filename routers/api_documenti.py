@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, Form, Header, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda
+from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto, Ordine
 from services import documenti as documenti_service
 from services import ingestion
 
@@ -143,3 +143,25 @@ async def upload_documento(
         db.commit()
 
     return {"id": doc.id, "nome_file": doc.nome_file, "categoria": doc.categoria, "stato": doc.stato.value}
+
+
+@router.delete("/contatti/{contatto_id}")
+async def elimina_contatto(
+    contatto_id: int,
+    authorization: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Elimina un contatto e la sua storia (messaggi, chiamate, ticket via cascade ORM).
+
+    Gli ordini restano (sono ancorati alla società): vengono solo scollegati dal contatto.
+    Fatto lato backend perché le tabelle storiche hanno FK NOT NULL: non si può cancellare
+    direttamente via Supabase senza violare i vincoli.
+    """
+    await _verify_user(authorization)
+    c = db.get(Contatto, contatto_id)
+    if not c:
+        return {"ok": True}
+    db.query(Ordine).filter(Ordine.contatto_id == contatto_id).update({Ordine.contatto_id: None})
+    db.delete(c)  # cascade: messaggi_chat, chiamate_voce, ticket
+    db.commit()
+    return {"ok": True}

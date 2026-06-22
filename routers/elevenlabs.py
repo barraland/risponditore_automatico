@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Request
@@ -53,6 +54,30 @@ _VARS_VUOTE = {
 # altrimenti ElevenLabs rifiuta la risposta e la chiamata cade. Default: OFF (usa {{saluto}}).
 _INVIA_OVERRIDE = os.getenv("ELEVENLABS_INVIA_OVERRIDE", "").strip() in ("1", "true", "yes")
 
+# Saluto di default se l'amministratore non ha configurato una formula in dashboard.
+_SALUTO_DEFAULT = "Buongiorno, come posso aiutarla?"
+
+
+def _pulisci_saluto(s: str) -> str:
+    """Normalizza spazi e punteggiatura dopo la sostituzione dei segnaposto vuoti."""
+    s = re.sub(r"\s+", " ", s)
+    for a, b in ((" ,", ","), (" .", "."), (" !", "!"), (" ?", "?")):
+        s = s.replace(a, b)
+    return s.strip()
+
+
+def _componi_saluto(template: str, contatto, azienda_nome: str) -> str:
+    """Sostituisce i segnaposto {nome}/{cognome}/{azienda} nella formula di saluto.
+
+    Per un chiamante non riconosciuto `contatto` è None → {nome}/{cognome} diventano vuoti.
+    """
+    nome = (contatto.nome or "").strip() if contatto else ""
+    cognome = (contatto.cognome or "").strip() if contatto else ""
+    s = (template.replace("{nome}", nome)
+                 .replace("{cognome}", cognome)
+                 .replace("{azienda}", azienda_nome or ""))
+    return _pulisci_saluto(s) or _SALUTO_DEFAULT
+
 
 def _riassunto(contatto, societa, ultimo) -> str:
     pezzi = [contatto.nome_completo]
@@ -85,6 +110,9 @@ async def init_conversazione(request: Request):
     db = SessionLocal()
     try:
         contatto = whatsapp_agent.trova_contatto(db, caller) if caller else None
+        az = profilo.get_azienda(db)
+        template = ((az.saluto or "").strip() if az else "")
+        az_nome = (az.nome if az else "") or ""
         if contatto:
             societa = contatto.societa
             ultimo = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
@@ -102,13 +130,18 @@ async def init_conversazione(request: Request):
                     f"articoli, € {ultimo.totale:.2f} ({ultimo.stato.value})" if ultimo else "nessuno"),
                 "riassunto_cliente": _riassunto(contatto, societa, ultimo),
             }
-            appellativo = (contatto.cognome or contatto.nome or "").strip()
-            first = (f"Buongiorno signor {appellativo}, come posso aiutarla?" if appellativo
-                     else "Buongiorno, come posso aiutarla?")
+            if template:
+                first = _componi_saluto(template, contatto, az_nome)
+            else:
+                appellativo = (contatto.cognome or contatto.nome or "").strip()
+                first = (f"Buongiorno signor {appellativo}, come posso aiutarla?" if appellativo
+                         else _SALUTO_DEFAULT)
             dv["saluto"] = first
             logger.info("ElevenLabs init: riconosciuto %s (%s)", contatto.nome_completo, caller)
         else:
             dv = dict(_VARS_VUOTE)
+            if template:
+                dv["saluto"] = _componi_saluto(template, None, az_nome)
             first = dv["saluto"]
             logger.info("ElevenLabs init: numero %s non riconosciuto", caller)
 

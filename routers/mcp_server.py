@@ -66,10 +66,14 @@ class RigaOrdineInput(BaseModel):
     prezzo_unitario: float | None = Field(default=None, description="Prezzo unitario se noto.")
 
 
-def _log_tool(nome: str, **kv):
-    """Log conciso di una chiamata tool MCP: nome + parametri d'ingresso."""
+def _log_tool(tool: str, **kv):
+    """Log conciso di una chiamata tool MCP: nome del tool + parametri d'ingresso.
+
+    NB: il primo parametro è `tool` (non `nome`) per non collidere con un eventuale
+    parametro `nome=` loggato dai tool (es. salva_contatto passa nome=...).
+    """
     parti = " ".join(f"{k}={v}" for k, v in kv.items() if v not in (None, "", []))
-    logger.info("🔧 MCP tool %s | %s", nome, parti or "—")
+    logger.info("🔧 MCP tool %s | %s", tool, parti or "—")
 
 
 # ---------- Tools ----------
@@ -89,13 +93,10 @@ def consulta_documenti(domanda: str) -> dict:
         db.close()
 
 
-@mcp.tool()
-def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "") -> dict:
-    """Salva o aggiorna in anagrafica i dati del chiamante (identificato da `telefono`).
-    Passa solo i campi che hai appreso; quelli omessi restano invariati. Se emerge la
-    ragione sociale, crea/aggancia automaticamente la società del cliente."""
-    _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ragione_sociale=ragione_sociale)
+def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: str,
+                      ruolo: str, email: str, sede: str, stato: str) -> dict:
+    """Crea/aggiorna il contatto identificato da `telefono`, scrivendo solo i campi non vuoti.
+    Logica condivisa da salva_contatto (prima registrazione) e aggiorna_contatto (info nuove)."""
     db = SessionLocal()
     try:
         c = _contatto(db, telefono)
@@ -116,10 +117,35 @@ def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_soc
         if cambiato:
             db.commit()
         societa = crm.societa_di_contatto(db, c)
-        return {"salvato": True, "contatto_id": c.id,
+        return {"ok": True, "contatto_id": c.id, "aggiornato": cambiato,
                 "societa": societa.nome if societa else None}
     finally:
         db.close()
+
+
+@mcp.tool()
+def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
+                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "") -> dict:
+    """Registra in anagrafica il chiamante (identificato da `telefono`): usalo SUBITO alla prima
+    registrazione di un prospect non ancora in rubrica, appena hai almeno il nome.
+    Passa SOLO i campi che il cliente ha detto esplicitamente; quelli omessi restano invariati.
+    NON inventare né dedurre valori: se un dato (es. città/sede, email, ruolo) non è stato
+    dichiarato, ometti del tutto il campo. Tutti i campi tranne `telefono` sono opzionali.
+    Se emerge la ragione sociale, crea/aggancia automaticamente la società del cliente."""
+    _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ragione_sociale=ragione_sociale)
+    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato)
+
+
+@mcp.tool()
+def aggiorna_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
+                      ruolo: str = "", email: str = "", sede: str = "", stato: str = "") -> dict:
+    """Aggiorna i dati di un contatto GIÀ registrato (identificato da `telefono`) quando emergono
+    informazioni nuove durante la conversazione — tipicamente la CITTÀ/sede se non era stata detta
+    subito, oppure email, ruolo, ragione sociale. Passa SOLO i campi nuovi appena appresi; gli altri
+    restano invariati. NON inventare valori. Identico a salva_contatto ma da usare per gli aggiornamenti
+    incrementali in corso di chiamata."""
+    _log_tool("aggiorna_contatto", telefono=telefono, sede=sede, email=email, ragione_sociale=ragione_sociale)
+    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato)
 
 
 @mcp.tool()
