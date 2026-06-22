@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import { lower, nomeContatto } from '../lib/format'
 import Modal from '../components/Modal'
+
+const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
 export default function ContattoDetail() {
   const { id } = useParams()
   const nav = useNavigate()
+  const { session } = useAuth()
   const [c, setC] = useState<any>(null)
   const [locali, setLocali] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,8 +27,17 @@ export default function ContattoDetail() {
   }, [id])
 
   async function elimina() {
-    if (!confirm('Eliminare questo contatto?')) return
-    await supabase.from('contatti').delete().eq('id', id)
+    if (!confirm('Eliminare questo contatto? La sua storia (messaggi, chiamate, ticket) verrà rimossa; gli ordini restano ma scollegati.')) return
+    if (!API) { setErr('VITE_API_BASE non configurato: serve il backend per eliminare un contatto con storico.'); return }
+    const res = await fetch(`${API}/api/contatti/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      setErr(`Eliminazione fallita (${res.status}): ${t.slice(0, 200)}`)
+      return
+    }
     nav('/contatti')
   }
 
