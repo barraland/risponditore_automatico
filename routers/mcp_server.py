@@ -144,13 +144,13 @@ def leggi_altri_documenti() -> dict:
 
 
 def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: str,
-                      ruolo: str, email: str, sede: str, stato: str) -> dict:
+                      ruolo: str, email: str, sede: str, stato: str, titolo: str = "") -> dict:
     """Crea/aggiorna il contatto identificato da `telefono`, scrivendo solo i campi non vuoti.
     Logica condivisa da salva_contatto (prima registrazione) e aggiorna_contatto (info nuove)."""
     db = SessionLocal()
     try:
         c = _contatto(db, telefono)
-        campi = {"nome": nome, "cognome": cognome, "ragione_sociale": ragione_sociale,
+        campi = {"titolo": titolo, "nome": nome, "cognome": cognome, "ragione_sociale": ragione_sociale,
                  "ruolo": ruolo, "email": email, "sede": sede}
         cambiato = False
         for k, v in campi.items():
@@ -175,27 +175,62 @@ def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: s
 
 @mcp.tool()
 def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "") -> dict:
+                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "") -> dict:
     """Registra in anagrafica il chiamante (identificato da `telefono`): usalo SUBITO alla prima
     registrazione di un prospect non ancora in rubrica, appena hai almeno il nome.
     Passa SOLO i campi che il cliente ha detto esplicitamente; quelli omessi restano invariati.
     NON inventare né dedurre valori: se un dato (es. città/sede, email, ruolo) non è stato
-    dichiarato, ometti del tutto il campo. Tutti i campi tranne `telefono` sono opzionali.
-    Se emerge la ragione sociale, crea/aggancia automaticamente la società del cliente."""
+    dichiarato, ometti del tutto il campo. `titolo` = "Signore" o "Signora": impostalo SOLO se sei
+    certo del genere (dal modo in cui si presenta), altrimenti OMETTILO — meglio nessun titolo che
+    sbagliarlo. Tutti i campi tranne `telefono` sono opzionali. Se emerge la ragione sociale,
+    crea/aggancia automaticamente la società del cliente."""
     _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ragione_sociale=ragione_sociale)
-    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato)
+    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo)
 
 
 @mcp.tool()
 def aggiorna_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                      ruolo: str = "", email: str = "", sede: str = "", stato: str = "") -> dict:
-    """Aggiorna i dati di un contatto GIÀ registrato (identificato da `telefono`) quando emergono
-    informazioni nuove durante la conversazione — tipicamente la CITTÀ/sede se non era stata detta
-    subito, oppure email, ruolo, ragione sociale. Passa SOLO i campi nuovi appena appresi; gli altri
-    restano invariati. NON inventare valori. Identico a salva_contatto ma da usare per gli aggiornamenti
-    incrementali in corso di chiamata."""
-    _log_tool("aggiorna_contatto", telefono=telefono, sede=sede, email=email, ragione_sociale=ragione_sociale)
-    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato)
+                      ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "") -> dict:
+    """Aggiorna i dati ANAGRAFICI DELLA PERSONA (contatto, identificato da `telefono`) quando emergono
+    informazioni nuove: email, ruolo, cognome, oppure `titolo` ("Signore"/"Signora") se diventa chiaro
+    il genere. Per i dati del LOCALE/azienda (città, indirizzo, P.IVA) usa invece aggiorna_locale.
+    Passa SOLO i campi nuovi appena appresi; gli altri restano invariati. NON inventare valori."""
+    _log_tool("aggiorna_contatto", telefono=telefono, email=email, ruolo=ruolo, titolo=titolo)
+    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo)
+
+
+@mcp.tool()
+def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
+                    ragione_sociale: str = "", piva: str = "", insegna: str = "") -> dict:
+    """Aggiorna l'anagrafica del LOCALE/azienda del chiamante (il ristorante/bar/hotel a cui è
+    associato il contatto identificato da `telefono`): città, indirizzo, ragione sociale, P.IVA,
+    insegna. Usalo quando in conversazione emerge un dato del locale prima mancante (es. la città).
+    Passa SOLO i campi nuovi; gli altri restano invariati. NON inventare valori."""
+    _log_tool("aggiorna_locale", telefono=telefono, citta=citta, indirizzo=indirizzo)
+    db = SessionLocal()
+    try:
+        c = _contatto(db, telefono)
+        societa = crm.societa_di_contatto(db, c)
+        if not societa:
+            insegna_nuova = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
+            if not insegna_nuova:
+                return {"ok": False, "errore": "Nessun locale associato e nessun nome per crearlo."}
+            societa = crm.trova_o_crea_societa(db, insegna=insegna_nuova)
+            if not c.societa_id:
+                c.societa_id = societa.id
+        campi = {"citta": citta, "indirizzo": indirizzo, "ragione_sociale": ragione_sociale,
+                 "piva": piva, "insegna": insegna}
+        cambiato = False
+        for k, v in campi.items():
+            v = (v or "").strip()
+            if v and getattr(societa, k) != v:
+                setattr(societa, k, v)
+                cambiato = True
+        if cambiato or not c.societa_id:
+            db.commit()
+        return {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": cambiato}
+    finally:
+        db.close()
 
 
 @mcp.tool()

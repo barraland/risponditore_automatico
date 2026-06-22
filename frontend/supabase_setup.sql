@@ -15,6 +15,8 @@ alter table public.azienda add column if not exists saluto text;                
 alter table public.azienda add column if not exists saluto_sconosciuto text;    -- chiamante anonimo
 -- Path su Supabase Storage dell'originale durevole del documento.
 alter table public.documenti add column if not exists storage_path varchar(500);
+-- Appellativo del contatto ("Signore"/"Signora"), per il saluto corretto.
+alter table public.contatti add column if not exists titolo varchar(20);
 
 do $$
 declare t text;

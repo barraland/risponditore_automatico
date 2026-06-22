@@ -40,6 +40,8 @@ _VARS_VUOTE = {
     "cliente_conosciuto": "no",
     "nome_cliente": "",
     "nome": "",
+    "cognome": "",
+    "titolo": "",
     "societa": "",
     "stato_cliente": "",
     "ruolo": "",
@@ -73,7 +75,9 @@ def _componi_saluto(template: str, contatto, azienda_nome: str) -> str:
     """
     nome = (contatto.nome or "").strip() if contatto else ""
     cognome = (contatto.cognome or "").strip() if contatto else ""
-    s = (template.replace("{nome}", nome)
+    titolo = (contatto.titolo or "").strip() if contatto else ""
+    s = (template.replace("{titolo}", titolo)
+                 .replace("{nome}", nome)
                  .replace("{cognome}", cognome)
                  .replace("{azienda}", azienda_nome or ""))
     return _pulisci_saluto(s) or _SALUTO_DEFAULT
@@ -122,6 +126,8 @@ async def init_conversazione(request: Request):
                 "cliente_conosciuto": "sì",
                 "nome_cliente": contatto.nome_completo,
                 "nome": contatto.nome or "",
+                "cognome": contatto.cognome or "",
+                "titolo": contatto.titolo or "",
                 "societa": (societa.nome if societa else (contatto.ragione_sociale or "")),
                 "stato_cliente": (societa.stato_relazione.value if societa else contatto.stato.value),
                 "ruolo": contatto.ruolo or "",

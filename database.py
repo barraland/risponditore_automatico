@@ -123,6 +123,7 @@ class Contatto(Base):
     __tablename__ = "contatti"
 
     id = Column(Integer, primary_key=True, index=True)
+    titolo = Column(String(20))                # appellativo: "Signore" / "Signora" (opzionale)
     nome = Column(String(100))
     cognome = Column(String(100))
     ragione_sociale = Column(String(200))      # ragione sociale della società
