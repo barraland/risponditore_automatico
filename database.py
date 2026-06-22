@@ -112,8 +112,9 @@ class Azienda(Base):
     # Regole commerciali e promozioni (prezzi, sconti, omaggi). Iniettate ovunque come le
     # istruzioni: l'assistente le applica sia rispondendo sui prezzi sia registrando ordini.
     regole_commerciali = Column(Text, nullable=True)
-    # Formula del primo saluto vocale (ElevenLabs {{saluto}}). Segnaposto: {nome} {cognome} {azienda}.
-    saluto = Column(Text, nullable=True)
+    # Formule del primo saluto vocale (ElevenLabs {{saluto}}). Segnaposto: {nome} {cognome} {azienda}.
+    saluto = Column(Text, nullable=True)                 # chiamante riconosciuto (usa {nome}/{cognome})
+    saluto_sconosciuto = Column(Text, nullable=True)     # chiamante non riconosciuto (no nome)
 
 
 class Contatto(Base):

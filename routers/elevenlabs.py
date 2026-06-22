@@ -111,7 +111,8 @@ async def init_conversazione(request: Request):
     try:
         contatto = whatsapp_agent.trova_contatto(db, caller) if caller else None
         az = profilo.get_azienda(db)
-        template = ((az.saluto or "").strip() if az else "")
+        template_noto = ((az.saluto or "").strip() if az else "")
+        template_sconosciuto = ((az.saluto_sconosciuto or "").strip() if az else "")
         az_nome = (az.nome if az else "") or ""
         if contatto:
             societa = contatto.societa
@@ -130,8 +131,8 @@ async def init_conversazione(request: Request):
                     f"articoli, € {ultimo.totale:.2f} ({ultimo.stato.value})" if ultimo else "nessuno"),
                 "riassunto_cliente": _riassunto(contatto, societa, ultimo),
             }
-            if template:
-                first = _componi_saluto(template, contatto, az_nome)
+            if template_noto:
+                first = _componi_saluto(template_noto, contatto, az_nome)
             else:
                 appellativo = (contatto.cognome or contatto.nome or "").strip()
                 first = (f"Buongiorno signor {appellativo}, come posso aiutarla?" if appellativo
@@ -140,8 +141,8 @@ async def init_conversazione(request: Request):
             logger.info("ElevenLabs init: riconosciuto %s (%s)", contatto.nome_completo, caller)
         else:
             dv = dict(_VARS_VUOTE)
-            if template:
-                dv["saluto"] = _componi_saluto(template, None, az_nome)
+            if template_sconosciuto:
+                dv["saluto"] = _componi_saluto(template_sconosciuto, None, az_nome)
             first = dv["saluto"]
             logger.info("ElevenLabs init: numero %s non riconosciuto", caller)
 

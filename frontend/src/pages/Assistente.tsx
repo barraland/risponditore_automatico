@@ -29,6 +29,7 @@ export default function Assistente() {
       istruzioni_admin: (az.istruzioni_admin || '').trim() || null,
       regole_commerciali: (az.regole_commerciali || '').trim() || null,
       saluto: (az.saluto || '').trim() || null,
+      saluto_sconosciuto: (az.saluto_sconosciuto || '').trim() || null,
     }).eq('id', az.id)
     setBusy(false)
     if (error) setErr(error.message); else setOk(true)
@@ -60,15 +61,23 @@ export default function Assistente() {
         </div>
       </div>
 
-      <div className="pw-card"><div className="pw-card-head"><h3>Formula di saluto (voce)</h3></div>
-        <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
+      <div className="pw-card"><div className="pw-card-head"><h3>Saluto vocale (primo messaggio)</h3></div>
+        <div className="pw-card-body pw-stack" style={{ gap: 14 }}>
           <div className="pw-muted" style={{ fontSize: 13 }}>
-            Il primo messaggio che l'assistente vocale dice in apertura. Segnaposto disponibili:{' '}
-            <code>{'{nome}'}</code> <code>{'{cognome}'}</code> <code>{'{azienda}'}</code> (vuoti se il chiamante non è riconosciuto).
-            Lascia vuoto per usare il saluto predefinito.
+            Il primo messaggio che l'assistente dice in apertura. Segnaposto:{' '}
+            <code>{'{nome}'}</code> <code>{'{cognome}'}</code> <code>{'{azienda}'}</code>. Lascia vuoto per il saluto predefinito.
           </div>
-          <input className="pw-input" placeholder="Es. Buongiorno {nome}, grazie per aver chiamato {azienda}, come posso aiutarla?"
-            value={az.saluto || ''} onChange={e => set('saluto', e.target.value)} />
+          <div className="pw-field">
+            <label>Cliente riconosciuto</label>
+            <input className="pw-input" placeholder="Es. Buongiorno {nome}, come posso aiutarla?"
+              value={az.saluto || ''} onChange={e => set('saluto', e.target.value)} />
+          </div>
+          <div className="pw-field">
+            <label>Chiamante sconosciuto (prospect)</label>
+            <input className="pw-input" placeholder="Es. Buongiorno, grazie per aver chiamato {azienda}, come posso aiutarla?"
+              value={az.saluto_sconosciuto || ''} onChange={e => set('saluto_sconosciuto', e.target.value)} />
+            <div className="pw-muted" style={{ fontSize: 12, marginTop: 4 }}>Qui <code>{'{nome}'}</code> è vuoto: non lo usare.</div>
+          </div>
         </div>
       </div>
 

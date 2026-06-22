@@ -10,8 +10,9 @@
 alter table public.azienda add column if not exists istruzioni_admin text;
 -- Regole commerciali e promozioni (prezzi, sconti, omaggi), iniettate ovunque.
 alter table public.azienda add column if not exists regole_commerciali text;
--- Formula del primo saluto vocale (segnaposto {nome} {cognome} {azienda}).
-alter table public.azienda add column if not exists saluto text;
+-- Formule del primo saluto vocale (segnaposto {nome} {cognome} {azienda}).
+alter table public.azienda add column if not exists saluto text;                -- cliente riconosciuto
+alter table public.azienda add column if not exists saluto_sconosciuto text;    -- chiamante anonimo
 -- Path su Supabase Storage dell'originale durevole del documento.
 alter table public.documenti add column if not exists storage_path varchar(500);
 
