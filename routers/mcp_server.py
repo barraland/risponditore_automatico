@@ -21,9 +21,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from database import (
     SessionLocal, Contatto, ContattoStato, Ordine,
     CanaleOrdine, OrigineOrdine, StatoOrdine,
+    Documento, StatoDocumento, TestoCategoria,
 )
 from services import crm
-from services import retriever
 from services import documenti as documenti_service
 from services import ticket as ticket_service
 from services import profilo
@@ -78,19 +78,69 @@ def _log_tool(tool: str, **kv):
 
 # ---------- Tools ----------
 
-@mcp.tool()
-def consulta_documenti(domanda: str) -> dict:
-    """Consulta i documenti caricati (listini, schede prodotto, condizioni di consegna, FAQ)
-    per rispondere a una domanda su prezzi, condizioni o dettagli. Ritorna una risposta
-    sintetica basata sui documenti, da riferire al chiamante."""
-    _log_tool("consulta_documenti", domanda=domanda)
+def _leggi_categoria(categoria: str) -> dict:
+    """Ritorna il testo integrale di TUTTI i documenti di una categoria + la nota libera
+    dell'amministratore per quella categoria. Nessun LLM: lettura diretta dal DB (veloce).
+    L'agente legge il contenuto e risponde da sé."""
     db = SessionLocal()
     try:
-        esito = retriever.rispondi(db, domanda)
-        return {"risposta": esito.get("risposta", ""),
-                "fonti": [f.get("documento") for f in (esito.get("fonti") or [])]}
+        blocchi = []
+        nota = db.query(TestoCategoria).filter(TestoCategoria.categoria == categoria).first()
+        if nota and nota.testo and nota.testo.strip():
+            blocchi.append(f"NOTA DELL'AMMINISTRATORE:\n{nota.testo.strip()}")
+        docs = (db.query(Documento)
+                .filter(Documento.categoria == categoria,
+                        Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW]))
+                .order_by(Documento.caricato_at.desc()).all())
+        for d in docs:
+            testo = "\n".join((s.content_md or "") for s in sorted(d.sezioni, key=lambda s: s.ordine)).strip()
+            if testo:
+                blocchi.append(f"=== {d.nome_file} ===\n{testo}")
+        if not blocchi:
+            return {"trovato": False, "contenuto": f"Nessun documento disponibile nella categoria «{categoria}»."}
+        return {"trovato": True, "contenuto": "\n\n".join(blocchi)}
     finally:
         db.close()
+
+
+@mcp.tool()
+def leggi_listini_prezzi() -> dict:
+    """Restituisce per intero i LISTINI e i PREZZI caricati. Usalo quando il cliente chiede
+    quanto costa un prodotto, sconti di listino, formati/confezioni e relativi prezzi."""
+    _log_tool("leggi_listini_prezzi")
+    return _leggi_categoria("listino")
+
+
+@mcp.tool()
+def leggi_condizioni_vendita() -> dict:
+    """Restituisce per intero le CONDIZIONI DI VENDITA e i contratti: tempi e modalità di
+    consegna, ordine minimo, modalità di pagamento, termini contrattuali."""
+    _log_tool("leggi_condizioni_vendita")
+    return _leggi_categoria("contratti")
+
+
+@mcp.tool()
+def leggi_schede_prodotto() -> dict:
+    """Restituisce per intero le SCHEDE PRODOTTO/SERVIZIO: caratteristiche, formati, dettagli
+    tecnici, ingredienti/specifiche dei prodotti."""
+    _log_tool("leggi_schede_prodotto")
+    return _leggi_categoria("schede_prodotto")
+
+
+@mcp.tool()
+def leggi_faq() -> dict:
+    """Restituisce per intero le FAQ e il materiale informativo generale (domande frequenti,
+    informazioni sull'azienda e sul servizio)."""
+    _log_tool("leggi_faq")
+    return _leggi_categoria("faq")
+
+
+@mcp.tool()
+def leggi_altri_documenti() -> dict:
+    """Restituisce per intero i documenti della categoria «altro» (non classificati nelle
+    categorie precedenti)."""
+    _log_tool("leggi_altri_documenti")
+    return _leggi_categoria("altro")
 
 
 def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: str,
