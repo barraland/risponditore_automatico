@@ -18,7 +18,7 @@ from database import (
     TipoAttivita, StatoRelazione, CanaleOrdine, StatoOrdine, OrigineOrdine,
     MessaggioChat, DirezioneMessaggio, ChiamataVoce,
 )
-from routers import webhook, dashboard, voice, horeca
+from routers import webhook, dashboard, voice, horeca, mcp_server, elevenlabs, api_documenti
 
 # ---------- Logging ----------
 
@@ -35,7 +35,9 @@ async def lifespan(app: FastAPI):
     logger.info("Avvio applicazione...")
     init_db()
     seed_data()
-    yield
+    # Il session manager dell'MCP (Streamable HTTP) deve girare nel lifespan dell'app.
+    async with mcp_server.mcp.session_manager.run():
+        yield
     logger.info("Applicazione chiusa")
 
 
@@ -55,6 +57,109 @@ app.include_router(webhook.router)
 app.include_router(dashboard.router)
 app.include_router(voice.router)
 app.include_router(horeca.router)
+app.include_router(elevenlabs.router)
+app.include_router(api_documenti.router)
+
+# Server MCP per agenti vocali esterni (ElevenLabs): endpoint Streamable HTTP su /mcp.
+# NB: middleware ASGI puri (NON BaseHTTPMiddleware) per non bufferare lo streaming SSE.
+_MCP_TOKEN = os.getenv("MCP_AUTH_TOKEN", "").strip()
+
+
+class _McpBearerAuth:
+    """Auth bearer opzionale per l'app MCP (ASGI puro)."""
+    def __init__(self, app, token: str):
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            headers = dict(scope.get("headers") or [])
+            if headers.get(b"authorization", b"").decode() != f"Bearer {self.token}":
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"content-type", b"application/json")]})
+                await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
+                return
+        await self.app(scope, receive, send)
+
+
+class _McpSlashFix:
+    """Fa funzionare /mcp senza il 307 verso /mcp/ (riscrive il path a livello ASGI,
+    senza redirect, così i client MCP che postano su /mcp non falliscono)."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("path") == "/mcp":
+            scope = dict(scope)
+            scope["path"] = "/mcp/"
+            scope["raw_path"] = b"/mcp/"
+        await self.app(scope, receive, send)
+
+
+_mcp_app = mcp_server.http_app
+if _MCP_TOKEN:
+    _mcp_app = _McpBearerAuth(_mcp_app, _MCP_TOKEN)
+    logger.info("MCP /mcp protetto da bearer token")
+app.mount("/mcp", _mcp_app)
+app.add_middleware(_McpSlashFix)
+
+
+# Basic auth OPZIONALE sulle pagine della dashboard (HTML). Lascia APERTI i webhook e le
+# integrazioni macchina-a-macchina (ElevenLabs, MCP, WhatsApp, Twilio, static), che hanno
+# la loro autenticazione. Si attiva impostando DASHBOARD_USER e DASHBOARD_PASSWORD.
+import base64
+
+_DASH_USER = os.getenv("DASHBOARD_USER", "").strip()
+_DASH_PASS = os.getenv("DASHBOARD_PASSWORD", "").strip()
+
+
+class _DashboardAuth:
+    APERTI = ("/elevenlabs", "/mcp", "/webhook", "/voice", "/static", "/api")
+
+    def __init__(self, app, user: str, password: str):
+        self.app = app
+        self.user = user
+        self.password = password
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+        path = scope.get("path", "")
+        if any(path == p or path.startswith(p + "/") for p in self.APERTI):
+            return await self.app(scope, receive, send)
+        ok = False
+        auth = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
+        if auth.startswith("Basic "):
+            try:
+                u, _, p = base64.b64decode(auth[6:]).decode().partition(":")
+                ok = (u == self.user and p == self.password)
+            except Exception:
+                ok = False
+        if ok:
+            return await self.app(scope, receive, send)
+        await send({"type": "http.response.start", "status": 401,
+                    "headers": [(b"www-authenticate", b'Basic realm="Dashboard"'),
+                                (b"content-type", b"text/plain; charset=utf-8")]})
+        await send({"type": "http.response.body", "body": "Autenticazione richiesta".encode()})
+
+
+if _DASH_USER and _DASH_PASS:
+    app.add_middleware(_DashboardAuth, user=_DASH_USER, password=_DASH_PASS)
+    logger.info("Dashboard protetta da basic auth")
+
+# CORS per la SPA (Vercel/localhost). Aggiunto per ULTIMO così avvolge tutto e gestisce
+# il preflight OPTIONS prima degli altri middleware. Origini da CORS_ORIGINS (csv).
+from fastapi.middleware.cors import CORSMiddleware
+
+_CORS_ORIGINS = [o.strip() for o in os.getenv(
+    "CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+logger.info("CORS abilitato per: %s", ", ".join(_CORS_ORIGINS))
 
 
 # ---------- Seed Data ----------

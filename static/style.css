@@ -1,42 +1,198 @@
-/* Stile personalizzato - Studio Dentistico */
+/* ============================================================
+   Pipework theme per il risponditore HORECA.
+   Dark technical-neon: near-black, lime->cyan, hairline, glow.
+   Mappa i componenti Bootstrap 5.3 sui token di Pipework
+   (definiti in pipework-tokens.css, caricato prima di questo).
+   ============================================================ */
 
+/* ---------- Override variabili globali Bootstrap (tema dark) ---------- */
+:root {
+  --bs-body-bg: var(--bg);
+  --bs-body-color: var(--fg-2);
+  --bs-emphasis-color: var(--fg);
+  --bs-secondary-color: var(--fg-3);
+  --bs-tertiary-color: var(--fg-4);
+  --bs-body-font-family: var(--font-sans);
+
+  --bs-border-color: var(--border);
+  --bs-border-color-translucent: var(--border);
+  --bs-border-radius: var(--r-md);
+  --bs-border-radius-sm: var(--r-sm);
+  --bs-border-radius-lg: var(--r-lg);
+
+  --bs-primary: var(--acc-1);
+  --bs-primary-rgb: 198, 244, 50;
+  --bs-link-color: var(--acc-2);
+  --bs-link-color-rgb: 110, 231, 255;
+  --bs-link-hover-color: var(--acc-1);
+
+  --bs-success: var(--ok);
+  --bs-warning: var(--warn);
+  --bs-danger: var(--danger);
+  --bs-info: var(--acc-2);
+}
+
+/* ---------- Base ---------- */
 body {
-    background-color: #f5f7fa;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg-2);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
-.navbar-brand {
-    font-weight: 600;
+/* Sfondo: griglia tenue mascherata + due orb sfocate (lime / cyan) */
+body::before, body::after {
+  content: ""; position: fixed; z-index: -2; pointer-events: none;
+}
+body::before {
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, black 0%, transparent 75%);
+  mask-image: radial-gradient(ellipse at 50% 0%, black 0%, transparent 75%);
+}
+body::after {
+  top: -180px; left: -160px; width: 520px; height: 520px; border-radius: 50%;
+  background: var(--acc-1); filter: blur(150px); opacity: .10;
 }
 
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5 {
+  color: var(--fg); font-family: var(--font-sans);
+  font-weight: 700; letter-spacing: -.02em;
+}
+.text-muted { color: var(--fg-3) !important; }
+.text-primary { color: var(--acc-1) !important; }
+.text-secondary { color: var(--fg-3) !important; }
+a { color: var(--acc-2); text-decoration: none; }
+a:hover { color: var(--acc-1); }
+hr, .border-bottom, .border-top { border-color: var(--border) !important; }
+
+code, .pw-code {
+  font-family: var(--font-mono); color: var(--acc-2);
+  background: var(--bg-3); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 4px; font-size: .85em;
+}
+::selection { background: var(--acc-1); color: #000; }
+
+/* Utility chiare riusate nei template -> superfici scure */
+.bg-white { background: var(--bg-2) !important; color: var(--fg-2) !important; }
+.bg-light { background: var(--bg-soft) !important; color: var(--fg-2) !important; }
+.table-light, .table-light th, .table-light td { background: var(--bg-soft) !important; color: var(--fg-3) !important; }
+
+/* ---------- Navbar (barra scura, hairline, logo Pipework) ---------- */
+.navbar {
+  background: rgba(15,17,23,.78) !important;
+  backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--border);
+}
+.navbar .navbar-brand { color: var(--fg); font-weight: 700; letter-spacing: -.01em; }
+.navbar .navbar-brand img { height: 26px; width: 26px; vertical-align: -6px; margin-right: 8px; }
+.navbar .nav-link { color: var(--fg-3) !important; border-radius: var(--r-full); padding: 8px 14px; transition: color var(--t-fast) var(--e-out), background var(--t-fast) var(--e-out); }
+.navbar .nav-link:hover { color: var(--fg) !important; background: rgba(255,255,255,.04); }
+.navbar .nav-link.active { color: var(--fg) !important; background: var(--acc-grad-soft); box-shadow: inset 0 0 0 1px var(--border); }
+.navbar .navbar-toggler { border-color: var(--border-2); }
+
+/* ---------- Card ---------- */
 .card {
-    border: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    border-radius: 0.5rem;
+  background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 140%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 24px 60px -34px rgba(0,0,0,.8);
+  color: var(--fg-2);
 }
-
 .card-header {
-    border-bottom: 1px solid #e9ecef;
-    border-radius: 0.5rem 0.5rem 0 0 !important;
+  background: transparent !important;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
 }
+.card-header h6, .card-header h5 { color: var(--fg); font-weight: 600; }
 
-.table th {
-    font-weight: 600;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #6c757d;
+/* ---------- Tabelle ---------- */
+.table { --bs-table-bg: transparent; color: var(--fg-2); border-color: var(--border); }
+.table > :not(caption) > * > * { border-bottom-color: var(--border); background: transparent; }
+.table thead th {
+  font-family: var(--font-mono); font-weight: 500; font-size: .72rem;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3);
+  background: var(--bg-soft) !important; border-bottom: 1px solid var(--border);
 }
+.table-hover > tbody > tr:hover > * { background: var(--bg-soft) !important; color: var(--fg); }
 
+/* ---------- Form ---------- */
+.form-control, .form-select, .input-group-text {
+  background-color: var(--bg-3); border: 1px solid var(--border-2);
+  color: var(--fg); border-radius: var(--r-md);
+}
+.form-control::placeholder { color: var(--fg-4); }
+.form-control:focus, .form-select:focus {
+  background-color: var(--bg-3); color: var(--fg);
+  border-color: var(--acc-1); box-shadow: 0 0 0 3px rgba(198,244,50,.15);
+}
+.form-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%238892A4' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+}
+.form-label { color: var(--fg-3); font-weight: 500; font-size: .85rem; }
+.form-text { color: var(--fg-4); }
+.form-check-input { background-color: var(--bg-3); border-color: var(--border-2); }
+.form-check-input:checked { background-color: var(--acc-1); border-color: var(--acc-1); }
+.input-group-text { color: var(--fg-3); }
+
+/* ---------- Bottoni (pill, lime CTA) ---------- */
+.btn { border-radius: var(--r-full); font-weight: 600; transition: transform var(--t-fast) var(--e-out), box-shadow var(--t-fast) var(--e-out), background var(--t-fast) var(--e-out), color var(--t-fast) var(--e-out); }
+.btn-primary { --bs-btn-bg: var(--acc-1); --bs-btn-border-color: var(--acc-1); --bs-btn-color: #06080A; --bs-btn-hover-bg: var(--acc-1); --bs-btn-hover-border-color: var(--acc-1); --bs-btn-hover-color: #06080A; --bs-btn-active-bg: var(--acc-1-dim); }
+.btn-primary:hover { box-shadow: 0 14px 40px -8px rgba(198,244,50,.55); transform: translateY(-1px); }
+.btn-success { --bs-btn-bg: var(--ok); --bs-btn-border-color: var(--ok); --bs-btn-color: #06120A; --bs-btn-hover-bg: var(--ok); --bs-btn-hover-color: #06120A; }
+.btn-outline-primary { --bs-btn-color: var(--acc-1); --bs-btn-border-color: var(--acc-1-dim); --bs-btn-hover-bg: var(--acc-1); --bs-btn-hover-color: #06080A; --bs-btn-hover-border-color: var(--acc-1); }
+.btn-outline-secondary { --bs-btn-color: var(--fg-2); --bs-btn-border-color: var(--border-2); --bs-btn-hover-bg: transparent; --bs-btn-hover-color: var(--acc-2); --bs-btn-hover-border-color: var(--acc-2); }
+.btn-outline-success { --bs-btn-color: var(--ok); --bs-btn-border-color: rgba(110,231,161,.4); --bs-btn-hover-bg: var(--ok); --bs-btn-hover-color: #06120A; }
+.btn-outline-danger, .btn-outline-warning { --bs-btn-color: var(--danger); --bs-btn-border-color: rgba(255,107,107,.4); --bs-btn-hover-bg: var(--danger); --bs-btn-hover-color: #1a0606; }
+.btn-outline-warning { --bs-btn-color: var(--warn); --bs-btn-border-color: rgba(255,184,77,.4); --bs-btn-hover-bg: var(--warn); --bs-btn-hover-color: #1a1206; }
+.btn-link { color: var(--acc-2); }
+
+/* ---------- Badge come chip mono ---------- */
 .badge {
-    font-weight: 500;
-    padding: 0.4em 0.65em;
+  font-family: var(--font-mono); font-weight: 500; font-size: .7rem;
+  letter-spacing: .03em; padding: .35em .7em; border-radius: var(--r-full);
+  border: 1px solid transparent;
 }
+.badge.bg-success { background: rgba(110,231,161,.12) !important; color: var(--ok) !important; border-color: rgba(110,231,161,.35); }
+.badge.bg-warning { background: rgba(255,184,77,.12) !important; color: var(--warn) !important; border-color: rgba(255,184,77,.35); }
+.badge.bg-danger  { background: rgba(255,107,107,.14) !important; color: var(--danger) !important; border-color: rgba(255,107,107,.35); }
+.badge.bg-primary { background: rgba(198,244,50,.12) !important; color: var(--acc-1) !important; border-color: rgba(198,244,50,.35); }
+.badge.bg-info    { background: rgba(110,231,255,.12) !important; color: var(--acc-2) !important; border-color: rgba(110,231,255,.35); }
+.badge.bg-secondary { background: var(--bg-3) !important; color: var(--fg-3) !important; border-color: var(--border-2); }
+.badge.bg-light   { background: var(--bg-3) !important; color: var(--fg-2) !important; border-color: var(--border); }
 
-.form-select-sm {
-    font-size: 0.8rem;
-}
+/* ---------- Alert ---------- */
+.alert { border-radius: var(--r-md); border: 1px solid var(--border-2); background: var(--bg-2); color: var(--fg-2); }
+.alert-success { background: rgba(110,231,161,.08); border-color: rgba(110,231,161,.3); color: var(--ok); }
+.alert-danger  { background: rgba(255,107,107,.08); border-color: rgba(255,107,107,.3); color: var(--danger); }
+.alert-warning { background: rgba(255,184,77,.08); border-color: rgba(255,184,77,.3); color: var(--warn); }
+.alert-info    { background: rgba(110,231,255,.08); border-color: rgba(110,231,255,.3); color: var(--acc-2); }
+.btn-close { filter: invert(1) grayscale(1) opacity(.6); }
 
-footer {
-    font-size: 0.85rem;
-}
+/* ---------- List group ---------- */
+.list-group { --bs-list-group-bg: transparent; }
+.list-group-item { background: transparent; border-color: var(--border); color: var(--fg-2); }
+
+/* ---------- Modal ---------- */
+.modal-content { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-lg); color: var(--fg-2); }
+.modal-header, .modal-footer { border-color: var(--border); }
+.modal-title { color: var(--fg); }
+
+/* ---------- Accordion / details / pre ---------- */
+.accordion { --bs-accordion-bg: transparent; --bs-accordion-color: var(--fg-2); --bs-accordion-border-color: var(--border); --bs-accordion-active-bg: var(--bg-soft); --bs-accordion-active-color: var(--fg); --bs-accordion-btn-color: var(--fg-2); }
+pre { background: var(--bg-3) !important; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--fg-2); }
+details > summary { color: var(--acc-2); }
+
+/* ---------- Footer ---------- */
+footer { color: var(--fg-4); border-top: 1px solid var(--border) !important; }
+
+/* Bolle chat (pagina Documenti / contatto): il "primario" = lime con testo scuro */
+.bg-primary.text-white, .bg-primary { background: var(--acc-1) !important; }
+.bg-primary.text-white { color: #06080A !important; }

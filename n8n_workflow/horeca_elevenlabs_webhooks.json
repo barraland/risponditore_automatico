@@ -1,0 +1,84 @@
+{
+  "name": "HORECA - ElevenLabs Webhooks (init + post-call)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "elevenlabs-init",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "n1",
+      "name": "Webhook Init",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 200],
+      "webhookId": "horeca-elevenlabs-init"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ElevenLabs Conversation Initiation Webhook (HORECA)\n// Riceve: { caller_id, agent_id, called_number, call_sid }\nconst b = $json.body || $json;\nconst caller = (b.caller_id || '').trim();\n\n// >>> QUI in produzione: un nodo Postgres PRIMA di questo che cerca il contatto\n// per numero e ne passa i campi. Per ora c=null simula un chiamante sconosciuto.\nlet c = null;\n// Esempio: c = { nome:'Gino', cognome:'Rossi', societa:'Trattoria da Gino',\n//               stato:'cliente', ruolo:'Titolare', email:'gino@x.it',\n//               ultimo:'#1 del 08/06, 3 articoli, 525 EUR', riassunto:'...' };\n\nlet dv, saluto;\nif (c) {\n  saluto = 'Buongiorno signor ' + (c.cognome || c.nome) + ', come posso aiutarla?';\n  dv = {\n    cliente_conosciuto: 'si',\n    nome_cliente: ((c.nome||'') + ' ' + (c.cognome||'')).trim(),\n    nome: c.nome || '',\n    societa: c.societa || '',\n    stato_cliente: c.stato || '',\n    ruolo: c.ruolo || '',\n    email_cliente: c.email || '',\n    ultimo_ordine: c.ultimo || 'nessuno',\n    riassunto_cliente: c.riassunto || '',\n    saluto: saluto\n  };\n} else {\n  saluto = 'Buongiorno, come posso aiutarla?';\n  dv = {\n    cliente_conosciuto: 'no',\n    nome_cliente: '', nome: '', societa: '', stato_cliente: '', ruolo: '',\n    email_cliente: '', ultimo_ordine: 'nessuno',\n    riassunto_cliente: 'Chiamante non riconosciuto: nuovo contatto da registrare.',\n    saluto: saluto\n  };\n}\ndv.telefono_chiamante = caller;\n\nreturn [{ json: {\n  type: 'conversation_initiation_client_data',\n  dynamic_variables: dv\n} }];"
+      },
+      "id": "n2",
+      "name": "Build Init Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "n3",
+      "name": "Respond Init",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "elevenlabs-postcall",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "n4",
+      "name": "Webhook Post-Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 460],
+      "webhookId": "horeca-elevenlabs-postcall"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ElevenLabs Post-Call Webhook (HORECA): trascrizione + riassunto\nconst b = $json.body || $json;\nif (b.type !== 'post_call_transcription') {\n  return [{ json: { ok: true, ignored: b.type } }];\n}\nconst data = b.data || {};\nconst turns = data.transcript || [];\nconst nl = String.fromCharCode(10);\nconst trascrizione = turns\n  .map(function (t) { return (t.role === 'user' ? 'Cliente: ' : 'Assistente: ') + (t.message || ''); })\n  .join(nl);\nconst an = data.analysis || {};\nconst meta = data.metadata || {};\nconst dv = ((data.conversation_initiation_client_data || {}).dynamic_variables) || {};\nconst telefono = dv.telefono_chiamante || '';\n\n// >>> QUI in produzione: un nodo Postgres INSERT per salvare la chiamata\n// (telefono, trascrizione, riassunto, durata) sul contatto.\n\nreturn [{ json: {\n  ok: true,\n  telefono: telefono,\n  durata_sec: meta.call_duration_secs || null,\n  riassunto: an.transcript_summary || '',\n  trascrizione: trascrizione\n} }];"
+      },
+      "id": "n5",
+      "name": "Parse Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "n6",
+      "name": "Respond Post-Call",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 460]
+    }
+  ],
+  "connections": {
+    "Webhook Init": { "main": [[{ "node": "Build Init Response", "type": "main", "index": 0 }]] },
+    "Build Init Response": { "main": [[{ "node": "Respond Init", "type": "main", "index": 0 }]] },
+    "Webhook Post-Call": { "main": [[{ "node": "Parse Transcript", "type": "main", "index": 0 }]] },
+    "Parse Transcript": { "main": [[{ "node": "Respond Post-Call", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {}
+}

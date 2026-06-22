@@ -9,9 +9,17 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 # Path del DB configurabile via env (utile in Docker per puntare a un volume persistente).
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assistente.db")
+# .strip() difensivo: uno spazio accidentale nel .env/secret romperebbe il parsing dell'URL.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assistente.db").strip()
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# check_same_thread è un connect_arg SOLO di SQLite: con Postgres va omesso.
+_is_sqlite = DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+# Su Postgres/Supabase: pool_pre_ping controlla che la connessione sia viva prima di usarla
+# (il pooler chiude le connessioni idle -> altrimenti query intermittenti falliscono);
+# pool_recycle ricicla quelle più vecchie di 5 min.
+_engine_kwargs = {} if _is_sqlite else {"pool_pre_ping": True, "pool_recycle": 300}
+engine = create_engine(DATABASE_URL, connect_args=_connect_args, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -98,6 +106,12 @@ class Azienda(Base):
     criteri_priorita = Column(Text, nullable=True)
     # Testo libero: info minime da raccogliere per qualificare il lead.
     info_qualificazione = Column(Text, nullable=True)
+    # Istruzioni libere dell'amministratore, iniettate nel system prompt di tutti gli LLM
+    # (voce, WhatsApp, retriever) e in ElevenLabs via la dynamic var {{configurazione}}.
+    istruzioni_admin = Column(Text, nullable=True)
+    # Regole commerciali e promozioni (prezzi, sconti, omaggi). Iniettate ovunque come le
+    # istruzioni: l'assistente le applica sia rispondendo sui prezzi sia registrando ordini.
+    regole_commerciali = Column(Text, nullable=True)
 
 
 class Contatto(Base):
@@ -355,7 +369,8 @@ class Documento(Base):
     categoria = Column(String(40), nullable=False)   # listino, schede_prodotto, contratti, faq, altro
     anno = Column(Integer, nullable=True, index=True) # anno di riferimento (per la catalogazione)
     nome_file = Column(String(300), nullable=False)  # nome originale del file
-    percorso = Column(String(500), nullable=False)   # path su disco (PDF originale, sempre conservato)
+    percorso = Column(String(500), nullable=False)   # path su disco (transitorio, usato per l'indicizzazione)
+    storage_path = Column(String(500), nullable=True)  # path su Supabase Storage (copia durevole dell'originale)
     n_pagine = Column(Integer, nullable=True)
     dimensione = Column(Integer, nullable=True)       # byte
     stato = Column(Enum(StatoDocumento), default=StatoDocumento.PROCESSING, nullable=False)
@@ -446,4 +461,7 @@ def init_db():
         if cartella:
             os.makedirs(cartella, exist_ok=True)
     Base.metadata.create_all(bind=engine)
-    _migra_colonne(engine)
+    # La micro-migrazione ALTER TABLE è scritta per il vecchio DB SQLite; su Postgres
+    # le colonne nascono già da create_all, quindi la saltiamo.
+    if DATABASE_URL.startswith("sqlite"):
+        _migra_colonne(engine)
