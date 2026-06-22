@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { lower, nomeContatto } from '../lib/format'
+import { badgeStato, lower, nomeContatto } from '../lib/format'
 import Modal from '../components/Modal'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
@@ -18,7 +18,7 @@ export default function ContattoDetail() {
   const [edit, setEdit] = useState(false)
 
   async function carica() {
-    const { data, error } = await supabase.from('contatti').select('*, locali(id, insegna)').eq('id', id).single()
+    const { data, error } = await supabase.from('contatti').select('*, locali(id, insegna, stato_relazione)').eq('id', id).single()
     if (error) setErr(error.message); else setC(data); setLoading(false)
   }
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function ContattoDetail() {
       <Link to="/contatti" className="pw-btn pw-btn-ghost pw-btn-sm" style={{ width: 'fit-content' }}>← Contatti</Link>
       <div className="pw-between">
         <div>
-          <h1 style={{ fontSize: 26 }}>{nomeContatto(c)} <span className={`pw-badge ${lower(c.stato) === 'cliente' ? 'ok' : 'warn'}`} style={{ verticalAlign: 'middle' }}>{lower(c.stato)}</span></h1>
+          <h1 style={{ fontSize: 26 }}>{nomeContatto(c)}{c.locali && <span className={`pw-badge ${badgeStato(c.locali.stato_relazione)}`} style={{ verticalAlign: 'middle', marginLeft: 8 }}>{lower(c.locali.stato_relazione)}</span>}</h1>
           <div className="pw-muted" style={{ marginTop: 4 }}>
             {c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : 'Nessuna società'}{c.ruolo ? ` · ${c.ruolo}` : ''}
           </div>
@@ -81,16 +81,17 @@ function Kv({ k, v }: { k: string; v?: string | null }) {
 function EditContatto({ c, locali, onClose, onSalvato }: any) {
   const [f, setF] = useState({
     nome: c.nome || '', cognome: c.cognome || '', ruolo: c.ruolo || '', telefono: c.telefono || '',
-    email: c.email || '', locale_id: c.locale_id ? String(c.locale_id) : '', stato: c.stato,
+    email: c.email || '', locale_id: c.locale_id ? String(c.locale_id) : '',
   })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
   async function salva() {
     setBusy(true); setErr(null)
+    // lo stato cliente/prospect è ereditato dalla società (sola lettura): non si scrive qui.
     const { error } = await supabase.from('contatti').update({
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
       telefono: f.telefono.trim() || null, email: f.email.trim() || null,
-      locale_id: f.locale_id ? Number(f.locale_id) : null, stato: f.stato,
+      locale_id: f.locale_id ? Number(f.locale_id) : null,
     }).eq('id', c.id)
     setBusy(false); if (error) setErr(error.message); else onSalvato()
   }

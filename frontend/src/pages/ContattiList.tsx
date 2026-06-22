@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { lower, nomeContatto } from '../lib/format'
+import { badgeStato, lower, nomeContatto } from '../lib/format'
 import Modal from '../components/Modal'
 
 export default function ContattiList() {
@@ -15,7 +15,7 @@ export default function ContattiList() {
 
   async function carica() {
     const { data, error } = await supabase.from('contatti')
-      .select('id, nome, cognome, ruolo, telefono, email, stato, locali(id, insegna)')
+      .select('id, nome, cognome, ruolo, telefono, email, locali(id, insegna, stato_relazione)')
       .order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || []); setLoading(false)
   }
@@ -50,9 +50,13 @@ export default function ContattiList() {
                 {filtrate.map(c => (
                   <tr key={c.id} onClick={() => nav(`/contatti/${c.id}`)}>
                     <td style={{ fontWeight: 600, color: 'var(--fg)' }}>{nomeContatto(c)}</td>
-                    <td>{c.locali ? c.locali.insegna : '—'}</td>
+                    <td>{c.locali
+                      ? <Link to={`/societa/${c.locali.id}`} onClick={e => e.stopPropagation()}>{c.locali.insegna}</Link>
+                      : '—'}</td>
                     <td>{c.ruolo || '—'}</td><td>{c.telefono || '—'}</td><td>{c.email || '—'}</td>
-                    <td><span className={`pw-badge ${lower(c.stato) === 'cliente' ? 'ok' : 'warn'}`}>{lower(c.stato)}</span></td>
+                    <td>{c.locali
+                      ? <span className={`pw-badge ${badgeStato(c.locali.stato_relazione)}`}>{lower(c.locali.stato_relazione)}</span>
+                      : <span className="pw-muted">—</span>}</td>
                   </tr>
                 ))}
               </tbody>

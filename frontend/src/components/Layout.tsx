@@ -6,9 +6,9 @@ export default function Layout() {
   return (
     <>
       <nav className="pw-nav">
-        <NavLink to="/societa" className="pw-brand">
+        <a href="https://pipework.it/" target="_blank" rel="noreferrer" className="pw-brand">
           <img src="/pipework-mark.svg" alt="Pipework" /> Pipework
-        </NavLink>
+        </a>
         <div className="pw-nav-links">
           <NavLink to="/societa">Società</NavLink>
           <NavLink to="/ordini">Ordini</NavLink>
