@@ -14,6 +14,7 @@ export default function Layout() {
           <NavLink to="/ordini">Ordini</NavLink>
           <NavLink to="/agenti">Agenti</NavLink>
           <NavLink to="/contatti">Contatti</NavLink>
+          <NavLink to="/ticket">Ticket</NavLink>
           <NavLink to="/documenti">Documenti</NavLink>
         </div>
         <div className="pw-nav-right">

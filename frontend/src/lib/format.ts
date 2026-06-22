@@ -13,6 +13,24 @@ export function dataBreve(iso?: string | null) {
   return d.toLocaleDateString('it-IT')
 }
 
+export function dataOra(iso?: string | null) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleString('it-IT', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+export function badgePriorita(p?: string | null) {
+  const s = lower(p)
+  if (s === 'alta') return 'warn'
+  if (s === 'media') return 'cy'
+  return 'mute'
+}
+
+export function badgeTicket(stato?: string | null) {
+  return lower(stato) === 'aperto' ? 'lime' : 'mute'
+}
+
 // Classe badge per lo stato relazione della società
 export function badgeStato(stato?: string | null) {
   const s = lower(stato)

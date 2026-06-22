@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { badgeStato, lower, nomeContatto } from '../lib/format'
+import { badgePriorita, badgeStato, badgeTicket, dataOra, lower, nomeContatto } from '../lib/format'
 import Modal from '../components/Modal'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
@@ -18,7 +18,12 @@ export default function ContattoDetail() {
   const [edit, setEdit] = useState(false)
 
   async function carica() {
-    const { data, error } = await supabase.from('contatti').select('*, locali(id, insegna, stato_relazione)').eq('id', id).single()
+    const { data, error } = await supabase.from('contatti').select(
+      '*, locali(id, insegna, stato_relazione),' +
+      ' messaggi_chat(id, direzione, testo, timestamp),' +
+      ' chiamate_voce(id, iniziata_at, durata_sec, riassunto, trascrizione),' +
+      ' ticket(id, titolo, stato, priorita, canale, created_at)'
+    ).eq('id', id).single()
     if (error) setErr(error.message); else setC(data); setLoading(false)
   }
   useEffect(() => {
@@ -61,15 +66,96 @@ export default function ContattoDetail() {
         </div>
       </div>
 
-      <div className="pw-card" style={{ maxWidth: 520 }}>
-        <div className="pw-card-head"><h3>Anagrafica</h3></div>
-        <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
-          <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
-          <Kv k="Ruolo" v={c.ruolo} /><Kv k="Società" v={c.locali?.insegna} />
+      <div className="pw-grid" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr)' }}>
+        <div className="pw-card">
+          <div className="pw-card-head"><h3>Anagrafica</h3></div>
+          <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
+            <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
+            <Kv k="Ruolo" v={c.ruolo} /><Kv k="Società" v={c.locali?.insegna} />
+          </div>
         </div>
+        <Conversazioni c={c} />
       </div>
 
       {edit && <EditContatto c={c} locali={locali} onClose={() => setEdit(false)} onSalvato={() => { setEdit(false); carica() }} />}
+    </div>
+  )
+}
+
+function Conversazioni({ c }: { c: any }) {
+  const messaggi = (c.messaggi_chat || []).slice().sort((a: any, b: any) => (a.timestamp || '').localeCompare(b.timestamp || ''))
+  const chiamate = (c.chiamate_voce || []).slice().sort((a: any, b: any) => (b.iniziata_at || '').localeCompare(a.iniziata_at || ''))
+  const ticket = (c.ticket || []).slice().sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
+  const vuoto = !messaggi.length && !chiamate.length && !ticket.length
+
+  return (
+    <div className="pw-stack">
+      {vuoto && <div className="pw-card"><div className="pw-empty">Nessuna conversazione, chiamata o ticket.</div></div>}
+
+      {ticket.length > 0 && (
+        <div className="pw-card">
+          <div className="pw-card-head"><h3>Ticket ({ticket.length})</h3></div>
+          <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
+            {ticket.map((t: any) => (
+              <div key={t.id} className="pw-between" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                <div>
+                  <div style={{ color: 'var(--fg)', fontWeight: 600 }}>{t.titolo}</div>
+                  <div className="pw-muted" style={{ fontSize: 12 }}>{lower(t.canale) || '—'} · {dataOra(t.created_at)}</div>
+                </div>
+                <div className="pw-row" style={{ gap: 6 }}>
+                  {t.priorita && <span className={`pw-badge ${badgePriorita(t.priorita)}`}>{lower(t.priorita)}</span>}
+                  <span className={`pw-badge ${badgeTicket(t.stato)}`}>{lower(t.stato)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {chiamate.length > 0 && (
+        <div className="pw-card">
+          <div className="pw-card-head"><h3>Chiamate ({chiamate.length})</h3></div>
+          <div className="pw-card-body pw-stack" style={{ gap: 12 }}>
+            {chiamate.map((ch: any) => (
+              <div key={ch.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                <div className="pw-muted" style={{ fontSize: 12 }}>
+                  {dataOra(ch.iniziata_at)}{ch.durata_sec ? ` · ${Math.round(ch.durata_sec / 60)} min` : ''}
+                </div>
+                <div style={{ color: 'var(--fg-2)', fontSize: 14, marginTop: 4 }}>{ch.riassunto || '—'}</div>
+                {ch.trascrizione && (
+                  <details style={{ marginTop: 6 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--acc-cy, #6EE7FF)' }}>Trascrizione</summary>
+                    <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12.5, color: 'var(--fg-2)', marginTop: 8, maxHeight: '30vh', overflow: 'auto' }}>{ch.trascrizione}</pre>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {messaggi.length > 0 && (
+        <div className="pw-card">
+          <div className="pw-card-head"><h3>WhatsApp ({messaggi.length})</h3></div>
+          <div className="pw-card-body pw-stack" style={{ gap: 8, maxHeight: '50vh', overflow: 'auto' }}>
+            {messaggi.map((m: any) => {
+              const out = lower(m.direzione) === 'out'
+              return (
+                <div key={m.id} style={{ display: 'flex', justifyContent: out ? 'flex-end' : 'flex-start' }}>
+                  <div style={{
+                    maxWidth: '80%', padding: '8px 12px', borderRadius: 12, fontSize: 13.5,
+                    background: out ? 'var(--acc-grad-soft)' : 'rgba(255,255,255,.04)',
+                    border: '1px solid var(--border)', color: 'var(--fg-2)',
+                  }}>
+                    <div>{m.testo}</div>
+                    <div className="pw-muted" style={{ fontSize: 10.5, marginTop: 3, textAlign: 'right' }}>{dataOra(m.timestamp)}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

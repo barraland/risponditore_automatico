@@ -21,7 +21,7 @@ alter table public.contatti add column if not exists titolo varchar(20);
 do $$
 declare t text;
 begin
-  foreach t in array array['locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni','testi_categoria'] loop
+  foreach t in array array['locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni','testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
     -- una policy unica "tutto agli autenticati"
