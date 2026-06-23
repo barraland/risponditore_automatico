@@ -71,7 +71,11 @@ export default function ContattoDetail() {
           <div className="pw-card-head"><h3>Anagrafica</h3></div>
           <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
             <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
-            <Kv k="Ruolo" v={c.ruolo} /><Kv k="Società" v={c.locali?.insegna} />
+            <Kv k="Ruolo" v={c.ruolo} />
+            <div>
+              <div className="pw-muted" style={{ fontSize: 12 }}>Società</div>
+              <div>{c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : '—'}</div>
+            </div>
           </div>
         </div>
         <Conversazioni c={c} />
