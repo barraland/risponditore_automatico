@@ -27,6 +27,7 @@ export default function Assistente() {
       info_qualificazione: (az.info_qualificazione || '').trim() || null,
       criteri_priorita: (az.criteri_priorita || '').trim() || null,
       istruzioni_admin: (az.istruzioni_admin || '').trim() || null,
+      prompt_whatsapp: (az.prompt_whatsapp || '').trim() || null,
       regole_commerciali: (az.regole_commerciali || '').trim() || null,
       saluto: (az.saluto || '').trim() || null,
       saluto_sconosciuto: (az.saluto_sconosciuto || '').trim() || null,
@@ -90,8 +91,11 @@ export default function Assistente() {
       <Campo titolo="Come assegnare la priorità" hint="Cosa rende un lead alta / media / bassa priorità."
         value={az.criteri_priorita || ''} onChange={v => set('criteri_priorita', v)} rows={4} />
 
-      <Campo titolo="Istruzioni libere (il tuo prompt)" hint="Indicazioni in linguaggio naturale su tono, regole, cosa dire o non dire. È il testo che sostituisce il 'mega prompt': vale per tutti i canali."
-        value={az.istruzioni_admin || ''} onChange={v => set('istruzioni_admin', v)} rows={10} />
+      <Campo titolo="Prompt agente vocale" hint="Il prompt completo dell'assistente al TELEFONO (voce: GPT Realtime + ElevenLabs). Tono, flusso, come gestire ordini, ecc. Puoi usare i segnaposto {{cliente_conosciuto}}, {{riassunto_cliente}}, {{telefono_chiamante}}."
+        value={az.istruzioni_admin || ''} onChange={v => set('istruzioni_admin', v)} rows={20} />
+
+      <Campo titolo="Prompt agente WhatsApp" hint="Il prompt dell'assistente su WhatsApp (chat testuale). Simile al vocale ma adattato al testo (niente spelling a voce, può mandare link, ecc.). Se lo lasci vuoto, WhatsApp usa il prompt vocale."
+        value={az.prompt_whatsapp || ''} onChange={v => set('prompt_whatsapp', v)} rows={20} />
 
       <Campo titolo="Regole commerciali e promozioni" hint="Prezzi, sconti e offerte che l'assistente applica sempre — rispondendo sui prezzi e registrando ordini. Es: «compri 10 casse di birra, 5 in omaggio»; «3x2 sui pelati fino al 14/08/2026»; «sconto 10% sopra i 500€». Per calcoli ambigui chiede conferma."
         value={az.regole_commerciali || ''} onChange={v => set('regole_commerciali', v)} rows={10} />

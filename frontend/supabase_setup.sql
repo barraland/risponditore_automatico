@@ -10,6 +10,8 @@
 alter table public.azienda add column if not exists istruzioni_admin text;
 -- Regole commerciali e promozioni (prezzi, sconti, omaggi), iniettate ovunque.
 alter table public.azienda add column if not exists regole_commerciali text;
+-- Prompt dell'agente WhatsApp (separato da quello vocale).
+alter table public.azienda add column if not exists prompt_whatsapp text;
 -- Formule del primo saluto vocale (segnaposto {nome} {cognome} {azienda}).
 alter table public.azienda add column if not exists saluto text;                -- cliente riconosciuto
 alter table public.azienda add column if not exists saluto_sconosciuto text;    -- chiamante anonimo

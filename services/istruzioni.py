@@ -127,17 +127,24 @@ def _cornice_regole(testo: str) -> str:
     )
 
 
-def blocco_prompt(db=None) -> str:
-    """Blocco da appendere ai system prompt: istruzioni admin + regole commerciali.
+def blocco_prompt(db=None, canale=None) -> str:
+    """Blocco da appendere ai system prompt: prompt admin (per canale) + regole commerciali.
 
-    Letti dalla riga `azienda` in un'unica query. Stringa vuota se entrambi mancano.
+    `canale`: "whatsapp" usa il prompt WhatsApp (con fallback al prompt vocale se vuoto);
+    qualsiasi altro valore (voce/None) usa il prompt vocale `istruzioni_admin`.
+    Letti dalla riga `azienda` in un'unica query. Stringa vuota se tutto manca.
     """
     own = db is None
     if own:
         db = SessionLocal()
     try:
         az = db.query(Azienda).first()
-        istr = az.istruzioni_admin if (az is not None and az.istruzioni_admin is not None) else None
+        istr = None
+        if az is not None:
+            if canale == "whatsapp" and (az.prompt_whatsapp or "").strip():
+                istr = az.prompt_whatsapp
+            else:
+                istr = az.istruzioni_admin  # prompt vocale = default + fallback per gli altri canali
         regole = (az.regole_commerciali.strip() if (az is not None and az.regole_commerciali) else "")
     except Exception as e:  # pragma: no cover - robustezza
         logger.warning("Lettura blocco prompt fallita: %s", e)

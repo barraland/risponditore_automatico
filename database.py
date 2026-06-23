@@ -107,8 +107,10 @@ class Azienda(Base):
     # Testo libero: info minime da raccogliere per qualificare il lead.
     info_qualificazione = Column(Text, nullable=True)
     # Istruzioni libere dell'amministratore, iniettate nel system prompt di tutti gli LLM
-    # (voce, WhatsApp, retriever) e in ElevenLabs via la dynamic var {{configurazione}}.
+    # (voce, retriever) e in ElevenLabs via la dynamic var {{configurazione}}. È il prompt VOCALE.
     istruzioni_admin = Column(Text, nullable=True)
+    # Prompt dell'agente WhatsApp (testo). Se vuoto, ricade sul prompt vocale (istruzioni_admin).
+    prompt_whatsapp = Column(Text, nullable=True)
     # Regole commerciali e promozioni (prezzi, sconti, omaggi). Iniettate ovunque come le
     # istruzioni: l'assistente le applica sia rispondendo sui prezzi sia registrando ordini.
     regole_commerciali = Column(Text, nullable=True)

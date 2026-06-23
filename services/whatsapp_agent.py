@@ -419,7 +419,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         SYSTEM
         + f"\n\n{contesto_temporale()}"
         + profilo.blocco_prompt(db)
-        + istruzioni.blocco_prompt()
+        + istruzioni.blocco_prompt(db, canale="whatsapp")
     )
     ticket_esistente = _ticket_aperto(db, contatto.id)
     user = (
