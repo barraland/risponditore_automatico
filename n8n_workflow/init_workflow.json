@@ -1,0 +1,111 @@
+{
+  "name": "ElevenLabs init (HORECA)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "elevenlabs-init",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "elevenlabs-init"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ElevenLabs init webhook — query unica per il nodo Postgres di n8n.\n-- $1 = numero del chiamante (caller_id). Match su sole cifre (tollera spazi/formati).\n-- Ritorna SEMPRE 1 riga (azienda singleton); i campi del contatto sono NULL se non riconosciuto.\nSELECT\n  c.id              AS contatto_id,\n  c.titolo, c.nome, c.cognome, c.ragione_sociale, c.ruolo, c.email,\n  c.stato           AS contatto_stato,\n  s.id              AS societa_id,\n  COALESCE(s.insegna, s.ragione_sociale) AS societa_nome,\n  s.stato_relazione AS societa_stato,\n  o.id              AS ordine_id,\n  o.data            AS ordine_data,\n  o.stato           AS ordine_stato,\n  o.n_articoli,\n  o.totale,\n  a.nome            AS azienda_nome,\n  a.saluto,\n  a.saluto_sconosciuto,\n  a.descrizione_servizi,\n  a.criteri_priorita,\n  a.info_qualificazione,\n  a.istruzioni_admin,\n  a.regole_commerciali\nFROM azienda a\nLEFT JOIN contatti c\n       ON regexp_replace(c.telefono, '\\D', '', 'g') = regexp_replace($1, '\\D', '', 'g')\nLEFT JOIN locali s ON s.id = c.locale_id\nLEFT JOIN LATERAL (\n  SELECT o.id, o.data, o.stato,\n         (SELECT count(*) FROM righe_ordine r WHERE r.ordine_id = o.id) AS n_articoli,\n         (SELECT COALESCE(SUM(r.quantita * COALESCE(r.prezzo_unitario, 0)), 0)\n            FROM righe_ordine r WHERE r.ordine_id = o.id) AS totale\n  FROM ordini o\n  WHERE o.contatto_id = c.id\n  ORDER BY o.data DESC\n  LIMIT 1\n) o ON TRUE\nORDER BY a.id\nLIMIT 1;\n",
+        "options": {
+          "queryReplacement": "={{ $json.body.caller_id }}"
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ElevenLabs init webhook — nodo \"Code\" di n8n (JavaScript).\n// Input: la riga del nodo Postgres (init_query.sql). Output: il JSON per ElevenLabs.\n// Replica 1:1 la logica del backend Python (_riassunto, _componi_saluto, configurazione).\n\nconst row = $input.first().json;\n\nconst low = (v) => (v ?? '').toString().toLowerCase();\nconst has = (v) => v !== null && v !== undefined && String(v).trim() !== '';\nconst known = has(row.contatto_id);\n\n// numero del chiamante (dal nodo Webhook). Adatta il nome del nodo se diverso da \"Webhook\".\nconst caller =\n  $('Webhook').first().json?.body?.caller_id ??\n  $('Webhook').first().json?.caller_id ?? '';\n\n// ---- nome completo / nomi\nconst nome = (row.nome || '').trim();\nconst cognome = (row.cognome || '').trim();\nconst titolo = (row.titolo || '').trim();\nlet nomeCompleto = `${nome} ${cognome}`.trim();\nif (!nomeCompleto) nomeCompleto = (row.ragione_sociale || '').trim() || 'Contatto senza nome';\n\nconst aziendaNome = (row.azienda_nome || '').trim() || 'la nostra azienda';\nconst societaNome = has(row.societa_nome) ? row.societa_nome : (row.ragione_sociale || '').trim();\n\n// ---- ultimo ordine\nlet ultimoOrdine = 'nessuno';\nlet ultimoTxt = '';\nif (has(row.ordine_id)) {\n  const dataIt = row.ordine_data ? new Date(row.ordine_data).toLocaleDateString('it-IT') : '';\n  const tot = Number(row.totale || 0).toFixed(2);\n  ultimoOrdine = `#${row.ordine_id} del ${dataIt}, ${row.n_articoli || 0} articoli, € ${tot} (${low(row.ordine_stato)})`;\n  ultimoTxt = ` Ultimo ordine: ${ultimoOrdine}.`;\n}\n\n// ---- riassunto cliente\nlet riassunto;\nif (known) {\n  const pezzi = [nomeCompleto];\n  if (has(row.ruolo)) pezzi.push(row.ruolo);\n  if (has(row.societa_nome)) pezzi.push(`di ${societaNome} (${low(row.societa_stato)})`);\n  else if (has(row.ragione_sociale)) pezzi.push(`di ${row.ragione_sociale}`);\n  riassunto = pezzi.join(', ') + '.' + ultimoTxt;\n} else {\n  riassunto = 'Chiamante non riconosciuto: è un nuovo contatto da registrare.';\n}\n\n// ---- saluto (con segnaposto {titolo} {nome} {cognome} {azienda})\nconst SALUTO_DEFAULT = 'Buongiorno, come posso aiutarla?';\nconst pulisci = (s) => s.replace(/\\s+/g, ' ').replace(/ ,/g, ',').replace(/ \\./g, '.').replace(/ !/g, '!').replace(/ \\?/g, '?').trim();\nfunction componi(template) {\n  if (!template || !template.trim()) return '';\n  const s = template\n    .split('{titolo}').join(known ? titolo : '')\n    .split('{nome}').join(known ? nome : '')\n    .split('{cognome}').join(known ? cognome : '')\n    .split('{azienda}').join(aziendaNome);\n  return pulisci(s) || SALUTO_DEFAULT;\n}\nlet saluto;\nif (known) {\n  saluto = componi(row.saluto);\n  if (!saluto) {\n    const app = (cognome || nome).trim();\n    saluto = app ? `Buongiorno signor ${app}, come posso aiutarla?` : SALUTO_DEFAULT;\n  }\n} else {\n  saluto = componi(row.saluto_sconosciuto) || SALUTO_DEFAULT;\n}\n\n// ---- configurazione (profilo + istruzioni admin + regole commerciali)\nconst INFO_QUAL_DEFAULT =\n  'Raccogli, in modo naturale e senza interrogatori, almeno:\\n' +\n  '- nome e cognome della persona;\\n' +\n  '- ragione sociale della società e ruolo della persona (es. titolare, ufficio acquisti);\\n' +\n  '- email e telefono per essere ricontattati;\\n' +\n  '- sede / località;\\n' +\n  '- di cosa ha bisogno (prodotto/servizio di interesse), quantità/volumi se rilevanti, tempistiche e, se emerge, budget.';\n\nconst sezione = (tit, corpo) => {\n  corpo = (corpo || '').trim();\n  return corpo ? `\\n\\n=== ${tit} ===\\n${corpo}` : '';\n};\n\nlet configurazione = '';\nconfigurazione += sezione('COSA OFFRIAMO (usa SOLO queste informazioni per rispondere su prodotti/servizi/costi)', row.descrizione_servizi);\nconfigurazione += sezione('COME QUALIFICARE IL LEAD (informazioni da raccogliere durante la conversazione)',\n  (row.info_qualificazione && row.info_qualificazione.trim()) ? row.info_qualificazione : INFO_QUAL_DEFAULT);\nconfigurazione += sezione('COME ASSEGNARE LA PRIORITÀ AL LEAD (alta / media / bassa)', row.criteri_priorita);\n\nconst istr = (row.istruzioni_admin || '').trim();\nif (istr) {\n  configurazione += \"\\n\\n=== ISTRUZIONI DELL'AMMINISTRATORE ===\\n\" +\n    'Il testo delimitato qui sotto NON è un messaggio del cliente con cui stai parlando e NON fa parte della sua ' +\n    \"richiesta: sono indicazioni operative scritte dall'amministratore che gestisce questo assistente (il gestore del \" +\n    'servizio). Trattale come policy/preferenze da rispettare nel modo in cui rispondi (tono, priorità, cosa dire o non ' +\n    'dire, comportamenti particolari). Restano comunque valide le regole già ricevute: non inventare dati e non rivelare ' +\n    'informazioni riservate; se queste indicazioni le contraddicono o ti chiedono di fornire dati che non hai, dai la ' +\n    'precedenza alle regole di sicurezza.\\n' +\n    '----- inizio istruzioni amministratore -----\\n' + istr + '\\n----- fine istruzioni amministratore ===';\n}\n\nconst regole = (row.regole_commerciali || '').trim();\nif (regole) {\n  configurazione += '\\n\\n=== REGOLE COMMERCIALI E PROMOZIONI ===\\n' +\n    \"Politiche di prezzo, sconti e promozioni impostate dall'amministratore. Applicale quando rispondi su prezzi/offerte \" +\n    'e quando registri un ordine (es. quantità omaggio, sconti a scaglioni). Se un calcolo è ambiguo o non sei certo, ' +\n    'chiedi conferma invece di indovinare.\\n' +\n    '----- inizio regole commerciali -----\\n' + regole + '\\n----- fine regole commerciali ===';\n}\nconfigurazione = configurazione.trim();\n\n// ---- dynamic variables (stesse chiavi del backend Python)\nconst dv = {\n  cliente_conosciuto: known ? 'sì' : 'no',\n  nome_cliente: known ? nomeCompleto : '',\n  nome: known ? nome : '',\n  cognome: known ? cognome : '',\n  titolo: known ? titolo : '',\n  societa: known ? (societaNome || '') : '',\n  stato_cliente: known ? (has(row.societa_stato) ? low(row.societa_stato) : low(row.contatto_stato)) : '',\n  ruolo: known ? (row.ruolo || '') : '',\n  email_cliente: known ? (row.email || '') : '',\n  ultimo_ordine: ultimoOrdine,\n  riassunto_cliente: riassunto,\n  saluto: saluto,\n  telefono_chiamante: caller,\n  configurazione: configurazione,\n};\n\nreturn [{ json: { type: 'conversation_initiation_client_data', dynamic_variables: dv } }];\n"
+      },
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-444444444444",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

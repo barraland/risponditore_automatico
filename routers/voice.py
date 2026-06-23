@@ -32,11 +32,13 @@ from services import voice_log
 from services import ticket as ticket_service
 from services import istruzioni
 from services import profilo
-from services import retriever
 from services import crm
 from services import email as email_service
 from services import documenti as documenti_service
 from services.contesto import contesto_temporale
+# Riusa la STESSA logica dei tool MCP (ElevenLabs) per i documenti e l'anagrafica locale,
+# così il path vocale Realtime espone tool identici senza duplicare il codice.
+from routers import mcp_server
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/voice")
@@ -71,29 +73,65 @@ REALTIME_TOOLS = [
                 "sede": {"type": "string", "description": "Sede / località."},
                 "stato": {"type": "string", "enum": ["cliente", "prospect"],
                           "description": "cliente se è già cliente, prospect se potenziale."},
+                "titolo": {"type": "string", "enum": ["Signore", "Signora"],
+                           "description": "Appellativo: imposta SOLO se sei certo del genere, altrimenti OMETTI."},
             },
             "required": [],
         },
     },
     {
         "type": "function",
-        "name": "consulta_documenti",
+        "name": "aggiorna_contatto",
         "description": (
-            "Consulta i DOCUMENTI caricati (listini, schede prodotto, contratti, condizioni, FAQ, "
-            "file Excel/CSV...) per rispondere a domande su prezzi, condizioni, dettagli di "
-            "prodotti/servizi che non conosci già. Passa una domanda chiara e autosufficiente "
-            "(con tutto il contesto utile); ricevi una risposta sintetica basata sui documenti, da "
-            "riferire a voce al chiamante. Usalo ogni volta che servono dati di dettaglio."
+            "Aggiorna i dati ANAGRAFICI DELLA PERSONA quando emergono info nuove (email, ruolo, "
+            "cognome, oppure titolo se diventa chiaro il genere). Passa solo i campi nuovi. "
+            "Equivale a salva_contatto: usalo per gli aggiornamenti in corso di chiamata."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "domanda": {"type": "string",
-                            "description": "La domanda a cui rispondere consultando i documenti."},
+                "nome": {"type": "string"}, "cognome": {"type": "string"},
+                "ragione_sociale": {"type": "string"}, "ruolo": {"type": "string"},
+                "email": {"type": "string"}, "sede": {"type": "string"},
+                "titolo": {"type": "string", "enum": ["Signore", "Signora"],
+                           "description": "Imposta SOLO se certo del genere."},
             },
-            "required": ["domanda"],
+            "required": [],
         },
     },
+    {
+        "type": "function",
+        "name": "aggiorna_locale",
+        "description": (
+            "Aggiorna l'anagrafica del LOCALE/azienda del chiamante (ristorante/bar/hotel): città, "
+            "indirizzo, ragione sociale, P.IVA, insegna. Usalo quando emerge un dato del locale prima "
+            "mancante (es. la CITTÀ). Passa solo i campi nuovi."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "citta": {"type": "string"}, "indirizzo": {"type": "string"},
+                "ragione_sociale": {"type": "string"}, "piva": {"type": "string"},
+                "insegna": {"type": "string"},
+            },
+            "required": [],
+        },
+    },
+    {"type": "function", "name": "leggi_listini_prezzi",
+     "description": "Restituisce per intero i LISTINI e i PREZZI caricati. Usalo per prezzi, costi, sconti di listino, formati/confezioni. Poi rispondi a voce in modo breve.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"type": "function", "name": "leggi_condizioni_vendita",
+     "description": "Restituisce le CONDIZIONI DI VENDITA: consegne, tempi, ordine minimo, pagamenti, contratti.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"type": "function", "name": "leggi_schede_prodotto",
+     "description": "Restituisce le SCHEDE PRODOTTO: caratteristiche e dettagli tecnici dei prodotti.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"type": "function", "name": "leggi_faq",
+     "description": "Restituisce le FAQ e il materiale informativo generale.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"type": "function", "name": "leggi_altri_documenti",
+     "description": "Restituisce i documenti della categoria 'altro' (non classificati).",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
     {
         "type": "function",
         "name": "registra_ordine",
@@ -221,10 +259,11 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
         "- Leggi numeri, date e importi in modo naturale (es. 'cinquecento euro', 'il tre marzo').\n\n"
         "COME RISPONDERE:\n"
         "- Per domande su prodotti/servizi/costi/tempi usa le informazioni della sezione "
-        "'COSA OFFRIAMO'. Se servono DETTAGLI che non sono lì (prezzi specifici, condizioni, schede), "
-        "chiama lo strumento consulta_documenti con una domanda chiara e usa la risposta che ricevi "
-        "per rispondere al chiamante. Mentre attendi puoi dire qualcosa tipo «Verifico subito». Se "
-        "nemmeno i documenti hanno il dato, dillo con onestà (non inventare) e rassicura che un "
+        "'COSA OFFRIAMO'. Se servono DETTAGLI che non sono lì, chiama lo strumento della categoria "
+        "giusta — leggi_listini_prezzi (prezzi/listini), leggi_condizioni_vendita (consegne, minimi, "
+        "pagamenti), leggi_schede_prodotto, leggi_faq, leggi_altri_documenti: ti restituisce il testo "
+        "del documento, poi rispondi a voce in modo breve. Mentre attendi puoi dire «Verifico subito». "
+        "Se nemmeno i documenti hanno il dato, dillo con onestà (non inventare) e rassicura che un "
         "collega ricontatterà il chiamante.\n"
         "- Hai anche lo strumento invia_documento per inviare al cliente via email i documenti "
         "caricati (es. listino, condizioni di consegna): usalo secondo le indicazioni "
@@ -239,9 +278,10 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
         "RACCOLTA DATI (anagrafica):\n"
         "- Raccogli con naturalezza, senza interrogatori, le informazioni della sezione 'COME "
         "QUALIFICARE IL LEAD'. Poche per volta.\n"
-        "- Ogni volta che apprendi un dato (nome, azienda, ruolo, email, sede, esigenza...) chiama "
-        "SUBITO lo strumento salva_contatto con i campi che hai appreso. Se ti detta l'email, "
-        "fattela ripetere se non sei sicuro.\n\n"
+        "- Ogni volta che apprendi un dato della PERSONA (nome, ruolo, email...) chiama SUBITO "
+        "salva_contatto (o aggiorna_contatto) con i campi appresi. Se ti detta l'email, fattela "
+        "ripetere se non sei sicuro. Imposta `titolo` (Signore/Signora) SOLO se sei certo del genere.\n"
+        "- Per i dati del LOCALE (città, indirizzo, ragione sociale, P.IVA) usa aggiorna_locale.\n\n"
         "TICKET DI FOLLOW-UP (apri_ticket):\n"
         "- Quando hai capito di cosa ha bisogno il lead (di solito verso la fine), chiama apri_ticket "
         "con un titolo riassuntivo, una descrizione della richiesta e la PRIORITÀ (alta/media/bassa) "
@@ -369,7 +409,7 @@ async def media_stream(twilio_ws: WebSocket):
         contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
         if not contatto:
             return {"errore": "Contatto non disponibile."}
-        campi = ["nome", "cognome", "ragione_sociale", "ruolo", "email", "telefono", "sede"]
+        campi = ["titolo", "nome", "cognome", "ragione_sociale", "ruolo", "email", "telefono", "sede"]
         cambiato = False
         for c in campi:
             val = (args.get(c) or "").strip()
@@ -392,15 +432,23 @@ async def media_stream(twilio_ws: WebSocket):
             risultato["societa"] = societa.nome
         return risultato
 
-    def _consulta_documenti(domanda: str) -> dict:
-        """Interroga l'agente retriever sui documenti caricati (sincrona, gira in thread)."""
-        if not (domanda or "").strip():
-            return {"errore": "Domanda mancante."}
-        esito = retriever.rispondi(db, domanda)
-        return {
-            "risposta": esito.get("risposta", ""),
-            "fonti": [f.get("documento") for f in (esito.get("fonti") or [])],
-        }
+    def _leggi(categoria: str) -> dict:
+        """Ritorna il testo integrale dei documenti di una categoria (no LLM). Stessa logica MCP."""
+        return mcp_server._leggi_categoria(categoria)
+
+    def _aggiorna_locale(args: dict) -> dict:
+        """Aggiorna l'anagrafica del locale/società del chiamante. Stessa logica del tool MCP."""
+        tel = stato.get("telefono") or ""
+        if not tel:
+            return {"errore": "Numero del chiamante non disponibile."}
+        # @mcp.tool() può ritornare la funzione grezza o un wrapper con .fn: gestiamo entrambi.
+        fn = getattr(mcp_server.aggiorna_locale, "fn", mcp_server.aggiorna_locale)
+        return fn(
+            telefono=tel,
+            citta=args.get("citta", ""), indirizzo=args.get("indirizzo", ""),
+            ragione_sociale=args.get("ragione_sociale", ""), piva=args.get("piva", ""),
+            insegna=args.get("insegna", ""),
+        )
 
     def _registra_ordine(righe: list, note: str, conferma: bool) -> dict:
         """Registra un ordine sulla società del chiamante (sincrona, gira in thread).
@@ -503,10 +551,17 @@ async def media_stream(twilio_ws: WebSocket):
             args = {}
         logger.info("  voce tool: %s(%s)", name, args)
 
-        if name == "salva_contatto":
+        _LEGGI = {
+            "leggi_listini_prezzi": "listino", "leggi_condizioni_vendita": "contratti",
+            "leggi_schede_prodotto": "schede_prodotto", "leggi_faq": "faq",
+            "leggi_altri_documenti": "altro",
+        }
+        if name in ("salva_contatto", "aggiorna_contatto"):
             result = await asyncio.to_thread(_salva_contatto, args)
-        elif name == "consulta_documenti":
-            result = await asyncio.to_thread(_consulta_documenti, args.get("domanda", ""))
+        elif name == "aggiorna_locale":
+            result = await asyncio.to_thread(_aggiorna_locale, args)
+        elif name in _LEGGI:
+            result = await asyncio.to_thread(_leggi, _LEGGI[name])
         elif name == "registra_ordine":
             result = await asyncio.to_thread(
                 _registra_ordine, args.get("righe", []), args.get("note", ""), bool(args.get("conferma")))

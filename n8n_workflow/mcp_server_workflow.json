@@ -1,0 +1,59 @@
+{
+  "name": "HORECA MCP Server",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "horeca-mcp"
+      },
+      "id": "aaaaaaaa-0000-0000-0000-000000000001",
+      "name": "MCP Server Trigger",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "horeca-mcp"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Restituisce per intero i LISTINI e i PREZZI caricati. Usalo quando il cliente chiede quanto costa un prodotto, sconti di listino, formati/confezioni e relativi prezzi.",
+        "operation": "executeQuery",
+        "query": "-- Tool \"leggi_<categoria>\" — ritorna il testo integrale dei documenti di una categoria\n-- + la nota amministratore. Cambia SOLO la categoria ('listino') per gli altri tool:\n--   leggi_condizioni_vendita -> 'contratti'\n--   leggi_schede_prodotto    -> 'schede_prodotto'\n--   leggi_faq                -> 'faq'\n--   leggi_altri_documenti    -> 'altro'\nWITH nota AS (\n  SELECT testo FROM testi_categoria\n  WHERE categoria = 'listino' AND COALESCE(trim(testo), '') <> ''\n),\ndocs AS (\n  SELECT d.nome_file,\n         string_agg(s.content_md, E'\\n' ORDER BY s.ordine) AS testo,\n         max(d.caricato_at) AS ts\n  FROM documenti d\n  JOIN sezioni s ON s.documento_id = d.id\n  WHERE d.categoria = 'listino' AND d.stato IN ('READY', 'NEEDS_REVIEW')\n  GROUP BY d.id, d.nome_file\n)\nSELECT COALESCE(\n  NULLIF(trim(concat_ws(E'\\n\\n',\n    (SELECT 'NOTA DELL''AMMINISTRATORE: ' || testo FROM nota),\n    (SELECT string_agg('=== ' || nome_file || E' ===\\n' || testo, E'\\n\\n' ORDER BY ts DESC) FROM docs)\n  )), ''),\n  'Nessun documento disponibile in questa categoria.'\n) AS contenuto;\n",
+        "options": {}
+      },
+      "id": "bbbbbbbb-0000-0000-0000-000000000002",
+      "name": "leggi_listini_prezzi",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        320,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "leggi_listini_prezzi": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
