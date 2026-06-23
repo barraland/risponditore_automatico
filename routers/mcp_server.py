@@ -292,6 +292,38 @@ def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
 
 
 @mcp.tool()
+def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10) -> dict:
+    """Restituisce gli ordini RECENTI del cliente (la sua società), con prodotti e quantità di
+    ciascuno. Usalo per: (a) capire cosa ordina di solito e DISAMBIGUARE un prodotto generico
+    (es. "la Peroni" → quale formato ha già ordinato; se ne ha ordinati più formati, chiedigli
+    quale); (b) RIORDINARE un ordine passato ("riordina l'ultimo con le birre" → cerchi l'ordine
+    giusto qui e poi lo registri con registra_ordine). `giorni`: finestra temporale (7 = ultima
+    settimana, 30 = ultimo mese; 0 = tutti). `limite`: max ordini da restituire (default 10)."""
+    _log_tool("storico_ordini", telefono=telefono, giorni=giorni)
+    from datetime import datetime, timedelta
+    db = SessionLocal()
+    try:
+        c = _contatto(db, telefono)
+        societa = crm.societa_di_contatto(db, c)
+        q = db.query(Ordine)
+        q = q.filter(Ordine.societa_id == societa.id) if societa else q.filter(Ordine.contatto_id == c.id)
+        if giorni and giorni > 0:
+            q = q.filter(Ordine.data >= datetime.utcnow() - timedelta(days=giorni))
+        ordini = q.order_by(Ordine.data.desc()).limit(max(1, min(int(limite or 10), 30))).all()
+        out = [{
+            "ordine_id": o.id,
+            "data": o.data.strftime("%d/%m/%Y") if o.data else "",
+            "stato": o.stato.value,
+            "totale": o.totale,
+            "righe": [{"descrizione": r.descrizione, "quantita": r.quantita,
+                       "unita": r.unita, "prezzo_unitario": r.prezzo_unitario} for r in o.righe],
+        } for o in ordini]
+        return {"n": len(out), "ordini": out}
+    finally:
+        db.close()
+
+
+@mcp.tool()
 def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
     """Invia via email al chiamante il riepilogo di un ordine (ordine_id, oppure l'ultimo).
     Se il cliente non ha un'email salvata, lo segnala: chiedila e salvala con salva_contatto."""

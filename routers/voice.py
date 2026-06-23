@@ -186,6 +186,24 @@ REALTIME_TOOLS = [
     },
     {
         "type": "function",
+        "name": "storico_ordini",
+        "description": (
+            "Restituisce gli ordini recenti del cliente (prodotti e quantità). Usalo per capire cosa "
+            "ordina di solito e DISAMBIGUARE un prodotto generico (es. 'la Peroni' → quale formato; se "
+            "ne ha ordinati più di uno, chiedi quale), o per RIORDINARE un ordine passato. "
+            "giorni: finestra (7=ultima settimana, 30=ultimo mese; 0/omesso=tutti)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "giorni": {"type": "number", "description": "Finestra temporale in giorni (7=settimana, 30=mese; 0=tutti)."},
+                "limite": {"type": "number", "description": "Numero massimo di ordini (default 10)."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "type": "function",
         "name": "invia_riepilogo_ordine",
         "description": (
             "Invia via EMAIL al cliente il riepilogo dell'ordine appena registrato. Usa l'ordine_id "
@@ -491,6 +509,14 @@ async def media_stream(twilio_ws: WebSocket):
         fn = getattr(mcp_server.aggiorna_ordine, "fn", mcp_server.aggiorna_ordine)
         return fn(telefono=tel, note=args.get("note", ""), ordine_id=int(args.get("ordine_id") or 0))
 
+    def _storico_ordini(args: dict) -> dict:
+        """Storico ordini del cliente (per disambiguare prodotti o riordinare). Logica MCP."""
+        tel = stato.get("telefono") or ""
+        if not tel:
+            return {"errore": "Numero del chiamante non disponibile."}
+        fn = getattr(mcp_server.storico_ordini, "fn", mcp_server.storico_ordini)
+        return fn(telefono=tel, giorni=int(args.get("giorni") or 0), limite=int(args.get("limite") or 10))
+
     def _registra_ordine(righe: list, note: str, conferma: bool) -> dict:
         """Registra un ordine sulla società del chiamante (sincrona, gira in thread).
         Lo stato (confermato/bozza) lo decide il modello via `conferma`."""
@@ -608,6 +634,8 @@ async def media_stream(twilio_ws: WebSocket):
                 _registra_ordine, args.get("righe", []), args.get("note", ""), bool(args.get("conferma")))
         elif name == "aggiorna_ordine":
             result = await asyncio.to_thread(_aggiorna_ordine, args)
+        elif name == "storico_ordini":
+            result = await asyncio.to_thread(_storico_ordini, args)
         elif name == "invia_riepilogo_ordine":
             result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
         elif name == "invia_documento":
