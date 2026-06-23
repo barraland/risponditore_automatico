@@ -290,6 +290,23 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
     return testo
 
 
+def _saluto_voce(db, contatto) -> str:
+    """Saluto d'apertura per la voce: stesso template della dashboard usato da ElevenLabs
+    (azienda.saluto per i noti, azienda.saluto_sconosciuto per gli anonimi), con i segnaposto
+    {nome}/{cognome}/{titolo}/{azienda} sostituiti."""
+    from routers import elevenlabs
+    az = profilo.get_azienda(db)
+    known = bool(contatto and (contatto.nome or contatto.cognome or contatto.ragione_sociale))
+    template = (((az.saluto if known else az.saluto_sconosciuto) or "").strip()) if az else ""
+    az_nome = (az.nome if az else "") or ""
+    if template:
+        return elevenlabs._componi_saluto(template, contatto if known else None, az_nome)
+    if known:
+        app = (contatto.cognome or contatto.nome or "").strip()
+        return f"Buongiorno signor {app}, come posso aiutarla?" if app else elevenlabs._SALUTO_DEFAULT
+    return elevenlabs._SALUTO_DEFAULT
+
+
 # ---------- 1) Webhook Twilio ----------
 
 @router.post("/incoming")
@@ -385,7 +402,14 @@ async def media_stream(twilio_ws: WebSocket):
                 "tool_choice": "auto",
             },
         }))
-        await openai_ws.send(json.dumps({"type": "response.create"}))
+        # Prima battuta: fai dire ESATTAMENTE il saluto configurato in dashboard, poi ascolta.
+        saluto = _saluto_voce(db, contatto)
+        await openai_ws.send(json.dumps({
+            "type": "response.create",
+            "response": {"instructions": (
+                "Apri la conversazione dicendo ESATTAMENTE questa frase, con tono cordiale e "
+                f"naturale, e poi fermati ad ascoltare il chiamante: «{saluto}»")},
+        }))
 
     async def richiedi_risposta():
         """Chiede al modello di generare una risposta, rispettando la concorrenza."""
