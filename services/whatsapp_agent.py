@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from database import (
     Contatto, ContattoStato, MessaggioChat, DirezioneMessaggio, Ticket, StatoTicket,
 )
-from database import CanaleOrdine, OrigineOrdine, StatoOrdine
+from database import CanaleOrdine, OrigineOrdine, StatoOrdine, Ordine
 from services import ticket as ticket_service
 from services import istruzioni
 from services import profilo
@@ -259,6 +259,25 @@ def _scheda_contatto(c: Contatto) -> str:
     return "\n".join(noti) if noti else "(nessun dato ancora raccolto)"
 
 
+def _scheda_ordini(db: Session, contatto: Contatto, limite: int = 5) -> str:
+    """Ultimi ordini del cliente (prodotti + quantità), per disambiguare prodotti e riordinare."""
+    societa = crm.societa_di_contatto(db, contatto)
+    q = db.query(Ordine)
+    q = q.filter(Ordine.societa_id == societa.id) if societa else q.filter(Ordine.contatto_id == contatto.id)
+    ordini = q.order_by(Ordine.data.desc()).limit(limite).all()
+    if not ordini:
+        return "(nessun ordine precedente)"
+    righe = []
+    for o in ordini:
+        prods = "; ".join(
+            f"{r.quantita or ''}{(' ' + r.unita) if r.unita else ''} {r.descrizione}".strip()
+            for r in o.righe
+        ) or "—"
+        d = o.data.strftime("%d/%m/%Y") if o.data else ""
+        righe.append(f"#{o.id} del {d} ({o.stato.value}): {prods}")
+    return "\n".join(righe)
+
+
 def _applica_anagrafica(db: Session, contatto: Contatto, dati: dict) -> None:
     """Aggiorna i soli campi non vuoti restituiti dall'LLM."""
     cambiato = False
@@ -424,6 +443,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     ticket_esistente = _ticket_aperto(db, contatto.id)
     user = (
         f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
+        f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
         f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo)' if ticket_esistente else 'no'}\n\n"
         f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"
     )
