@@ -72,6 +72,7 @@ export default function OrdineDetail() {
             <div><div className="pw-muted" style={{ fontSize: 12 }}>Origine</div><div style={{ textTransform: 'capitalize' }}>{lower(o.origine)}</div></div>
             <div><div className="pw-muted" style={{ fontSize: 12 }}>Referente</div><div>{o.contatti ? <Link to={`/contatti/${o.contatti.id}`}>{nomeContatto(o.contatti)}</Link> : '—'}</div></div>
             <div><div className="pw-muted" style={{ fontSize: 12 }}>Agente</div><div>{o.agenti ? <Link to={`/agenti/${o.agenti.id}`}>{nomeAgente(o.agenti)}</Link> : '—'}</div></div>
+            {o.note && <div><div className="pw-muted" style={{ fontSize: 12 }}>Note</div><div style={{ whiteSpace: 'pre-wrap' }}>{o.note}</div></div>}
             {o.descrizione_agente && <div><div className="pw-muted" style={{ fontSize: 12 }}>Note agente</div><div>{o.descrizione_agente}</div></div>}
           </div></div>
 

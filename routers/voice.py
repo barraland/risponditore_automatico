@@ -168,6 +168,24 @@ REALTIME_TOOLS = [
     },
     {
         "type": "function",
+        "name": "aggiorna_ordine",
+        "description": (
+            "Aggiorna le NOTE di un ordine già registrato (orario di consegna preferito, richieste "
+            "particolari, note sugli sconti applicati). Se non passi ordine_id, aggiorna l'ULTIMO "
+            "ordine del cliente. Le note SOSTITUISCONO le precedenti (per aggiungere, includi anche "
+            "il testo già presente). Non tocca le righe."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "note": {"type": "string", "description": "Testo completo delle note dell'ordine."},
+                "ordine_id": {"type": "number", "description": "ID dell'ordine (opzionale; default = ultimo)."},
+            },
+            "required": ["note"],
+        },
+    },
+    {
+        "type": "function",
         "name": "invia_riepilogo_ordine",
         "description": (
             "Invia via EMAIL al cliente il riepilogo dell'ordine appena registrato. Usa l'ordine_id "
@@ -465,6 +483,14 @@ async def media_stream(twilio_ws: WebSocket):
             insegna=args.get("insegna", ""),
         )
 
+    def _aggiorna_ordine(args: dict) -> dict:
+        """Aggiorna le note di un ordine già creato del chiamante. Stessa logica del tool MCP."""
+        tel = stato.get("telefono") or ""
+        if not tel:
+            return {"errore": "Numero del chiamante non disponibile."}
+        fn = getattr(mcp_server.aggiorna_ordine, "fn", mcp_server.aggiorna_ordine)
+        return fn(telefono=tel, note=args.get("note", ""), ordine_id=int(args.get("ordine_id") or 0))
+
     def _registra_ordine(righe: list, note: str, conferma: bool) -> dict:
         """Registra un ordine sulla società del chiamante (sincrona, gira in thread).
         Lo stato (confermato/bozza) lo decide il modello via `conferma`."""
@@ -580,6 +606,8 @@ async def media_stream(twilio_ws: WebSocket):
         elif name == "registra_ordine":
             result = await asyncio.to_thread(
                 _registra_ordine, args.get("righe", []), args.get("note", ""), bool(args.get("conferma")))
+        elif name == "aggiorna_ordine":
+            result = await asyncio.to_thread(_aggiorna_ordine, args)
         elif name == "invia_riepilogo_ordine":
             result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
         elif name == "invia_documento":

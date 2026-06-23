@@ -238,7 +238,9 @@ def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
                     conferma: bool = False) -> dict:
     """Registra un ordine del chiamante. `conferma`=true lo salva come CONFERMATO, altrimenti
     come bozza (segui le indicazioni dell'amministratore su quando confermare). Se per la stessa
-    trattativa esiste già una bozza, la aggiorna invece di duplicarla."""
+    trattativa esiste già una bozza, la aggiorna invece di duplicarla.
+    `note`: testo libero su questo ordine (es. orario di consegna preferito, richieste particolari,
+    note su sconti applicati). Per modificare SOLO le note di un ordine già creato usa aggiorna_ordine."""
     _log_tool("registra_ordine", telefono=telefono, n_righe=len(righe), conferma=conferma)
     db = SessionLocal()
     try:
@@ -258,6 +260,33 @@ def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
             return {"errore": "Registrazione ordine non riuscita."}
         return {"registrato": True, "aggiornato": not creato, "ordine_id": ordine.id,
                 "stato": ordine.stato.value, "articoli": ordine.n_articoli, "totale": ordine.totale}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
+    """Aggiorna le NOTE libere di un ordine GIÀ registrato del chiamante (es. orario di consegna
+    preferito, richieste particolari, note sugli sconti applicati). Se `ordine_id` è 0/omesso,
+    aggiorna l'ULTIMO ordine del cliente (quello appena creato). Le note fornite SOSTITUISCONO le
+    precedenti: per aggiungere, includi anche il testo già presente. Non tocca le righe."""
+    _log_tool("aggiorna_ordine", telefono=telefono, ordine_id=ordine_id)
+    db = SessionLocal()
+    try:
+        c = _contatto(db, telefono)
+        ordine = None
+        if ordine_id:
+            o = db.get(Ordine, int(ordine_id))
+            if o and (o.contatto_id == c.id or (c.societa_id and o.societa_id == c.societa_id)):
+                ordine = o
+        if ordine is None:
+            ordine = (db.query(Ordine).filter(Ordine.contatto_id == c.id)
+                      .order_by(Ordine.data.desc()).first())
+        if ordine is None:
+            return {"ok": False, "errore": "Nessun ordine da aggiornare per questo cliente."}
+        ordine.note = (note or "").strip() or None
+        db.commit()
+        return {"ok": True, "ordine_id": ordine.id, "note": ordine.note}
     finally:
         db.close()
 
