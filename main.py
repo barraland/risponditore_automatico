@@ -114,7 +114,7 @@ _DASH_PASS = os.getenv("DASHBOARD_PASSWORD", "").strip()
 
 
 class _DashboardAuth:
-    APERTI = ("/elevenlabs", "/mcp", "/webhook", "/voice", "/static", "/api")
+    APERTI = ("/elevenlabs", "/mcp", "/whatsapp", "/voice", "/static", "/api")
 
     def __init__(self, app, user: str, password: str):
         self.app = app

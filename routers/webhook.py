@@ -10,7 +10,8 @@ from services import whatsapp_agent
 from services.whatsapp import invia_messaggio
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+# Prefisso /whatsapp: l'endpoint pubblico diventa /whatsapp/webhook (più chiaro di /webhook).
+router = APIRouter(prefix="/whatsapp")
 
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "mio_token_segreto_per_webhook")
 
