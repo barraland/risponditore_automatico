@@ -239,64 +239,55 @@ def _scheda_contatto(c: Contatto) -> str:
 
 
 def _build_voice_instructions(db, contatto: Contatto) -> str:
-    nome_az = profilo.nome_azienda(db)
-    appellativo = (contatto.cognome or contatto.nome or "").strip()
-    saluto = f"Buongiorno signor {appellativo}" if appellativo else "Buongiorno"
+    """Prompt vocale = SOLO la 'configurazione' della dashboard (come ElevenLabs {{configurazione}}),
+    con i segnaposto delle dynamic variables sostituiti con i dati reali del chiamante.
+    Così il comportamento si governa da un unico posto e i due provider restano allineati."""
+    from routers import elevenlabs  # _riassunto: stessa logica del webhook ElevenLabs (import pigro)
 
-    return (
-        f'Sei l\'assistente telefonico di "{nome_az}". Parli in italiano, al telefono, con frasi '
-        "BREVI e cordiali (dai del lei). Ti occupi di LEAD CAPTURE: rispondi a chi chiama per "
-        "informazioni su prodotti, servizi, ordini, costi e tempi, e nel frattempo raccogli i suoi "
-        "dati e qualifichi il lead per il team commerciale.\n"
-        f"{contesto_temporale()}\n\n"
-        f"DATI GIÀ NOTI DEL CHIAMANTE:\n{_scheda_contatto(contatto)}\n\n"
-        "COME PARLARE:\n"
-        "- Sei al TELEFONO: una cosa alla volta, frasi naturali e brevi. Tono cordiale, dai del lei.\n"
-        f"- APERTURA: saluta (es. «{saluto}»), presentati come l'assistente di {nome_az} e chiedi "
-        "come puoi aiutare. Poi FERMATI e aspetta che il chiamante dica di cosa ha bisogno: non "
-        "anticipare verifiche o domande di chiusura prima che abbia chiesto qualcosa. Se è un nuovo "
-        "contatto, a un certo punto chiedi con garbo il suo nome.\n"
-        "- Leggi numeri, date e importi in modo naturale (es. 'cinquecento euro', 'il tre marzo').\n\n"
-        "COME RISPONDERE:\n"
-        "- Per domande su prodotti/servizi/costi/tempi usa le informazioni della sezione "
-        "'COSA OFFRIAMO'. Se servono DETTAGLI che non sono lì, chiama lo strumento della categoria "
-        "giusta — leggi_listini_prezzi (prezzi/listini), leggi_condizioni_vendita (consegne, minimi, "
-        "pagamenti), leggi_schede_prodotto, leggi_faq, leggi_altri_documenti: ti restituisce il testo "
-        "del documento, poi rispondi a voce in modo breve. Mentre attendi puoi dire «Verifico subito». "
-        "Se nemmeno i documenti hanno il dato, dillo con onestà (non inventare) e rassicura che un "
-        "collega ricontatterà il chiamante.\n"
-        "- Hai anche lo strumento invia_documento per inviare al cliente via email i documenti "
-        "caricati (es. listino, condizioni di consegna): usalo secondo le indicazioni "
-        "dell'amministratore.\n\n"
-        "ORDINI:\n"
-        "- Se il chiamante ordina o riordina prodotti (con quantità), chiama registra_ordine con "
-        "l'elenco delle righe (prodotto, quantità, unità, prezzo se lo sai). Imposta conferma=true o "
-        "false secondo le indicazioni dell'amministratore su quando confermare un ordine. Se devi "
-        "inviare il riepilogo via email usa invia_riepilogo_ordine; se il cliente non ha un'email "
-        "registrata, chiedigliela e salvala con salva_contatto, poi invia. Riferisci sempre a voce "
-        "cosa hai registrato.\n\n"
-        "RACCOLTA DATI (anagrafica):\n"
-        "- Raccogli con naturalezza, senza interrogatori, le informazioni della sezione 'COME "
-        "QUALIFICARE IL LEAD'. Poche per volta.\n"
-        "- Ogni volta che apprendi un dato della PERSONA (nome, ruolo, email...) chiama SUBITO "
-        "salva_contatto (o aggiorna_contatto) con i campi appresi. Se ti detta l'email, fattela "
-        "ripetere se non sei sicuro. Imposta `titolo` (Signore/Signora) SOLO se sei certo del genere.\n"
-        "- Per i dati del LOCALE (città, indirizzo, ragione sociale, P.IVA) usa aggiorna_locale.\n\n"
-        "TICKET DI FOLLOW-UP (apri_ticket):\n"
-        "- Quando hai capito di cosa ha bisogno il lead (di solito verso la fine), chiama apri_ticket "
-        "con un titolo riassuntivo, una descrizione della richiesta e la PRIORITÀ (alta/media/bassa) "
-        "secondo i criteri della sezione 'COME ASSEGNARE LA PRIORITÀ'. Apri UN SOLO ticket per "
-        "chiamata. Poi conferma a voce che un collega lo ricontatterà.\n\n"
-        "NON LASCIARE SILENZI — chiudi sempre il turno:\n"
-        "- Usa «È questo che le serviva?» SOLO dopo aver effettivamente risposto a una richiesta o "
-        "svolto un'azione, mai all'inizio o quando il chiamante non ha ancora chiesto nulla. Quando "
-        "la richiesta è soddisfatta o il chiamante ringrazia, chiudi con cortesia: «C'è altro con cui "
-        "posso esserle utile?». Se risponde di no, salutalo e concludi.\n"
-        "- Non restare mai muto dopo aver parlato, ma dopo il saluto iniziale aspetta che il "
-        "chiamante parli invece di riempire il silenzio con domande di chiusura."
-        f"{profilo.blocco_prompt(db)}"
-        f"{istruzioni.blocco_prompt()}"
+    configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()).strip()
+
+    nome = (contatto.nome or "").strip() if contatto else ""
+    cognome = (contatto.cognome or "").strip() if contatto else ""
+    titolo = (contatto.titolo or "").strip() if contatto else ""
+    rag = (contatto.ragione_sociale or "").strip() if contatto else ""
+    known = bool(nome or cognome or rag)
+    societa = crm.societa_di_contatto(db, contatto) if contatto else None
+    ultimo = ((db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
+               .order_by(Ordine.data.desc()).first()) if contatto else None)
+
+    if known:
+        riassunto = elevenlabs._riassunto(contatto, societa, ultimo)
+        stato_cli = (societa.stato_relazione.value if societa else contatto.stato.value)
+        ultimo_txt = ((f"#{ultimo.id} del {ultimo.data.strftime('%d/%m/%Y')}, {ultimo.n_articoli} "
+                       f"articoli, € {ultimo.totale:.2f} ({ultimo.stato.value})") if ultimo else "nessuno")
+    else:
+        riassunto = "Chiamante non riconosciuto: è un nuovo contatto da registrare."
+        stato_cli, ultimo_txt = "", "nessuno"
+
+    vals = {
+        "cliente_conosciuto": "sì" if known else "no",
+        "nome_cliente": (f"{nome} {cognome}".strip() or rag) if known else "",
+        "nome": nome if known else "",
+        "cognome": cognome if known else "",
+        "titolo": titolo if known else "",
+        "societa": (societa.nome if societa else rag) if known else "",
+        "stato_cliente": stato_cli,
+        "ruolo": (contatto.ruolo or "") if known else "",
+        "email_cliente": (contatto.email or "") if known else "",
+        "ultimo_ordine": ultimo_txt,
+        "riassunto_cliente": riassunto,
+        "telefono_chiamante": (contatto.telefono or "") if contatto else "",
+        "azienda": profilo.nome_azienda(db),
+        "saluto": "",          # nel Realtime il saluto lo dice il modello dal prompt
+        "configurazione": "",  # evita auto-riferimenti se il testo contiene {{configurazione}}
+    }
+    testo = configurazione or (
+        f'Sei l\'assistente telefonico di "{profilo.nome_azienda(db)}". Parla in italiano, frasi '
+        "brevi e cordiali, dai del lei. (Configura il prompt in dashboard → Configurazione assistente.)"
     )
+    for k, v in vals.items():
+        testo = testo.replace("{{" + k + "}}", v or "")
+    return testo
 
 
 # ---------- 1) Webhook Twilio ----------
