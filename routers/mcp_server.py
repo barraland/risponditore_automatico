@@ -11,6 +11,7 @@ logica di find-or-create del contatto del canale WhatsApp.
 Montato su /mcp dall'app principale; transport Streamable HTTP (stateless).
 """
 
+import functools
 import logging
 import os
 
@@ -76,6 +77,37 @@ def _log_tool(tool: str, **kv):
     logger.info("🔧 MCP tool %s | %s", tool, parti or "—")
 
 
+def _riassumi_esito(res) -> str:
+    """Riassunto conciso del risultato di un tool per il log (taglia i campi lunghi)."""
+    if not isinstance(res, dict):
+        return str(res)[:200]
+    if res.get("errore"):
+        return f"ERRORE: {res['errore']}"
+    if res.get("email_mancante"):
+        return "email mancante (da chiedere)"
+    coppie = {k: v for k, v in res.items()
+              if k not in ("ordini", "contenuto", "righe") and v not in (None, "", [])}
+    s = ", ".join(f"{k}={v}" for k, v in coppie.items())
+    return (s[:300] + "…") if len(s) > 300 else (s or "ok")
+
+
+def _loggato(fn):
+    """Logga l'esito (✅/⚠️/❌) di un tool MCP. Va messo SOTTO @mcp.tool() per non rompere lo schema."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            res = fn(*args, **kwargs)
+            problema = isinstance(res, dict) and (
+                res.get("errore") or res.get("ok") is False
+                or res.get("email_mancante") or res.get("trovato") is False)
+            logger.info("   %s %s → %s", "⚠️" if problema else "✅", fn.__name__, _riassumi_esito(res))
+            return res
+        except Exception as e:
+            logger.exception("   ❌ %s → eccezione: %s", fn.__name__, e)
+            raise
+    return wrapper
+
+
 # ---------- Tools ----------
 
 def _leggi_categoria(categoria: str) -> dict:
@@ -104,6 +136,7 @@ def _leggi_categoria(categoria: str) -> dict:
 
 
 @mcp.tool()
+@_loggato
 def leggi_listini_prezzi() -> dict:
     """Restituisce per intero i LISTINI e i PREZZI caricati. Usalo quando il cliente chiede
     quanto costa un prodotto, sconti di listino, formati/confezioni e relativi prezzi."""
@@ -112,6 +145,7 @@ def leggi_listini_prezzi() -> dict:
 
 
 @mcp.tool()
+@_loggato
 def leggi_condizioni_vendita() -> dict:
     """Restituisce per intero le CONDIZIONI DI VENDITA e i contratti: tempi e modalità di
     consegna, ordine minimo, modalità di pagamento, termini contrattuali."""
@@ -120,6 +154,7 @@ def leggi_condizioni_vendita() -> dict:
 
 
 @mcp.tool()
+@_loggato
 def leggi_schede_prodotto() -> dict:
     """Restituisce per intero le SCHEDE PRODOTTO/SERVIZIO: caratteristiche, formati, dettagli
     tecnici, ingredienti/specifiche dei prodotti."""
@@ -128,6 +163,7 @@ def leggi_schede_prodotto() -> dict:
 
 
 @mcp.tool()
+@_loggato
 def leggi_faq() -> dict:
     """Restituisce per intero le FAQ e il materiale informativo generale (domande frequenti,
     informazioni sull'azienda e sul servizio)."""
@@ -136,6 +172,7 @@ def leggi_faq() -> dict:
 
 
 @mcp.tool()
+@_loggato
 def leggi_altri_documenti() -> dict:
     """Restituisce per intero i documenti della categoria «altro» (non classificati nelle
     categorie precedenti)."""
@@ -174,6 +211,7 @@ def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: s
 
 
 @mcp.tool()
+@_loggato
 def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
                    ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "") -> dict:
     """Registra in anagrafica il chiamante (identificato da `telefono`): usalo SUBITO alla prima
@@ -189,6 +227,7 @@ def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_soc
 
 
 @mcp.tool()
+@_loggato
 def aggiorna_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
                       ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "") -> dict:
     """Aggiorna i dati ANAGRAFICI DELLA PERSONA (contatto, identificato da `telefono`) quando emergono
@@ -200,6 +239,7 @@ def aggiorna_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_
 
 
 @mcp.tool()
+@_loggato
 def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
                     ragione_sociale: str = "", piva: str = "", insegna: str = "") -> dict:
     """Aggiorna l'anagrafica del LOCALE/azienda del chiamante (il ristorante/bar/hotel a cui è
@@ -234,6 +274,7 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
 
 
 @mcp.tool()
+@_loggato
 def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
                     conferma: bool = False) -> dict:
     """Registra un ordine del chiamante. `conferma`=true lo salva come CONFERMATO, altrimenti
@@ -265,6 +306,7 @@ def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
 
 
 @mcp.tool()
+@_loggato
 def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
     """Aggiorna le NOTE libere di un ordine GIÀ registrato del chiamante (es. orario di consegna
     preferito, richieste particolari, note sugli sconti applicati). Se `ordine_id` è 0/omesso,
@@ -292,6 +334,7 @@ def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
 
 
 @mcp.tool()
+@_loggato
 def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10) -> dict:
     """Restituisce gli ordini RECENTI del cliente (la sua società), con prodotti e quantità di
     ciascuno. Usalo per: (a) capire cosa ordina di solito e DISAMBIGUARE un prodotto generico
@@ -324,6 +367,7 @@ def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10) -> dict:
 
 
 @mcp.tool()
+@_loggato
 def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
     """Invia via email al chiamante il riepilogo di un ordine (ordine_id, oppure l'ultimo).
     Se il cliente non ha un'email salvata, lo segnala: chiedila e salvala con salva_contatto."""
@@ -354,6 +398,7 @@ def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
 
 
 @mcp.tool()
+@_loggato
 def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato: str = "") -> dict:
     """Invia un'email al chiamante. `testo` = corpo del messaggio, OBBLIGATORIO: scrivilo tu, chiaro
     e completo (è quello che leggerà il cliente). `oggetto` opzionale. `categoria_allegato` opzionale:
@@ -372,6 +417,7 @@ def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato:
 
 
 @mcp.tool()
+@_loggato
 def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str = "",
                 trascrizione: str = "") -> dict:
     """Apre (o aggiorna) un ticket di follow-up per il chiamante, per il team commerciale.

@@ -160,6 +160,17 @@ async def init_conversazione(request: Request):
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
         dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
                                 + documenti_service.catalogo_prompt(db)).strip()
+        # ElevenLabs sostituisce {{configurazione}} ma NON i {{segnaposto}} contenuti dentro:
+        # li risolviamo qui, così {{telefono_chiamante}}, {{cliente_conosciuto}}, ecc. arrivano
+        # già valorizzati ai tool e nel prompt (altrimenti i tool ricevono il testo letterale).
+        _cfg = dv["configurazione"]
+        for _k, _v in dv.items():
+            if _k != "configurazione":
+                _cfg = _cfg.replace("{{" + _k + "}}", str(_v))
+        dv["configurazione"] = _cfg
+        logger.info("📞 ElevenLabs init: %s | %s",
+                    caller or "(numero sconosciuto)",
+                    "cliente riconosciuto" if contatto else "nuovo contatto")
         risposta = {
             "type": "conversation_initiation_client_data",
             "dynamic_variables": dv,
