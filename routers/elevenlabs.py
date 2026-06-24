@@ -23,6 +23,7 @@ from database import SessionLocal, Ordine, ChiamataVoce
 from services import whatsapp_agent
 from services import profilo
 from services import istruzioni
+from services import documenti as documenti_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/elevenlabs")
@@ -157,7 +158,8 @@ async def init_conversazione(request: Request):
         dv["telefono_chiamante"] = caller
         # "Configurazione assistente" della dashboard (profilo + istruzioni admin): la stessa
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
-        dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()).strip()
+        dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
+                                + documenti_service.catalogo_prompt(db)).strip()
         risposta = {
             "type": "conversation_initiation_client_data",
             "dynamic_variables": dv,

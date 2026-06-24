@@ -221,21 +221,25 @@ REALTIME_TOOLS = [
     },
     {
         "type": "function",
-        "name": "invia_documento",
+        "name": "invia_mail",
         "description": (
-            "Invia al cliente, via EMAIL, i documenti caricati di una categoria (es. listino prezzi, "
-            "condizioni e costi di consegna, schede prodotto). Indica la categoria. Se il cliente non "
-            "ha un'email salvata, la funzione te lo segnala: chiedigliela, salvala con salva_contatto e "
-            "riprova. Usalo secondo le indicazioni dell'amministratore."
+            "Invia un'email al cliente. `testo` = corpo del messaggio, OBBLIGATORIO: scrivilo tu, "
+            "chiaro e completo (è quello che leggerà il cliente). `oggetto` opzionale. "
+            "`categoria_allegato` opzionale: se vuoi ALLEGARE documenti indica la categoria, usando "
+            "SOLO quelle elencate in DOCUMENTI DISPONIBILI; lascia vuoto se non c'è nulla da allegare "
+            "(la mail parte col solo testo). Se manca l'email del cliente te lo segnala: chiedigliela, "
+            "salvala con aggiorna_contatto e riprova."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "categoria": {"type": "string",
-                              "enum": ["listino", "schede_prodotto", "contratti", "faq", "altro"],
-                              "description": "Categoria dei documenti da inviare."},
+                "testo": {"type": "string", "description": "Corpo dell'email (obbligatorio)."},
+                "oggetto": {"type": "string", "description": "Oggetto dell'email (opzionale)."},
+                "categoria_allegato": {"type": "string",
+                                       "enum": ["", "listino", "schede_prodotto", "contratti", "faq", "altro"],
+                                       "description": "Categoria dei documenti da allegare (vuoto = nessun allegato)."},
             },
-            "required": ["categoria"],
+            "required": ["testo"],
         },
     },
     {
@@ -280,7 +284,8 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
     Così il comportamento si governa da un unico posto e i due provider restano allineati."""
     from routers import elevenlabs  # _riassunto: stessa logica del webhook ElevenLabs (import pigro)
 
-    configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()).strip()
+    configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
+                      + documenti_service.catalogo_prompt(db)).strip()
 
     nome = (contatto.nome or "").strip() if contatto else ""
     cognome = (contatto.cognome or "").strip() if contatto else ""
@@ -542,12 +547,14 @@ async def media_stream(twilio_ws: WebSocket):
         return {"registrato": True, "aggiornato": not creato, "ordine_id": ordine.id,
                 "stato": ordine.stato.value, "articoli": ordine.n_articoli, "totale": ordine.totale}
 
-    def _invia_documento(categoria: str) -> dict:
-        """Invia via email al cliente i documenti della categoria indicata (gira in thread)."""
+    def _invia_mail(args: dict) -> dict:
+        """Invia un'email a testo libero al cliente, con allegato opzionale per categoria (in thread)."""
         contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
         if not contatto:
             return {"errore": "Contatto non disponibile."}
-        return documenti_service.invia_documenti_email(db, contatto, categoria, profilo.nome_azienda(db))
+        return documenti_service.invia_mail_contatto(
+            db, contatto, args.get("testo", ""), args.get("oggetto", ""),
+            args.get("categoria_allegato", ""), profilo.nome_azienda(db))
 
     def _invia_riepilogo_ordine(ordine_id) -> dict:
         """Invia al cliente via email il riepilogo dell'ordine (sincrona, gira in thread).
@@ -638,8 +645,8 @@ async def media_stream(twilio_ws: WebSocket):
             result = await asyncio.to_thread(_storico_ordini, args)
         elif name == "invia_riepilogo_ordine":
             result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
-        elif name == "invia_documento":
-            result = await asyncio.to_thread(_invia_documento, args.get("categoria", ""))
+        elif name == "invia_mail":
+            result = await asyncio.to_thread(_invia_mail, args)
         elif name == "apri_ticket":
             result = await asyncio.to_thread(
                 _apri_ticket, args.get("titolo", ""), args.get("priorita", ""), args.get("descrizione", ""))

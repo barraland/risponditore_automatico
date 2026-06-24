@@ -354,14 +354,19 @@ def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
 
 
 @mcp.tool()
-def invia_documento(telefono: str, categoria: str) -> dict:
-    """Invia via email al chiamante i documenti caricati di una categoria
-    (una tra: listino, schede_prodotto, contratti, faq, altro). Se manca l'email, lo segnala."""
-    _log_tool("invia_documento", telefono=telefono, categoria=categoria)
+def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato: str = "") -> dict:
+    """Invia un'email al chiamante. `testo` = corpo del messaggio, OBBLIGATORIO: scrivilo tu, chiaro
+    e completo (è quello che leggerà il cliente). `oggetto` opzionale. `categoria_allegato` opzionale:
+    se vuoi ALLEGARE dei documenti indica la loro categoria — usa SOLO le categorie elencate in
+    "DOCUMENTI DISPONIBILI" nel tuo contesto; lascia vuoto se non c'è nulla da allegare (la mail va
+    comunque col solo testo). Se il cliente non ha un'email salvata lo segnala: chiedila, salvala con
+    aggiorna_contatto e riprova."""
+    _log_tool("invia_mail", telefono=telefono, categoria_allegato=categoria_allegato)
     db = SessionLocal()
     try:
         c = _contatto(db, telefono)
-        return documenti_service.invia_documenti_email(db, c, categoria, profilo.nome_azienda(db))
+        return documenti_service.invia_mail_contatto(
+            db, c, testo, oggetto, categoria_allegato, profilo.nome_azienda(db))
     finally:
         db.close()
 

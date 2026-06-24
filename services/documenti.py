@@ -9,8 +9,70 @@ import logging
 import os
 import re
 
-from database import Documento
+from database import Documento, StatoDocumento
 from services import email as email_service
+
+CATEGORIE_DOC = ["listino", "schede_prodotto", "contratti", "faq", "altro"]
+
+
+def catalogo_prompt(db) -> str:
+    """Blocco da iniettare nel prompt: elenco dei documenti DISPONIBILI per categoria, con un
+    breve summary. Serve all'assistente per sapere cosa può allegare/citare e cosa no."""
+    docs = (db.query(Documento)
+            .filter(Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW]))
+            .order_by(Documento.categoria, Documento.caricato_at.desc()).all())
+    if not docs:
+        return ""
+    per_cat: dict[str, list] = {}
+    for d in docs:
+        per_cat.setdefault(d.categoria, []).append(d)
+    righe = []
+    for cat in CATEGORIE_DOC:
+        lst = per_cat.get(cat)
+        if not lst:
+            continue
+        righe.append(f"Categoria «{cat}»:")
+        for d in lst:
+            summ = next((s.summary for s in sorted(d.sezioni, key=lambda s: s.ordine) if s.summary), None)
+            summ = (summ or "").strip().replace("\n", " ")
+            righe.append(f"  - {d.nome_file}: {summ[:200] if summ else '(contenuto del file)'}")
+    return (
+        "\n\n=== DOCUMENTI DISPONIBILI (cosa puoi allegare via email) ===\n"
+        "Puoi allegare SOLO i documenti elencati qui sotto, indicando la loro categoria. "
+        "Le categorie NON elencate non hanno documenti: non provare ad allegarle.\n"
+        + "\n".join(righe)
+    )
+
+
+def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_allegato: str = "",
+                        nome_azienda: str = "") -> dict:
+    """Invia un'email a testo libero al contatto, con allegato OPZIONALE (i documenti di una
+    categoria). Ritorna esito; se la categoria richiesta è vuota lo segnala (ma invia il testo)."""
+    email = (contatto.email or "").strip()
+    if not email:
+        return {"email_mancante": True,
+                "messaggio": "Il cliente non ha un'email salvata: chiedigliela, salvala e riprova."}
+    if not (testo or "").strip():
+        return {"errore": "Testo della mail mancante: scrivi tu il corpo del messaggio."}
+    allegati, nomi, allegato_mancante = [], [], False
+    cat = (categoria_allegato or "").strip()
+    if cat:
+        docs = (db.query(Documento)
+                .filter(Documento.categoria == cat,
+                        Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW])).all())
+        att = [(d.nome_file, d.percorso) for d in docs if d.percorso and os.path.exists(d.percorso)]
+        if att:
+            nomi = [n for n, _ in att]
+            allegati = [p for _, p in att]
+        else:
+            allegato_mancante = True
+    oggetto = (oggetto or "").strip() or (nome_azienda or "Informazioni")
+    inviata = email_service.invia_email(destinatario=email, oggetto=oggetto,
+                                        corpo=testo.strip(), allegati=allegati or None)
+    if not inviata:
+        return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
+    return {"inviato": True, "email": email, "allegati": nomi,
+            "allegato_richiesto_non_trovato": allegato_mancante}
 
 logger = logging.getLogger(__name__)
 
