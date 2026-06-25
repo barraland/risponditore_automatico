@@ -1,14 +1,10 @@
 -- ============================================================
--- Setup Supabase — schema completo + permessi per la SPA (CRM HORECA).
--- Esegui nel SQL Editor di Supabase. Idempotente: crea ciò che manca, non distrugge nulla.
--- Serve sia per un ACCOUNT NUOVO (crea tutte le tabelle da zero) sia per migrare/aggiornare
--- un account esistente (aggiunge tabelle/colonne mancanti).
---
--- Accesso: gli utenti AUTENTICATI possono leggere e scrivere tutte le righe (RLS permissiva).
--- Il multi-tenant vero (tenant_id + policy per tenant) arriverà dopo.
+-- Schema COMPLETO da zero (per migrare su un account Supabase nuovo).
+-- Genera tutte le tabelle + enum + indici, poi permessi e storage. Idempotente.
+-- Per l'uso quotidiano sul tuo account usa invece: supabase_setup.sql
 -- ============================================================
 
--- ---------- 1) SCHEMA: tipi enum + tabelle (generato dai modelli SQLAlchemy) ----------
+-- ---------- 1) SCHEMA: tipi enum + tabelle (generato dai modelli) ----------
 do $$ begin
   create type contattostato as enum ('CLIENTE', 'PROSPECT');
 exception when duplicate_object then null;
@@ -93,6 +89,18 @@ CREATE TABLE IF NOT EXISTS agenti (
 
 CREATE INDEX IF NOT EXISTS ix_agenti_id ON agenti (id);
 
+CREATE TABLE IF NOT EXISTS amministratori (
+	id SERIAL NOT NULL, 
+	nome VARCHAR(150), 
+	telefono VARCHAR(30) NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_amministratori_telefono ON amministratori (telefono);
+
+CREATE INDEX IF NOT EXISTS ix_amministratori_id ON amministratori (id);
+
 CREATE TABLE IF NOT EXISTS locali (
 	id SERIAL NOT NULL, 
 	insegna VARCHAR(200) NOT NULL, 
@@ -111,11 +119,11 @@ CREATE TABLE IF NOT EXISTS locali (
 
 CREATE INDEX IF NOT EXISTS ix_locali_id ON locali (id);
 
-CREATE INDEX IF NOT EXISTS ix_locali_agente_referente_id ON locali (agente_referente_id);
-
 CREATE INDEX IF NOT EXISTS ix_locali_stato_relazione ON locali (stato_relazione);
 
 CREATE INDEX IF NOT EXISTS ix_locali_citta ON locali (citta);
+
+CREATE INDEX IF NOT EXISTS ix_locali_agente_referente_id ON locali (agente_referente_id);
 
 CREATE TABLE IF NOT EXISTS documenti (
 	id SERIAL NOT NULL, 
@@ -307,25 +315,13 @@ CREATE TABLE IF NOT EXISTS righe_ordine (
 
 CREATE INDEX IF NOT EXISTS ix_righe_ordine_id ON righe_ordine (id);
 
--- ---------- 2) MIGRAZIONI: colonne aggiunte nel tempo (no-op se gia' presenti) ----------
--- (Per i DB esistenti le cui tabelle precedono queste colonne; su un DB nuovo sono gia' incluse sopra.)
-alter table public.azienda    add column if not exists istruzioni_admin   text;
-alter table public.azienda    add column if not exists regole_commerciali text;
-alter table public.azienda    add column if not exists prompt_whatsapp    text;
-alter table public.azienda    add column if not exists admin_telefoni     text;
-alter table public.azienda    add column if not exists saluto             text;
-alter table public.azienda    add column if not exists saluto_sconosciuto text;
-alter table public.documenti  add column if not exists storage_path       varchar(500);
-alter table public.contatti   add column if not exists titolo             varchar(20);
-
-
--- ---------- 3) PERMESSI: RLS + grant per il ruolo 'authenticated' (la SPA) ----------
+-- ---------- 2) PERMESSI: RLS + grant per il ruolo 'authenticated' (la SPA) ----------
 do $$
 declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
@@ -335,13 +331,11 @@ begin
   execute 'grant usage, select on all sequences in schema public to authenticated';
 end $$;
 
--- ---------- 4) STORAGE: bucket privato documenti + accesso autenticati ----------
+-- ---------- 3) STORAGE ----------
 insert into storage.buckets (id, name, public) values ('documenti', 'documenti', false)
   on conflict (id) do nothing;
 drop policy if exists doc_auth_all on storage.objects;
 create policy doc_auth_all on storage.objects for all to authenticated
   using (bucket_id = 'documenti') with check (bucket_id = 'documenti');
 
--- ---------- 5) Utente di login ----------
--- Supabase -> Authentication -> Users -> Add user (email + password, "Auto Confirm User").
--- I dati demo (contatti/ordini) li popola il backend al primo avvio se il DB e' vuoto.
+-- Login: Supabase -> Authentication -> Users -> Add user. Dati demo: li semina il backend se il DB e' vuoto.

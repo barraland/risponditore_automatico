@@ -18,6 +18,7 @@ export default function Layout() {
           <NavLink to="/documenti">Documenti</NavLink>
         </div>
         <div className="pw-nav-right">
+          <NavLink to="/admin">Admin</NavLink>
           <NavLink to="/assistente">Configurazione assistente</NavLink>
           <span className="pw-muted" style={{ fontSize: 13 }}>{session?.user?.email}</span>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => signOut()}>Esci</button>

@@ -441,6 +441,17 @@ class Promemoria(Base):
     contatto = relationship("Contatto")
 
 
+class Amministratore(Base):
+    """Numero abilitato come amministratore: chi chiama da qui può lasciare promemoria per i
+    clienti via voce. Censiti dalla dashboard (come i contatti)."""
+    __tablename__ = "amministratori"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(150))
+    telefono = Column(String(30), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # ---------- Helpers ----------
 
 def get_db():

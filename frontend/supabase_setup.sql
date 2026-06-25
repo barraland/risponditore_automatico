@@ -8,13 +8,20 @@
 -- Per creare TUTTO da zero (es. migrare su un account nuovo) usa invece: schema_completo.sql
 -- ============================================================
 
--- ---------- Tabella nuova: promemoria (note per cliente) ----------
+-- ---------- Tabelle nuove: promemoria (note per cliente) + amministratori ----------
 create table if not exists public.promemoria (
   id          serial primary key,
   contatto_id integer not null references public.contatti(id),
   testo       text not null,
   scade_il    timestamp,
   created_at  timestamp default now()
+);
+
+create table if not exists public.amministratori (
+  id         serial primary key,
+  nome       varchar(150),
+  telefono   varchar(30) not null,
+  created_at timestamp default now()
 );
 
 -- ---------- Colonne aggiunte nel tempo (no-op se già presenti) ----------
@@ -33,7 +40,7 @@ declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
