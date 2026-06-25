@@ -31,6 +31,7 @@ export default function Assistente() {
       regole_commerciali: (az.regole_commerciali || '').trim() || null,
       saluto: (az.saluto || '').trim() || null,
       saluto_sconosciuto: (az.saluto_sconosciuto || '').trim() || null,
+      admin_telefoni: (az.admin_telefoni || '').trim() || null,
     }).eq('id', az.id)
     setBusy(false)
     if (error) setErr(error.message); else setOk(true)
@@ -59,6 +60,14 @@ export default function Assistente() {
         <div className="pw-card-body pw-row" style={{ gap: 12 }}>
           <div className="pw-field" style={{ flex: 2 }}><label>Nome</label><input className="pw-input" value={az.nome || ''} onChange={e => set('nome', e.target.value)} /></div>
           <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={az.telefono || ''} onChange={e => set('telefono', e.target.value)} /></div>
+        </div>
+        <div className="pw-card-body" style={{ paddingTop: 0 }}>
+          <div className="pw-field">
+            <label>Numeri amministratore</label>
+            <input className="pw-input" placeholder="+39333..., +39340... (separati da virgola)"
+              value={az.admin_telefoni || ''} onChange={e => set('admin_telefoni', e.target.value)} />
+            <div className="pw-muted" style={{ fontSize: 12, marginTop: 4 }}>Chi chiama da questi numeri può lasciare promemoria per i clienti (a voce). Modificabile in tempo reale.</div>
+          </div>
         </div>
       </div>
 

@@ -309,7 +309,7 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
     if contatto:  # promemoria mirati dell'amministratore per questo cliente
         from services import promemoria
         configurazione += promemoria.blocco_prompt(db, contatto.id)
-        if promemoria.is_admin(contatto.telefono or ""):
+        if promemoria.is_admin(contatto.telefono or "", db):
             configurazione += (
                 "\n\n=== MODALITÀ AMMINISTRATORE (il chiamante è l'amministratore) ===\n"
                 "Puoi LASCIARE PROMEMORIA per i clienti: quando ti chiede di avvisare un cliente di "

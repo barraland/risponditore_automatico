@@ -1,22 +1,34 @@
 """Promemoria per cliente: note mirate dell'amministratore, iniettate nel contesto
 dell'assistente quando quel contatto chiama/scrive. Gestibili da dashboard e via voce."""
 
-import os
 import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from database import Promemoria, Contatto, Societa
-
-# Numeri abilitati come amministratore (lasciano promemoria via voce). Csv in ADMIN_TELEFONI.
-_ADMIN = {re.sub(r"\D", "", t) for t in os.getenv("ADMIN_TELEFONI", "").split(",") if t.strip()}
+from database import SessionLocal, Promemoria, Contatto, Societa, Azienda
 
 
-def is_admin(telefono: str) -> bool:
+def _numeri_admin(db=None) -> set[str]:
+    """Numeri abilitati come amministratore, da azienda.admin_telefoni (sole cifre)."""
+    own = db is None
+    if own:
+        db = SessionLocal()
+    try:
+        az = db.query(Azienda).first()
+        raw = (az.admin_telefoni if az else "") or ""
+    except Exception:
+        raw = ""
+    finally:
+        if own:
+            db.close()
+    return {re.sub(r"\D", "", t) for t in re.split(r"[,;\n]+", raw) if re.sub(r"\D", "", t)}
+
+
+def is_admin(telefono: str, db=None) -> bool:
     d = re.sub(r"\D", "", telefono or "")
-    return bool(d) and d in _ADMIN
+    return bool(d) and d in _numeri_admin(db)
 
 
 def attivi(db: Session, contatto_id: int) -> list[Promemoria]:

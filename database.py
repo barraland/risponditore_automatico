@@ -117,6 +117,8 @@ class Azienda(Base):
     # Formule del primo saluto vocale (ElevenLabs {{saluto}}). Segnaposto: {nome} {cognome} {azienda}.
     saluto = Column(Text, nullable=True)                 # chiamante riconosciuto (usa {nome}/{cognome})
     saluto_sconosciuto = Column(Text, nullable=True)     # chiamante non riconosciuto (no nome)
+    # Numeri abilitati come amministratore (possono lasciare promemoria via voce). Editabile da dashboard.
+    admin_telefoni = Column(Text, nullable=True)         # separati da virgola/spazio/a-capo
 
 
 class Contatto(Base):

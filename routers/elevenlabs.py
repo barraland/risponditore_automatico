@@ -163,7 +163,7 @@ async def init_conversazione(request: Request):
                                 + documenti_service.catalogo_prompt(db)).strip()
         if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
             dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
-        if promemoria.is_admin(caller):
+        if promemoria.is_admin(caller, db):
             dv["configurazione"] += (
                 "\n\n=== MODALITÀ AMMINISTRATORE (il chiamante è l'amministratore) ===\n"
                 "Puoi LASCIARE PROMEMORIA per i clienti: quando l'amministratore ti chiede di avvisare "
