@@ -424,6 +424,21 @@ class TestoCategoria(Base):
     aggiornato_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Promemoria(Base):
+    """Nota mirata che l'amministratore lascia per un CONTATTO specifico: quando quel cliente
+    chiama (o scrive), il testo viene iniettato nel contesto dell'assistente, che ne tiene conto
+    (es. comunicargli un'offerta). Può avere una scadenza. Si gestisce da dashboard o via voce."""
+    __tablename__ = "promemoria"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False, index=True)
+    testo = Column(Text, nullable=False)
+    scade_il = Column(DateTime, nullable=True)            # nota valida fino a... (None = senza scadenza)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    contatto = relationship("Contatto")
+
+
 # ---------- Helpers ----------
 
 def get_db():

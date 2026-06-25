@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { badgePriorita, badgeStato, badgeTicket, dataOra, lower, nomeContatto } from '../lib/format'
+import { badgePriorita, badgeStato, badgeTicket, dataBreve, dataOra, lower, nomeContatto } from '../lib/format'
 import Modal from '../components/Modal'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
@@ -67,16 +67,19 @@ export default function ContattoDetail() {
       </div>
 
       <div className="pw-grid" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr)' }}>
-        <div className="pw-card">
-          <div className="pw-card-head"><h3>Anagrafica</h3></div>
-          <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
-            <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
-            <Kv k="Ruolo" v={c.ruolo} />
-            <div>
-              <div className="pw-muted" style={{ fontSize: 12 }}>Società</div>
-              <div>{c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : '—'}</div>
+        <div className="pw-stack">
+          <div className="pw-card">
+            <div className="pw-card-head"><h3>Anagrafica</h3></div>
+            <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
+              <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
+              <Kv k="Ruolo" v={c.ruolo} />
+              <div>
+                <div className="pw-muted" style={{ fontSize: 12 }}>Società</div>
+                <div>{c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : '—'}</div>
+              </div>
             </div>
           </div>
+          <Promemoria contattoId={c.id} />
         </div>
         <Conversazioni c={c} />
       </div>
@@ -160,6 +163,60 @@ function Conversazioni({ c }: { c: any }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function Promemoria({ contattoId }: { contattoId: number }) {
+  const [note, setNote] = useState<any[]>([])
+  const [testo, setTesto] = useState('')
+  const [giorni, setGiorni] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function carica() {
+    const { data } = await supabase.from('promemoria')
+      .select('id, testo, scade_il, created_at').eq('contatto_id', contattoId)
+      .order('created_at', { ascending: false })
+    setNote(data || [])
+  }
+  useEffect(() => { carica() }, [contattoId])
+
+  async function aggiungi() {
+    if (!testo.trim()) return
+    setBusy(true)
+    const g = parseInt(giorni)
+    const scade = g > 0 ? new Date(Date.now() + g * 86400000).toISOString() : null
+    await supabase.from('promemoria').insert({ contatto_id: contattoId, testo: testo.trim(), scade_il: scade })
+    setBusy(false); setTesto(''); setGiorni(''); carica()
+  }
+  async function elimina(id: number) {
+    await supabase.from('promemoria').delete().eq('id', id); carica()
+  }
+  const scaduto = (s?: string) => (s ? new Date(s) < new Date() : false)
+
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head"><h3>Promemoria <span className="pw-muted" style={{ fontWeight: 400, fontSize: 13 }}>— l'assistente li usa quando il cliente chiama</span></h3></div>
+      <div className="pw-card-body pw-stack" style={{ gap: 10 }}>
+        {note.length === 0 && <div className="pw-muted" style={{ fontSize: 13 }}>Nessun promemoria.</div>}
+        {note.map(n => (
+          <div key={n.id} className="pw-between" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8, opacity: scaduto(n.scade_il) ? 0.5 : 1 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: 'var(--fg-2)', fontSize: 14 }}>{n.testo}</div>
+              <div className="pw-muted" style={{ fontSize: 12 }}>
+                {n.scade_il ? `${scaduto(n.scade_il) ? 'scaduto il' : 'valido fino al'} ${dataBreve(n.scade_il)}` : 'senza scadenza'}
+              </div>
+            </div>
+            <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(n.id)}>✕</button>
+          </div>
+        ))}
+        <textarea className="pw-input" rows={2} style={{ resize: 'vertical', fontFamily: 'inherit' }}
+          placeholder="Nuovo promemoria (es. sconto sulle birre scure)…" value={testo} onChange={e => setTesto(e.target.value)} />
+        <div className="pw-row" style={{ gap: 8 }}>
+          <input className="pw-input" style={{ maxWidth: 150 }} placeholder="validità (giorni)" value={giorni} onChange={e => setGiorni(e.target.value)} />
+          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={aggiungi}>Aggiungi</button>
+        </div>
+      </div>
     </div>
   )
 }

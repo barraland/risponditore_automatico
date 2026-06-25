@@ -263,6 +263,26 @@ REALTIME_TOOLS = [
             "required": ["titolo", "descrizione"],
         },
     },
+    {
+        "type": "function",
+        "name": "lascia_promemoria",
+        "description": (
+            "[SOLO AMMINISTRATORE] Registra un promemoria per un CLIENTE: quando quel cliente "
+            "chiamerà, l'assistente ne terrà conto (es. un'offerta da comunicargli). Indica il nome "
+            "del cliente (e la società se serve a distinguerlo), il testo dell'avviso e i giorni di "
+            "validità (0 = senza scadenza). Se più clienti corrispondono, te li elenco per scegliere."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nome_cliente": {"type": "string", "description": "Nome e/o cognome del cliente destinatario."},
+                "testo": {"type": "string", "description": "Il messaggio/avviso da ricordare."},
+                "societa": {"type": "string", "description": "Società del cliente, per distinguerlo (opzionale)."},
+                "giorni_validita": {"type": "number", "description": "Validità in giorni (0 = senza scadenza)."},
+            },
+            "required": ["nome_cliente", "testo"],
+        },
+    },
 ]
 
 
@@ -286,6 +306,17 @@ def _build_voice_instructions(db, contatto: Contatto) -> str:
 
     configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
                       + documenti_service.catalogo_prompt(db)).strip()
+    if contatto:  # promemoria mirati dell'amministratore per questo cliente
+        from services import promemoria
+        configurazione += promemoria.blocco_prompt(db, contatto.id)
+        if promemoria.is_admin(contatto.telefono or ""):
+            configurazione += (
+                "\n\n=== MODALITÀ AMMINISTRATORE (il chiamante è l'amministratore) ===\n"
+                "Puoi LASCIARE PROMEMORIA per i clienti: quando ti chiede di avvisare un cliente di "
+                "qualcosa (es. uno sconto), usa lascia_promemoria con il nome del cliente (e la società "
+                "se serve a distinguerlo), il testo e i giorni di validità. Se più clienti corrispondono, "
+                "chiedi quale. Conferma a voce quando l'hai registrato."
+            )
 
     nome = (contatto.nome or "").strip() if contatto else ""
     cognome = (contatto.cognome or "").strip() if contatto else ""
@@ -594,6 +625,13 @@ async def media_stream(twilio_ws: WebSocket):
             return d["ord"] if "ord" in d else ordine.get(d.get("item"), 10**9)
         return sorted(stato["trascrizione"], key=_key)
 
+    def _lascia_promemoria(args: dict) -> dict:
+        """[admin] Registra un promemoria per un cliente. Stessa logica del tool MCP (verifica admin)."""
+        tel = stato.get("telefono") or ""
+        fn = getattr(mcp_server.lascia_promemoria, "fn", mcp_server.lascia_promemoria)
+        return fn(telefono=tel, nome_cliente=args.get("nome_cliente", ""), testo=args.get("testo", ""),
+                  societa=args.get("societa", ""), giorni_validita=int(args.get("giorni_validita") or 0))
+
     def _apri_ticket(titolo: str, priorita: str, descrizione: str) -> dict:
         """Apre/aggiorna il ticket di follow-up usando la trascrizione come storia (sincrona)."""
         storia = ticket_service.formatta_storia(_trascrizione_ordinata())
@@ -650,6 +688,8 @@ async def media_stream(twilio_ws: WebSocket):
         elif name == "apri_ticket":
             result = await asyncio.to_thread(
                 _apri_ticket, args.get("titolo", ""), args.get("priorita", ""), args.get("descrizione", ""))
+        elif name == "lascia_promemoria":
+            result = await asyncio.to_thread(_lascia_promemoria, args)
         else:
             result = {"errore": f"Strumento sconosciuto: {name}"}
 

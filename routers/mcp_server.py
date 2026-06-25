@@ -25,6 +25,7 @@ from database import (
     Documento, StatoDocumento, TestoCategoria,
 )
 from services import crm
+from services import promemoria
 from services import documenti as documenti_service
 from services import ticket as ticket_service
 from services import profilo
@@ -442,6 +443,39 @@ def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str
             db, contatto_id=c.id, titolo=titolo or "Lead telefonico", priorita=priorita,
             descrizione=descrizione, storia=trascrizione, canale="voce")
         return {"aperto": bool(t), "ticket_id": t.id if t else None}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
+def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str = "",
+                      giorni_validita: int = 0) -> dict:
+    """[SOLO AMMINISTRATORE] Registra un promemoria per un CLIENTE: quando quel cliente chiamerà,
+    l'assistente ne terrà conto (es. comunicargli un'offerta). `telefono` = il TUO numero
+    (amministratore). `nome_cliente` = nome e/o cognome del destinatario; `societa` aiuta a
+    distinguerlo. `testo` = il messaggio/avviso. `giorni_validita` = validità in giorni (0 = senza
+    scadenza). Se più clienti corrispondono, ti elenco i candidati per farti scegliere."""
+    _log_tool("lascia_promemoria", telefono=telefono, nome_cliente=nome_cliente, societa=societa)
+    if not promemoria.is_admin(telefono):
+        return {"ok": False, "errore": "Funzione riservata all'amministratore."}
+    db = SessionLocal()
+    try:
+        cand = promemoria.trova_target(db, nome_cliente, societa)
+        if not cand:
+            return {"ok": False, "errore": f"Nessun cliente trovato per «{nome_cliente}»."}
+        if len(cand) > 1:
+            return {"ok": False, "ambiguo": True,
+                    "candidati": [{"contatto_id": c.id, "nome": c.nome_completo,
+                                   "societa": (c.societa.nome if c.societa else (c.ragione_sociale or ""))}
+                                  for c in cand],
+                    "messaggio": "Più clienti corrispondono: chiedi all'amministratore quale (nome/società) e riprova."}
+        c = cand[0]
+        p = promemoria.crea(db, c.id, testo, giorni_validita)
+        if not p:
+            return {"ok": False, "errore": "Testo del promemoria mancante."}
+        return {"ok": True, "promemoria_id": p.id, "cliente": c.nome_completo,
+                "scade_il": p.scade_il.strftime("%d/%m/%Y") if p.scade_il else None}
     finally:
         db.close()
 

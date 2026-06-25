@@ -24,6 +24,7 @@ from services import whatsapp_agent
 from services import profilo
 from services import istruzioni
 from services import documenti as documenti_service
+from services import promemoria
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/elevenlabs")
@@ -160,6 +161,16 @@ async def init_conversazione(request: Request):
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
         dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
                                 + documenti_service.catalogo_prompt(db)).strip()
+        if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
+            dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
+        if promemoria.is_admin(caller):
+            dv["configurazione"] += (
+                "\n\n=== MODALITÀ AMMINISTRATORE (il chiamante è l'amministratore) ===\n"
+                "Puoi LASCIARE PROMEMORIA per i clienti: quando l'amministratore ti chiede di avvisare "
+                "un cliente di qualcosa (es. uno sconto), usa lascia_promemoria con il nome del cliente "
+                "(e la società se serve a distinguerlo), il testo dell'avviso e gli eventuali giorni di "
+                "validità. Se più clienti corrispondono, chiedi quale. Conferma a voce quando l'hai registrato."
+            )
         # ElevenLabs sostituisce {{configurazione}} ma NON i {{segnaposto}} contenuti dentro:
         # li risolviamo qui, così {{telefono_chiamante}}, {{cliente_conosciuto}}, ecc. arrivano
         # già valorizzati ai tool e nel prompt (altrimenti i tool ricevono il testo letterale).
