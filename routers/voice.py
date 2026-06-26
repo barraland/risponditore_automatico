@@ -298,25 +298,21 @@ def _scheda_contatto(c: Contatto) -> str:
     return "\n".join(noti) if noti else "(nessun dato ancora: è un nuovo lead)"
 
 
-def _build_voice_instructions(db, contatto: Contatto) -> str:
+def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str:
     """Prompt vocale = SOLO la 'configurazione' della dashboard (come ElevenLabs {{configurazione}}),
     con i segnaposto delle dynamic variables sostituiti con i dati reali del chiamante.
-    Così il comportamento si governa da un unico posto e i due provider restano allineati."""
+    Se chiama un amministratore usa invece il prompt di sistema dedicato (prompts/voce_admin.txt)."""
     from routers import elevenlabs  # _riassunto: stessa logica del webhook ElevenLabs (import pigro)
+    from services import promemoria, prompts
+
+    if promemoria.is_admin(telefono, db):
+        return prompts.voce_admin().replace("{{telefono_chiamante}}", telefono or "")
 
     configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
                       + documenti_service.catalogo_prompt(db)).strip()
     if contatto:  # promemoria mirati dell'amministratore per questo cliente
         from services import promemoria
         configurazione += promemoria.blocco_prompt(db, contatto.id)
-        if promemoria.is_admin(contatto.telefono or "", db):
-            configurazione += (
-                "\n\n=== MODALITÀ AMMINISTRATORE (il chiamante è l'amministratore) ===\n"
-                "Puoi LASCIARE PROMEMORIA per i clienti: quando ti chiede di avvisare un cliente di "
-                "qualcosa (es. uno sconto), usa lascia_promemoria con il nome del cliente (e la società "
-                "se serve a distinguerlo), il testo e i giorni di validità. Se più clienti corrispondono, "
-                "chiedi quale. Conferma a voce quando l'hai registrato."
-            )
 
     nome = (contatto.nome or "").strip() if contatto else ""
     cognome = (contatto.cognome or "").strip() if contatto else ""
@@ -443,16 +439,25 @@ async def media_stream(twilio_ws: WebSocket):
         return
 
     async def configura_sessione():
-        """Identifica/crea il contatto, imposta audio/voce/VAD/tool/istruzioni, fa salutare."""
-        contatto = whatsapp_agent.trova_o_crea_contatto(db, stato["telefono"] or "sconosciuto")
-        stato["contatto_id"] = contatto.id
-        logger.info("Chiamante: contatto id %s (%s)", contatto.id, contatto.nome_completo)
+        """Identifica/crea il contatto, imposta audio/voce/VAD/tool/istruzioni, fa salutare.
+        Se chiama un amministratore NON lo registra come contatto (usa il prompt admin dedicato)."""
+        from services import promemoria
+        tel = stato.get("telefono") or ""
+        if promemoria.is_admin(tel, db):
+            contatto = None
+            stato["contatto_id"] = None
+            stato["is_admin"] = True
+            logger.info("Chiamante: AMMINISTRATORE (%s) — niente registrazione", tel)
+        else:
+            contatto = whatsapp_agent.trova_o_crea_contatto(db, tel or "sconosciuto")
+            stato["contatto_id"] = contatto.id
+            logger.info("Chiamante: contatto id %s (%s)", contatto.id, contatto.nome_completo)
 
         await openai_ws.send(json.dumps({
             "type": "session.update",
             "session": {
                 "type": "realtime",
-                "instructions": _build_voice_instructions(db, contatto),
+                "instructions": _build_voice_instructions(db, contatto, tel),
                 "output_modalities": ["audio"],
                 "audio": {
                     "input": {
@@ -475,7 +480,8 @@ async def media_stream(twilio_ws: WebSocket):
             },
         }))
         # Prima battuta: fai dire ESATTAMENTE il saluto configurato in dashboard, poi ascolta.
-        saluto = _saluto_voce(db, contatto)
+        saluto = ("Buongiorno, sono l'assistente. Vuole lasciare un promemoria per un cliente?"
+                  if stato.get("is_admin") else _saluto_voce(db, contatto))
         await openai_ws.send(json.dumps({
             "type": "response.create",
             "response": {"instructions": (

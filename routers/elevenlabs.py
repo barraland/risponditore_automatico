@@ -25,6 +25,7 @@ from services import profilo
 from services import istruzioni
 from services import documenti as documenti_service
 from services import promemoria
+from services import prompts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/elevenlabs")
@@ -115,12 +116,17 @@ async def init_conversazione(request: Request):
 
     db = SessionLocal()
     try:
-        contatto = whatsapp_agent.trova_contatto(db, caller) if caller else None
+        admin = promemoria.is_admin(caller, db) if caller else False
+        contatto = whatsapp_agent.trova_contatto(db, caller) if (caller and not admin) else None
         az = profilo.get_azienda(db)
         template_noto = ((az.saluto or "").strip() if az else "")
         template_sconosciuto = ((az.saluto_sconosciuto or "").strip() if az else "")
         az_nome = (az.nome if az else "") or ""
-        if contatto:
+        if admin:
+            dv = dict(_VARS_VUOTE)
+            dv["saluto"] = "Buongiorno, sono l'assistente. Vuole lasciare un promemoria per un cliente?"
+            first = dv["saluto"]
+        elif contatto:
             societa = contatto.societa
             ultimo = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
                       .order_by(Ordine.data.desc()).first())
@@ -159,18 +165,15 @@ async def init_conversazione(request: Request):
         dv["telefono_chiamante"] = caller
         # "Configurazione assistente" della dashboard (profilo + istruzioni admin): la stessa
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
-        dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
-                                + documenti_service.catalogo_prompt(db)).strip()
-        if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
-            dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
-        if promemoria.is_admin(caller, db):
-            dv["configurazione"] += (
-                "\n\n=== MODALITÀ AMMINISTRATORE (il chiamante è l'amministratore) ===\n"
-                "Puoi LASCIARE PROMEMORIA per i clienti: quando l'amministratore ti chiede di avvisare "
-                "un cliente di qualcosa (es. uno sconto), usa lascia_promemoria con il nome del cliente "
-                "(e la società se serve a distinguerlo), il testo dell'avviso e gli eventuali giorni di "
-                "validità. Se più clienti corrispondono, chiedi quale. Conferma a voce quando l'hai registrato."
-            )
+        if admin:
+            # Chiama l'amministratore: prompt di sistema DEDICATO (in prompts/voce_admin.txt),
+            # NON il prompt clienti della dashboard. Niente registrazione/ticket per lui.
+            dv["configurazione"] = prompts.voce_admin()
+        else:
+            dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
+                                    + documenti_service.catalogo_prompt(db)).strip()
+            if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
+                dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
         # ElevenLabs sostituisce {{configurazione}} ma NON i {{segnaposto}} contenuti dentro:
         # li risolviamo qui, così {{telefono_chiamante}}, {{cliente_conosciuto}}, ecc. arrivano
         # già valorizzati ai tool e nel prompt (altrimenti i tool ricevono il testo letterale).
@@ -179,9 +182,8 @@ async def init_conversazione(request: Request):
             if _k != "configurazione":
                 _cfg = _cfg.replace("{{" + _k + "}}", str(_v))
         dv["configurazione"] = _cfg
-        logger.info("📞 ElevenLabs init: %s | %s",
-                    caller or "(numero sconosciuto)",
-                    "cliente riconosciuto" if contatto else "nuovo contatto")
+        logger.info("📞 ElevenLabs init: %s | %s", caller or "(sconosciuto)",
+                    "AMMINISTRATORE" if admin else ("riconosciuto" if contatto else "nuovo contatto"))
         risposta = {
             "type": "conversation_initiation_client_data",
             "dynamic_variables": dv,
