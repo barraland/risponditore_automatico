@@ -27,6 +27,7 @@ from database import (
 from services import crm
 from services import promemoria
 from services import inoltri
+from services import telefonia
 from services import documenti as documenti_service
 from services import ticket as ticket_service
 from services import profilo
@@ -484,13 +485,14 @@ def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str
 @mcp.tool()
 @_loggato
 def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "") -> dict:
-    """Prepara l'INOLTRO della chiamata a una persona della rubrica inoltri (es. responsabile
-    spedizioni). `telefono` = numero del chiamante; `motivo` = cosa vuole il cliente; indica il
-    destinatario per `nome_destinatario` e/o `ruolo`. Inoltra SOLO se la richiesta rientra nelle
-    regole di inoltro che vedi nel contesto. Ritorna il numero a cui passare la chiamata e un
-    riepilogo di handoff (chi chiama e perché) da annunciare al destinatario. Se più persone
-    corrispondono, te le elenco per scegliere. Il trasferimento vero della linea lo esegue la
-    telefonia: dopo questo, avvia il transfer_to_number sul numero indicato."""
+    """INOLTRA la chiamata a una persona della rubrica inoltri (es. responsabile spedizioni).
+    `telefono` = numero del chiamante; `motivo` = cosa vuole il cliente; indica il destinatario per
+    `nome_destinatario` e/o `ruolo`. Inoltra SOLO se la richiesta rientra nelle regole di inoltro che
+    vedi nel contesto. Lo strumento esegue direttamente il trasferimento: chiama il destinatario, gli
+    annuncia chi e perché e chiede conferma a voce; se accetta unisce le chiamate, altrimenti il
+    cliente viene avvisato. Se più persone corrispondono, te le elenco per scegliere: chiedi al
+    cliente quale prima di riprovare. Prima di chiamare questo strumento, di' al cliente di restare
+    in linea."""
     _log_tool("inoltra_chiamata", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
     db = SessionLocal()
     try:
@@ -505,11 +507,16 @@ def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ru
         c = whatsapp_agent.trova_contatto(db, telefono) if telefono else None
         chiamante = c.nome_completo if c else "il chiamante"
         riepilogo = (f"Le passo {chiamante}. Motivo: {(motivo or '').strip() or 'richiesta del cliente'}.")
-        return {"ok": True, "telefono_destinatario": i.telefono, "destinatario": i.nome_completo,
-                "ruolo": i.ruolo or "", "riepilogo_handoff": riepilogo,
-                "istruzione": "Avvia ora il trasferimento al telefono_destinatario (transfer_to_number) "
-                              "annunciando il riepilogo_handoff. Se il destinatario non risponde o rifiuta, "
-                              "torna dal cliente e di' che la persona al momento è occupata."}
+
+        # Avvia il trasferimento reale sulla chiamata Twilio in corso (vale per ElevenLabs e Realtime).
+        call_sid, host = telefonia.dati_chiamata(telefono)
+        ok, errore = telefonia.avvia_inoltro(call_sid, i.telefono, riepilogo, host)
+        if ok:
+            return {"ok": True, "inoltro_avviato": True, "destinatario": i.nome_completo,
+                    "messaggio": ("Sto passando la chiamata adesso: di' al cliente di restare in linea che lo "
+                                  "metti in contatto, poi non aggiungere altro.")}
+        return {"ok": False, "errore": errore,
+                "messaggio": "Non riesco a passare la chiamata ora: di' al cliente che lo farete ricontattare."}
     finally:
         db.close()
 

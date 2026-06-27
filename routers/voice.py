@@ -19,7 +19,6 @@ import logging
 import urllib.parse
 from datetime import datetime
 
-import httpx
 import websockets
 from fastapi import APIRouter, WebSocket, Request
 from fastapi.responses import PlainTextResponse
@@ -37,6 +36,7 @@ from services import profilo
 from services import crm
 from services import email as email_service
 from services import documenti as documenti_service
+from services import telefonia
 from services.contesto import contesto_temporale
 # Riusa la STESSA logica dei tool MCP (ElevenLabs) per i documenti e l'anagrafica locale,
 # così il path vocale Realtime espone tool identici senza duplicare il codice.
@@ -49,40 +49,6 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
 REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "alloy")
 OPENAI_WS_URL = f"wss://api.openai.com/v1/realtime?model={REALTIME_MODEL}"
-
-# Credenziali Twilio REST: servono SOLO per l'inoltro di chiamata (modifica della call live).
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-
-
-def _xml_escape(s: str) -> str:
-    return (s or "").replace("&", " e ").replace("<", " ").replace(">", " ").replace('"', "'")
-
-
-def _twilio_inoltra(call_sid: str, numero: str, riepilogo: str, host: str) -> tuple[bool, str]:
-    """Reindirizza la chiamata Twilio in corso (`call_sid`) verso `numero`, con un whisper che
-    annuncia `riepilogo` al destinatario e gli chiede conferma. Ritorna (ok, errore)."""
-    if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN):
-        return False, "Twilio REST non configurato (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN)."
-    if not (call_sid and numero and host):
-        return False, "Dati inoltro mancanti (call_sid/numero/host)."
-    whisper = f"https://{host}/voice/inoltro-whisper?msg={urllib.parse.quote(riepilogo or 'Le passo una chiamata.')}"
-    esito = f"https://{host}/voice/inoltro-esito"
-    twiml = (
-        '<?xml version="1.0" encoding="UTF-8"?><Response>'
-        f'<Dial answerOnBridge="true" timeout="25" action="{esito}">'
-        f'<Number url="{whisper}">{numero}</Number></Dial></Response>'
-    )
-    try:
-        r = httpx.post(
-            f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls/{urllib.parse.quote(call_sid)}.json",
-            data={"Twiml": twiml}, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=10,
-        )
-        if r.status_code in (200, 201):
-            return True, ""
-        return False, f"Twilio {r.status_code}: {r.text[:160]}"
-    except Exception as e:
-        return False, str(e)
 
 
 # ---------- Tool Realtime ----------
@@ -458,30 +424,47 @@ async def incoming_call(request: Request):
 
 # ---------- Inoltro chiamata: TwiML di whisper / consenso / esito ----------
 
+def _xml(twiml: str) -> PlainTextResponse:
+    return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?>' + twiml, media_type="text/xml")
+
+
 @router.api_route("/inoltro-whisper", methods=["GET", "POST"])
 async def inoltro_whisper(request: Request):
     """Eseguito sul DESTINATARIO quando risponde, PRIMA del bridge: annuncia chi/perché e chiede
-    conferma (premi 1). Nessun input o tasto diverso = rifiuto (chiude la gamba, niente bridge)."""
+    conferma A VOCE ('accetti?'). La risposta in linguaggio naturale la interpreta /inoltro-consenso."""
     msg = request.query_params.get("msg", "Le passo una chiamata.")
+    n = request.query_params.get("n", "1")
+    pre = "Scusi, non ho capito. " if n != "1" else ""
+    qs = urllib.parse.urlencode({"msg": msg, "n": n})
+    voce = telefonia.SAY_VOICE
     twiml = (
-        '<?xml version="1.0" encoding="UTF-8"?><Response>'
-        '<Gather numDigits="1" timeout="8" action="/voice/inoltro-consenso">'
-        f'<Say language="it-IT">{_xml_escape(msg)} Prema 1 per accettare la chiamata, '
-        'oppure riagganci per rifiutare.</Say>'
-        '</Gather><Hangup/></Response>'
+        "<Response>"
+        f'<Gather input="speech" language="it-IT" speechTimeout="auto" action="/voice/inoltro-consenso?{qs}">'
+        f'<Say voice="{voce}" language="it-IT">{pre}{telefonia.xml_escape(msg)} Accetti la chiamata?</Say>'
+        "</Gather>"
+        f'<Say voice="{voce}" language="it-IT">Non ho ricevuto risposta.</Say><Hangup/>'
+        "</Response>"
     )
-    return PlainTextResponse(content=twiml, media_type="text/xml")
+    return _xml(twiml)
 
 
 @router.api_route("/inoltro-consenso", methods=["GET", "POST"])
 async def inoltro_consenso(request: Request):
-    """Tasto premuto dal destinatario: 1 = accetta (prosegue il bridge), altro = rifiuta."""
+    """Interpreta la risposta vocale del destinatario: sì → prosegue il bridge; no → rifiuta;
+    non chiaro → richiede una volta, poi rifiuta."""
     form = await request.form()
-    digits = form.get("Digits") or request.query_params.get("Digits") or ""
-    if digits == "1":
-        return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><Response/>', media_type="text/xml")
-    return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>',
-                             media_type="text/xml")
+    detto = form.get("SpeechResult") or request.query_params.get("SpeechResult") or ""
+    esito = telefonia.consenso_positivo(detto)
+    msg = request.query_params.get("msg", "Le passo una chiamata.")
+    n = request.query_params.get("n", "1")
+    logger.info("🗣️  Consenso inoltro: '%s' -> %s", detto, esito)
+    if esito is True:
+        return _xml("<Response/>")                      # prosegue: bridge col chiamante
+    if esito is None and n == "1":                       # poco chiaro: richiedi una volta
+        qs = urllib.parse.urlencode({"msg": msg, "n": "2"})
+        return _xml(f'<Response><Redirect>/voice/inoltro-whisper?{qs}</Redirect></Response>')
+    return _xml(f'<Response><Say voice="{telefonia.SAY_VOICE}" language="it-IT">'
+                "Va bene, riferisco. Arrivederci.</Say><Hangup/></Response>")
 
 
 @router.api_route("/inoltro-esito", methods=["GET", "POST"])
@@ -491,14 +474,10 @@ async def inoltro_esito(request: Request):
     form = await request.form()
     stato_dial = form.get("DialCallStatus") or ""
     if stato_dial == "completed":
-        return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>',
-                                 media_type="text/xml")
-    twiml = (
-        '<?xml version="1.0" encoding="UTF-8"?><Response>'
-        '<Say language="it-IT">La persona al momento non è disponibile. '
-        'La faremo ricontattare al più presto. Arrivederci.</Say><Hangup/></Response>'
-    )
-    return PlainTextResponse(content=twiml, media_type="text/xml")
+        return _xml("<Response><Hangup/></Response>")
+    return _xml(f'<Response><Say voice="{telefonia.SAY_VOICE}" language="it-IT">'
+                "La persona al momento non è disponibile. La faremo ricontattare al più presto. "
+                "Arrivederci.</Say><Hangup/></Response>")
 
 
 # ---------- 2) WebSocket: ponte Twilio <-> OpenAI Realtime ----------
@@ -741,25 +720,12 @@ async def media_stream(twilio_ws: WebSocket):
                   societa=args.get("societa", ""), giorni_validita=int(args.get("giorni_validita") or 0))
 
     def _inoltra_chiamata(args: dict) -> dict:
-        """Trova il destinatario (rubrica inoltri) e AVVIA il trasferimento della chiamata Twilio:
-        reindirizza la call live verso il numero, con whisper di annuncio + consenso. Se la richiesta
-        è ambigua o non trovata, l'agente riceve i candidati / l'errore e chiede al cliente."""
+        """Inoltro chiamata. Stessa logica del tool MCP (che avvia il trasferimento Twilio usando il
+        call_sid registrato a inizio chiamata). Se ambiguo/non trovato, l'agente riceve i candidati."""
         tel = stato.get("telefono") or ""
         fn = getattr(mcp_server.inoltra_chiamata, "fn", mcp_server.inoltra_chiamata)
-        res = fn(telefono=tel, motivo=args.get("motivo", ""),
-                 nome_destinatario=args.get("nome_destinatario", ""), ruolo=args.get("ruolo", ""))
-        if not res.get("ok"):
-            return res  # 'ambiguo' (candidati) o errore: l'agente gestisce
-        ok, errore = _twilio_inoltra(stato.get("call_sid"), res["telefono_destinatario"],
-                                     res["riepilogo_handoff"], stato.get("host", ""))
-        if ok:
-            logger.info("➡️  Inoltro avviato verso %s (%s)", res["destinatario"], res["telefono_destinatario"])
-            return {"ok": True, "inoltro_avviato": True, "destinatario": res["destinatario"],
-                    "messaggio": ("Sto passando la chiamata adesso. Di' al cliente di restare in linea "
-                                  "che lo metti in contatto, poi non aggiungere altro.")}
-        logger.warning("Inoltro fallito: %s", errore)
-        return {"ok": False, "errore": errore,
-                "messaggio": "Non riesco a passare la chiamata ora: di' al cliente che lo farete ricontattare."}
+        return fn(telefono=tel, motivo=args.get("motivo", ""),
+                  nome_destinatario=args.get("nome_destinatario", ""), ruolo=args.get("ruolo", ""))
 
     def _apri_ticket(titolo: str, priorita: str, descrizione: str) -> dict:
         """Apre/aggiorna il ticket di follow-up usando la trascrizione come storia (sincrona)."""
@@ -856,6 +822,7 @@ async def media_stream(twilio_ws: WebSocket):
                     params = data["start"].get("customParameters", {})
                     stato["telefono"] = params.get("from") or "sconosciuto"
                     stato["iniziata_at"] = datetime.utcnow()
+                    telefonia.registra_chiamata(stato["telefono"], stato.get("call_sid"), stato.get("host"))
                     logger.info("Stream avviato (sid=%s, da=%s)", stato["stream_sid"], stato["telefono"])
                     await configura_sessione()
                 elif event == "media":

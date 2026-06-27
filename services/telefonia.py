@@ -1,0 +1,91 @@
+"""Inoltro di chiamata su Twilio, indipendente dal motore vocale (ElevenLabs o OpenAI Realtime).
+
+La chiamata gira sempre sul TUO account Twilio, quindi possiamo comandarla via REST: all'inizio
+registriamo (telefono -> call_sid, host); quando l'assistente decide l'inoltro, reindirizziamo la
+call verso il destinatario con un annuncio vocale + consenso in linguaggio naturale. Niente regole
+statiche dentro ElevenLabs: numeri e regole vivono nella dashboard (tabella inoltri)."""
+
+import os
+import re
+import logging
+import urllib.parse
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+SAY_VOICE = os.getenv("TWILIO_SAY_VOICE", "Polly.Bianca")  # voce italiana per gli annunci Twilio
+
+# Registro in memoria delle chiamate vive: telefono normalizzato -> (call_sid, host).
+# Popolato a inizio chiamata (ElevenLabs init / Realtime stream start). Single-worker (demo).
+_chiamate: dict[str, tuple[str, str]] = {}
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"\D", "", t or "")
+
+
+def registra_chiamata(telefono: str, call_sid: str, host: str) -> None:
+    if telefono and call_sid:
+        _chiamate[_norm(telefono)] = (call_sid, host or "")
+        logger.info("📇 Chiamata registrata per inoltro: %s (call_sid=%s)", telefono, call_sid)
+
+
+def dati_chiamata(telefono: str) -> tuple[str | None, str | None]:
+    return _chiamate.get(_norm(telefono), (None, None))
+
+
+def xml_escape(s: str) -> str:
+    return (s or "").replace("&", " e ").replace("<", " ").replace(">", " ").replace('"', "'")
+
+
+def avvia_inoltro(call_sid: str, numero: str, riepilogo: str, host: str) -> tuple[bool, str]:
+    """Reindirizza la chiamata Twilio in corso verso `numero`, con whisper di annuncio+consenso.
+    Funziona identico per ElevenLabs e Realtime. Ritorna (ok, errore)."""
+    if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN):
+        return False, "Twilio REST non configurato (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN)."
+    if not (call_sid and numero and host):
+        return False, "Dati inoltro mancanti (call_sid/host non disponibili per questa chiamata)."
+    whisper = f"https://{host}/voice/inoltro-whisper?msg={urllib.parse.quote(riepilogo or 'Le passo una chiamata.')}"
+    esito = f"https://{host}/voice/inoltro-esito"
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?><Response>'
+        f'<Dial answerOnBridge="true" timeout="25" action="{esito}">'
+        f'<Number url="{whisper}">{numero}</Number></Dial></Response>'
+    )
+    try:
+        r = httpx.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls/{urllib.parse.quote(call_sid)}.json",
+            data={"Twiml": twiml}, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=10,
+        )
+        if r.status_code in (200, 201):
+            return True, ""
+        return False, f"Twilio {r.status_code}: {r.text[:160]}"
+    except Exception as e:
+        return False, str(e)
+
+
+# ---------- Interpretazione del consenso in linguaggio naturale (Twilio SpeechResult) ----------
+_PAROLE_SI = {"sì", "si", "certo", "ok", "okay", "accetto", "passa", "passamelo", "passamela",
+              "volentieri", "perfetto", "sicuro", "yes", "vai", "certamente", "assolutamente"}
+_PAROLE_NO = {"no", "occupato", "impegnato", "negativo", "nope"}
+_FRASI_SI = ("va bene", "d'accordo", "ci sono", "me lo passi", "lo passi", "fammi parlare")
+_FRASI_NO = ("non posso", "più tardi", "richiamo", "non ora", "sono occupato", "in riunione",
+             "non riesco", "magari dopo", "richiamami")
+
+
+def consenso_positivo(testo: str) -> bool | None:
+    """True = accetta, False = rifiuta, None = non chiaro (chiedi di nuovo)."""
+    t = (testo or "").lower()
+    parole = set(re.findall(r"[a-zàèéìòù']+", t))
+    pos = bool(parole & _PAROLE_SI) or any(f in t for f in _FRASI_SI)
+    neg = bool(parole & _PAROLE_NO) or any(f in t for f in _FRASI_NO)
+    if pos and not neg:
+        return True
+    if neg and not pos:
+        return False
+    if pos and neg:
+        return True   # es. "sì, ma fai veloce" → accetta
+    return None

@@ -27,6 +27,7 @@ from services import documenti as documenti_service
 from services import promemoria
 from services import prompts
 from services import inoltri
+from services import telefonia
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/elevenlabs")
@@ -114,6 +115,10 @@ async def init_conversazione(request: Request):
         form = await request.form()
         data = dict(form)
     caller = (data.get("caller_id") or "").strip()
+    # Registra la chiamata per l'eventuale inoltro: ElevenLabs gira sul tuo Twilio, quindi col
+    # call_sid possiamo comandare la call. L'host pubblico serve per le TwiML di whisper.
+    telefonia.registra_chiamata(caller, (data.get("call_sid") or "").strip(),
+                                request.headers.get("host", request.url.hostname))
 
     db = SessionLocal()
     try:
