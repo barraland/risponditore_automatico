@@ -28,6 +28,7 @@ from services import crm
 from services import promemoria
 from services import inoltri
 from services import telefonia
+from services import inoltro_assistito
 from services import documenti as documenti_service
 from services import ticket as ticket_service
 from services import profilo
@@ -520,6 +521,81 @@ def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ru
                 "messaggio": "Non riesco a passare la chiamata ora: di' al cliente che lo farete ricontattare."}
     finally:
         db.close()
+
+
+# ---------- Inoltro ASSISTITO (un secondo agente chiama il destinatario) ----------
+
+@mcp.tool()
+@_loggato
+def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "") -> dict:
+    """[inoltro assistito] Avvia una chiamata in USCITA: un nostro assistente chiama la persona della
+    rubrica inoltri (es. responsabile spedizioni) e le chiede se può ricevere ORA la chiamata.
+    `telefono`=numero del chiamante; `motivo`=cosa vuole il cliente; destinatario per
+    `nome_destinatario` e/o `ruolo`. Usa SOLO se la richiesta rientra nelle regole di inoltro che
+    vedi nel contesto. DOPO aver chiamato questo: di' al cliente di restare in linea che stai
+    provando a contattare la persona, poi usa `attendi_esito` per sapere com'è andata. Se più
+    persone corrispondono, te le elenco: chiedi al cliente quale."""
+    _log_tool("chiama_persona", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
+    db = SessionLocal()
+    try:
+        cand = inoltri.trova(db, nome_destinatario, ruolo)
+        if not cand:
+            return {"ok": False, "errore": "Nessun destinatario di inoltro trovato per questa richiesta."}
+        if len(cand) > 1:
+            return {"ok": False, "ambiguo": True,
+                    "candidati": [{"nome": x.nome_completo, "ruolo": x.ruolo, "telefono": x.telefono} for x in cand],
+                    "messaggio": "Più destinatari possibili: chiedi al cliente quale e riprova."}
+        i = cand[0]
+        c = whatsapp_agent.trova_contatto(db, telefono) if telefono else None
+        chiamante = c.nome_completo if c else "un cliente"
+        ch = telefonia.dati_chiamata(telefono)
+        ok, errore = inoltro_assistito.avvia(telefono, ch.get("call_sid"), ch.get("host"),
+                                             i, chiamante, motivo)
+        if ok:
+            return {"ok": True, "chiamata_avviata": True, "destinatario": i.nome_completo,
+                    "messaggio": ("Sto chiamando %s. Di' al cliente di restare in linea un momento, "
+                                  "poi usa attendi_esito." % i.nome_completo)}
+        return {"ok": False, "errore": errore,
+                "messaggio": "Non riesco a contattarlo ora: di' al cliente che lo farete ricontattare."}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
+def attendi_esito(telefono: str) -> dict:
+    """[inoltro assistito] Dimmi com'è andata la chiamata al destinatario. `telefono`=numero del
+    chiamante. Stati: `in_corso` (sto ancora provando: rassicura il cliente «ancora un istante» e
+    richiamami tra poco), `accettato` (ha detto sì: sto unendo le chiamate, salutalo brevemente),
+    `rifiutato`/`non_risponde` (riferisci al cliente con gentilezza e prosegui tu ad aiutarlo),
+    `nessuno` (nessuna chiamata in corso)."""
+    _log_tool("attendi_esito", telefono=telefono)
+    return inoltro_assistito.attendi_esito(telefono)
+
+
+@mcp.tool()
+@_loggato
+def unisci_chiamate(sessione: str = "", telefono: str = "") -> dict:
+    """[AGENTE OUTBOUND] Il destinatario ha ACCETTATO di ricevere la chiamata: unisci le due
+    chiamate. Passa `sessione` (il valore che hai ricevuto nel contesto). Dopo, saluta e chiudi."""
+    _log_tool("unisci_chiamate", telefono=sessione or telefono)
+    ok, errore = inoltro_assistito.accetta(sessione or telefono)
+    if ok:
+        return {"ok": True, "messaggio": "Chiamate unite. Saluta e termina."}
+    return {"ok": False, "errore": errore}
+
+
+@mcp.tool()
+@_loggato
+def rifiuta_inoltro(sessione: str = "", telefono: str = "", motivo: str = "") -> dict:
+    """[AGENTE OUTBOUND] Il destinatario NON può ricevere la chiamata ora (ha rifiutato, oppure hai
+    raggiunto una segreteria). Passa `sessione` dal contesto e un breve `motivo`. Se è una
+    segreteria, puoi lasciare un messaggio prima di chiudere."""
+    _log_tool("rifiuta_inoltro", telefono=sessione or telefono)
+    ok, errore = inoltro_assistito.rifiuta(sessione or telefono, motivo)
+    if ok:
+        return {"ok": True, "messaggio": "Registrato. Saluta e termina la chiamata."}
+    return {"ok": False, "errore": errore}
 
 
 # Inizializza l'app Streamable HTTP (crea il session_manager, usato nel lifespan dell'app).

@@ -72,11 +72,15 @@ add_secret wa-verify  WHATSAPP_VERIFY_TOKEN     "${WHATSAPP_VERIFY_TOKEN:-}"
 add_secret dash-pass  DASHBOARD_PASSWORD        "${DASHBOARD_PASSWORD:-}"
 add_secret twilio-sid TWILIO_ACCOUNT_SID        "${TWILIO_ACCOUNT_SID:-}"   # inoltro chiamata (REST)
 add_secret twilio-tok TWILIO_AUTH_TOKEN         "${TWILIO_AUTH_TOKEN:-}"
+add_secret el-api-key ELEVENLABS_API_KEY        "${ELEVENLABS_API_KEY:-}"   # inoltro assistito (outbound)
 
 # env in chiaro (non segrete), solo se presenti
 if [ -n "${GMAIL_FROM:-}" ]; then ENVS+=("GMAIL_FROM=$GMAIL_FROM"); fi
 if [ -n "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then ENVS+=("WHATSAPP_PHONE_NUMBER_ID=$WHATSAPP_PHONE_NUMBER_ID"); fi
 if [ -n "${OPENAI_REALTIME_VOICE:-}" ]; then ENVS+=("OPENAI_REALTIME_VOICE=$OPENAI_REALTIME_VOICE"); fi
+# Inoltro assistito: id dell'agente outbound e del numero outbound su ElevenLabs (non segreti)
+if [ -n "${ELEVENLABS_OUTBOUND_AGENT_ID:-}" ]; then ENVS+=("ELEVENLABS_OUTBOUND_AGENT_ID=$ELEVENLABS_OUTBOUND_AGENT_ID"); fi
+if [ -n "${ELEVENLABS_OUTBOUND_PHONE_ID:-}" ]; then ENVS+=("ELEVENLABS_OUTBOUND_PHONE_ID=$ELEVENLABS_OUTBOUND_PHONE_ID"); fi
 # SPA: origini CORS ammesse + Supabase per verificare il token degli upload (anon key è pubblica)
 if [ -n "${CORS_ORIGINS:-}" ]; then ENVS+=("CORS_ORIGINS=$CORS_ORIGINS"); fi
 if [ -n "${SUPABASE_URL:-}" ]; then ENVS+=("SUPABASE_URL=$SUPABASE_URL"); fi

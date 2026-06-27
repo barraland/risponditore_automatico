@@ -59,6 +59,15 @@ def avvia_inoltro(call_sid: str, numero: str, riepilogo: str, host: str, caller_
         f'<Number url="{whisper}">{numero}</Number></Dial></Response>'
     )
     logger.info("➡️  Inoltro: dial %s callerId=%s (call_sid=%s)", numero, caller_id or "(default)", call_sid)
+    return _update_call(call_sid, twiml)
+
+
+def _update_call(call_sid: str, twiml: str) -> tuple[bool, str]:
+    """Sostituisce il TwiML in esecuzione su una chiamata Twilio viva. (ok, errore)."""
+    if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN):
+        return False, "Twilio REST non configurato (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN)."
+    if not call_sid:
+        return False, "call_sid mancante per la chiamata."
     try:
         r = httpx.post(
             f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls/{urllib.parse.quote(call_sid)}.json",
@@ -67,11 +76,22 @@ def avvia_inoltro(call_sid: str, numero: str, riepilogo: str, host: str, caller_
         if r.status_code in (200, 201):
             return True, ""
         # Diagnostica senza svelare il segreto: SID in chiaro (è un identificativo) + lunghezza token.
-        logger.warning("Inoltro Twilio %s | SID usato=%s len(token)=%d | %s",
+        logger.warning("Twilio update %s | SID usato=%s len(token)=%d | %s",
                        r.status_code, TWILIO_ACCOUNT_SID or "(vuoto)", len(TWILIO_AUTH_TOKEN), r.text[:160])
         return False, f"Twilio {r.status_code}: {r.text[:160]}"
     except Exception as e:
         return False, str(e)
+
+
+def in_conferenza(call_sid: str, stanza: str) -> tuple[bool, str]:
+    """Sposta una chiamata viva dentro una conference Twilio (per unire due gambe). Quando una
+    delle due esce, la conference termina (endConferenceOnExit)."""
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Dial>'
+        f'<Conference startConferenceOnEnter="true" endConferenceOnExit="true" beep="false" '
+        f'waitUrl="">{stanza}</Conference></Dial></Response>'
+    )
+    return _update_call(call_sid, twiml)
 
 
 # ---------- Interpretazione del consenso in linguaggio naturale (Twilio SpeechResult) ----------
