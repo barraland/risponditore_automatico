@@ -62,6 +62,9 @@ def avvia_inoltro(call_sid: str, numero: str, riepilogo: str, host: str) -> tupl
         )
         if r.status_code in (200, 201):
             return True, ""
+        # Diagnostica senza svelare il segreto: SID in chiaro (è un identificativo) + lunghezza token.
+        logger.warning("Inoltro Twilio %s | SID usato=%s len(token)=%d | %s",
+                       r.status_code, TWILIO_ACCOUNT_SID or "(vuoto)", len(TWILIO_AUTH_TOKEN), r.text[:160])
         return False, f"Twilio {r.status_code}: {r.text[:160]}"
     except Exception as e:
         return False, str(e)
