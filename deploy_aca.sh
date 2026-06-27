@@ -70,6 +70,8 @@ add_secret mcp-token  MCP_AUTH_TOKEN            "${MCP_AUTH_TOKEN:-}"
 add_secret wa-token   WHATSAPP_TOKEN            "${WHATSAPP_TOKEN:-}"
 add_secret wa-verify  WHATSAPP_VERIFY_TOKEN     "${WHATSAPP_VERIFY_TOKEN:-}"
 add_secret dash-pass  DASHBOARD_PASSWORD        "${DASHBOARD_PASSWORD:-}"
+add_secret twilio-sid TWILIO_ACCOUNT_SID        "${TWILIO_ACCOUNT_SID:-}"   # inoltro chiamata (REST)
+add_secret twilio-tok TWILIO_AUTH_TOKEN         "${TWILIO_AUTH_TOKEN:-}"
 
 # env in chiaro (non segrete), solo se presenti
 if [ -n "${GMAIL_FROM:-}" ]; then ENVS+=("GMAIL_FROM=$GMAIL_FROM"); fi
