@@ -405,6 +405,7 @@ async def incoming_call(request: Request):
     """Risponde con TwiML che apre lo stream audio bidirezionale."""
     form = await request.form()
     caller = form.get("From", "")
+    chiamato = form.get("To", "")  # il tuo numero Twilio: serve come callerId per l'inoltro
     host = request.headers.get("host", request.url.hostname)
     ws_url = f"wss://{host}/voice/stream"
     logger.info("Chiamata in arrivo da %s -> stream %s", caller, ws_url)
@@ -415,6 +416,7 @@ async def incoming_call(request: Request):
         "<Connect>"
         f'<Stream url="{ws_url}">'
         f'<Parameter name="from" value="{caller}"/>'
+        f'<Parameter name="to" value="{chiamato}"/>'
         "</Stream>"
         "</Connect>"
         "</Response>"
@@ -434,6 +436,7 @@ async def inoltro_whisper(request: Request):
     conferma A VOCE ('accetti?'). La risposta in linguaggio naturale la interpreta /inoltro-consenso."""
     msg = request.query_params.get("msg", "Le passo una chiamata.")
     n = request.query_params.get("n", "1")
+    logger.info("📣 Inoltro: destinatario ha risposto, riproduco annuncio (tentativo %s)", n)
     pre = "Scusi, non ho capito. " if n != "1" else ""
     qs = urllib.parse.urlencode({"msg": msg, "n": n})
     voce = telefonia.SAY_VOICE
@@ -473,11 +476,15 @@ async def inoltro_esito(request: Request):
     nessuna risposta) gli diciamo che la persona non è disponibile."""
     form = await request.form()
     stato_dial = form.get("DialCallStatus") or ""
+    # Diagnostica: perché il Dial è finito così (failed/busy/no-answer/canceled/completed).
+    logger.info("📞 Esito inoltro: DialCallStatus=%s code=%s durata=%s sid=%s",
+                stato_dial, form.get("ErrorCode") or "-", form.get("DialCallDuration") or "-",
+                form.get("DialCallSid") or "-")
     if stato_dial == "completed":
         return _xml("<Response><Hangup/></Response>")
     return _xml(f'<Response><Say voice="{telefonia.SAY_VOICE}" language="it-IT">'
-                "La persona al momento non è disponibile. La faremo ricontattare al più presto. "
-                "Arrivederci.</Say><Hangup/></Response>")
+                "Mi dispiace, non sono riuscito a mettervi in contatto in questo momento. "
+                "Faremo ricontattare il cliente al più presto. Arrivederci.</Say><Hangup/></Response>")
 
 
 # ---------- 2) WebSocket: ponte Twilio <-> OpenAI Realtime ----------
@@ -822,7 +829,8 @@ async def media_stream(twilio_ws: WebSocket):
                     params = data["start"].get("customParameters", {})
                     stato["telefono"] = params.get("from") or "sconosciuto"
                     stato["iniziata_at"] = datetime.utcnow()
-                    telefonia.registra_chiamata(stato["telefono"], stato.get("call_sid"), stato.get("host"))
+                    telefonia.registra_chiamata(stato["telefono"], stato.get("call_sid"),
+                                                stato.get("host"), params.get("to") or "")
                     logger.info("Stream avviato (sid=%s, da=%s)", stato["stream_sid"], stato["telefono"])
                     await configura_sessione()
                 elif event == "media":

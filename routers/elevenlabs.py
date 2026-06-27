@@ -118,7 +118,8 @@ async def init_conversazione(request: Request):
     # Registra la chiamata per l'eventuale inoltro: ElevenLabs gira sul tuo Twilio, quindi col
     # call_sid possiamo comandare la call. L'host pubblico serve per le TwiML di whisper.
     telefonia.registra_chiamata(caller, (data.get("call_sid") or "").strip(),
-                                request.headers.get("host", request.url.hostname))
+                                request.headers.get("host", request.url.hostname),
+                                (data.get("called_number") or "").strip())
 
     db = SessionLocal()
     try:

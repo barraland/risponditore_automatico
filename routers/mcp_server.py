@@ -509,8 +509,9 @@ def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ru
         riepilogo = (f"Le passo {chiamante}. Motivo: {(motivo or '').strip() or 'richiesta del cliente'}.")
 
         # Avvia il trasferimento reale sulla chiamata Twilio in corso (vale per ElevenLabs e Realtime).
-        call_sid, host = telefonia.dati_chiamata(telefono)
-        ok, errore = telefonia.avvia_inoltro(call_sid, i.telefono, riepilogo, host)
+        ch = telefonia.dati_chiamata(telefono)
+        ok, errore = telefonia.avvia_inoltro(ch.get("call_sid"), i.telefono, riepilogo,
+                                             ch.get("host"), ch.get("numero_twilio", ""))
         if ok:
             return {"ok": True, "inoltro_avviato": True, "destinatario": i.nome_completo,
                     "messaggio": ("Sto passando la chiamata adesso: di' al cliente di restare in linea che lo "
