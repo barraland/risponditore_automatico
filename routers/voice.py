@@ -438,7 +438,8 @@ async def inoltro_whisper(request: Request):
     n = request.query_params.get("n", "1")
     logger.info("📣 Inoltro: destinatario ha risposto, riproduco annuncio (tentativo %s)", n)
     pre = "Scusi, non ho capito. " if n != "1" else ""
-    qs = urllib.parse.urlencode({"msg": msg, "n": n})
+    # NB: dentro il TwiML la '&' va come '&amp;', altrimenti l'XML è invalido e Twilio dà errore.
+    qs = urllib.parse.urlencode({"msg": msg, "n": n}).replace("&", "&amp;")
     voce = telefonia.SAY_VOICE
     twiml = (
         "<Response>"
@@ -464,7 +465,7 @@ async def inoltro_consenso(request: Request):
     if esito is True:
         return _xml("<Response/>")                      # prosegue: bridge col chiamante
     if esito is None and n == "1":                       # poco chiaro: richiedi una volta
-        qs = urllib.parse.urlencode({"msg": msg, "n": "2"})
+        qs = urllib.parse.urlencode({"msg": msg, "n": "2"}).replace("&", "&amp;")
         return _xml(f'<Response><Redirect>/voice/inoltro-whisper?{qs}</Redirect></Response>')
     return _xml(f'<Response><Say voice="{telefonia.SAY_VOICE}" language="it-IT">'
                 "Va bene, riferisco. Arrivederci.</Say><Hangup/></Response>")
