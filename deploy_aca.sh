@@ -85,7 +85,10 @@ if [ -n "${SUPABASE_ANON_KEY:-}" ]; then ENVS+=("SUPABASE_ANON_KEY=$SUPABASE_ANO
 az containerapp secret set -g "$RG" -n "$APP" --secrets "${SECRETS[@]}" -o none
 
 echo "==> 4) Variabili d'ambiente"
-az containerapp update -g "$RG" -n "$APP" --set-env-vars "${ENVS[@]}" -o none
+# --revision-suffix forza SEMPRE una nuova revision: senza, se la spec env non cambia (es. hai solo
+# aggiornato il VALORE di un secret) ACA non riavvia i container e resta il vecchio valore in memoria.
+az containerapp update -g "$RG" -n "$APP" --set-env-vars "${ENVS[@]}" \
+  --revision-suffix "d$(date +%Y%m%d%H%M%S)" -o none
 
 echo "==> 5) Scaling: 1 replica sempre calda (no cold start). max alzabile (DB ora è Postgres)."
 az containerapp update -g "$RG" -n "$APP" --min-replicas 1 --max-replicas 3 -o none
