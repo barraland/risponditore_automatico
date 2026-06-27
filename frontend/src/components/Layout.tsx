@@ -17,6 +17,7 @@ export default function Layout() {
           <NavLink to="/ticket">Ticket</NavLink>
           <NavLink to="/documenti">Documenti</NavLink>
           <NavLink to="/promemoria">Promemoria</NavLink>
+          <NavLink to="/inoltri">Inoltri</NavLink>
         </div>
         <div className="pw-nav-right">
           <NavLink to="/admin">Admin</NavLink>

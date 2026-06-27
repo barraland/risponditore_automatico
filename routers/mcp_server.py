@@ -26,6 +26,7 @@ from database import (
 )
 from services import crm
 from services import promemoria
+from services import inoltri
 from services import documenti as documenti_service
 from services import ticket as ticket_service
 from services import profilo
@@ -476,6 +477,39 @@ def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str
             return {"ok": False, "errore": "Testo del promemoria mancante."}
         return {"ok": True, "promemoria_id": p.id, "cliente": c.nome_completo,
                 "scade_il": p.scade_il.strftime("%d/%m/%Y") if p.scade_il else None}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
+def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "") -> dict:
+    """Prepara l'INOLTRO della chiamata a una persona della rubrica inoltri (es. responsabile
+    spedizioni). `telefono` = numero del chiamante; `motivo` = cosa vuole il cliente; indica il
+    destinatario per `nome_destinatario` e/o `ruolo`. Inoltra SOLO se la richiesta rientra nelle
+    regole di inoltro che vedi nel contesto. Ritorna il numero a cui passare la chiamata e un
+    riepilogo di handoff (chi chiama e perché) da annunciare al destinatario. Se più persone
+    corrispondono, te le elenco per scegliere. Il trasferimento vero della linea lo esegue la
+    telefonia: dopo questo, avvia il transfer_to_number sul numero indicato."""
+    _log_tool("inoltra_chiamata", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
+    db = SessionLocal()
+    try:
+        cand = inoltri.trova(db, nome_destinatario, ruolo)
+        if not cand:
+            return {"ok": False, "errore": "Nessun destinatario di inoltro trovato per questa richiesta."}
+        if len(cand) > 1:
+            return {"ok": False, "ambiguo": True,
+                    "candidati": [{"nome": i.nome_completo, "ruolo": i.ruolo, "telefono": i.telefono} for i in cand],
+                    "messaggio": "Più destinatari possibili: scegli quale (per nome o ruolo) e riprova."}
+        i = cand[0]
+        c = whatsapp_agent.trova_contatto(db, telefono) if telefono else None
+        chiamante = c.nome_completo if c else "il chiamante"
+        riepilogo = (f"Le passo {chiamante}. Motivo: {(motivo or '').strip() or 'richiesta del cliente'}.")
+        return {"ok": True, "telefono_destinatario": i.telefono, "destinatario": i.nome_completo,
+                "ruolo": i.ruolo or "", "riepilogo_handoff": riepilogo,
+                "istruzione": "Avvia ora il trasferimento al telefono_destinatario (transfer_to_number) "
+                              "annunciando il riepilogo_handoff. Se il destinatario non risponde o rifiuta, "
+                              "torna dal cliente e di' che la persona al momento è occupata."}
     finally:
         db.close()
 

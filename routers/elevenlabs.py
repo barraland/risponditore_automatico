@@ -26,6 +26,7 @@ from services import istruzioni
 from services import documenti as documenti_service
 from services import promemoria
 from services import prompts
+from services import inoltri
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/elevenlabs")
@@ -171,7 +172,8 @@ async def init_conversazione(request: Request):
             dv["configurazione"] = prompts.voce_admin()
         else:
             dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
-                                    + documenti_service.catalogo_prompt(db)).strip()
+                                    + documenti_service.catalogo_prompt(db)
+                                    + inoltri.blocco_prompt(db)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
                 dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
         # ElevenLabs sostituisce {{configurazione}} ma NON i {{segnaposto}} contenuti dentro:

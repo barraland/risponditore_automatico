@@ -283,6 +283,25 @@ REALTIME_TOOLS = [
             "required": ["nome_cliente", "testo"],
         },
     },
+    {
+        "type": "function",
+        "name": "inoltra_chiamata",
+        "description": (
+            "Prepara l'INOLTRO della chiamata a una persona della rubrica (es. responsabile "
+            "spedizioni), SOLO se la richiesta rientra nelle regole di inoltro che vedi nel contesto. "
+            "Indica il motivo (cosa vuole il cliente) e il destinatario per nome o ruolo. Ti torna il "
+            "numero e un riepilogo di handoff. Se più persone corrispondono, te le elenco."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "motivo": {"type": "string", "description": "Cosa vuole il cliente (per l'annuncio al destinatario)."},
+                "nome_destinatario": {"type": "string", "description": "Nome/cognome del destinatario (opzionale)."},
+                "ruolo": {"type": "string", "description": "Ruolo del destinatario, es. 'spedizioni' (opzionale)."},
+            },
+            "required": ["motivo"],
+        },
+    },
 ]
 
 
@@ -308,8 +327,10 @@ def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str
     if promemoria.is_admin(telefono, db):
         return prompts.voce_admin().replace("{{telefono_chiamante}}", telefono or "")
 
+    from services import inoltri
     configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
-                      + documenti_service.catalogo_prompt(db)).strip()
+                      + documenti_service.catalogo_prompt(db)
+                      + inoltri.blocco_prompt(db)).strip()
     if contatto:  # promemoria mirati dell'amministratore per questo cliente
         from services import promemoria
         configurazione += promemoria.blocco_prompt(db, contatto.id)
@@ -638,6 +659,14 @@ async def media_stream(twilio_ws: WebSocket):
         return fn(telefono=tel, nome_cliente=args.get("nome_cliente", ""), testo=args.get("testo", ""),
                   societa=args.get("societa", ""), giorni_validita=int(args.get("giorni_validita") or 0))
 
+    def _inoltra_chiamata(args: dict) -> dict:
+        """Prepara l'inoltro (rubrica + riepilogo). Stessa logica MCP. NB: sul path Realtime/Twilio
+        il bridge vero non è implementato; ritorna i dati per il trasferimento."""
+        tel = stato.get("telefono") or ""
+        fn = getattr(mcp_server.inoltra_chiamata, "fn", mcp_server.inoltra_chiamata)
+        return fn(telefono=tel, motivo=args.get("motivo", ""),
+                  nome_destinatario=args.get("nome_destinatario", ""), ruolo=args.get("ruolo", ""))
+
     def _apri_ticket(titolo: str, priorita: str, descrizione: str) -> dict:
         """Apre/aggiorna il ticket di follow-up usando la trascrizione come storia (sincrona)."""
         storia = ticket_service.formatta_storia(_trascrizione_ordinata())
@@ -696,6 +725,8 @@ async def media_stream(twilio_ws: WebSocket):
                 _apri_ticket, args.get("titolo", ""), args.get("priorita", ""), args.get("descrizione", ""))
         elif name == "lascia_promemoria":
             result = await asyncio.to_thread(_lascia_promemoria, args)
+        elif name == "inoltra_chiamata":
+            result = await asyncio.to_thread(_inoltra_chiamata, args)
         else:
             result = {"errore": f"Strumento sconosciuto: {name}"}
 

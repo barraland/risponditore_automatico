@@ -452,6 +452,26 @@ class Amministratore(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Inoltro(Base):
+    """Persona a cui l'assistente può INOLTRARE la chiamata (es. responsabile spedizioni).
+    `regole` descrive in linguaggio naturale quando inoltrare a questa persona. La rubrica e le
+    regole vengono iniettate nel prompt; il trasferimento vero lo fa la telefonia (ElevenLabs)."""
+    __tablename__ = "inoltri"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100))
+    cognome = Column(String(100))
+    ruolo = Column(String(150))
+    email = Column(String(150))
+    telefono = Column(String(30), nullable=False)
+    regole = Column(Text)                 # quando inoltrare a questa persona (testo libero)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def nome_completo(self) -> str:
+        return f"{self.nome or ''} {self.cognome or ''}".strip() or "(senza nome)"
+
+
 # ---------- Helpers ----------
 
 def get_db():

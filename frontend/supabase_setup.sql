@@ -24,6 +24,17 @@ create table if not exists public.amministratori (
   created_at timestamp default now()
 );
 
+create table if not exists public.inoltri (
+  id         serial primary key,
+  nome       varchar(100),
+  cognome    varchar(100),
+  ruolo      varchar(150),
+  email      varchar(150),
+  telefono   varchar(30) not null,
+  regole     text,
+  created_at timestamp default now()
+);
+
 -- ---------- Colonne aggiunte nel tempo (no-op se già presenti) ----------
 alter table public.azienda   add column if not exists istruzioni_admin   text;
 alter table public.azienda   add column if not exists regole_commerciali text;
@@ -40,7 +51,7 @@ declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

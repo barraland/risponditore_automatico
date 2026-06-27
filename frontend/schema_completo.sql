@@ -97,9 +97,23 @@ CREATE TABLE IF NOT EXISTS amministratori (
 	PRIMARY KEY (id)
 );
 
+CREATE INDEX IF NOT EXISTS ix_amministratori_id ON amministratori (id);
+
 CREATE INDEX IF NOT EXISTS ix_amministratori_telefono ON amministratori (telefono);
 
-CREATE INDEX IF NOT EXISTS ix_amministratori_id ON amministratori (id);
+CREATE TABLE IF NOT EXISTS inoltri (
+	id SERIAL NOT NULL, 
+	nome VARCHAR(100), 
+	cognome VARCHAR(100), 
+	ruolo VARCHAR(150), 
+	email VARCHAR(150), 
+	telefono VARCHAR(30) NOT NULL, 
+	regole TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_inoltri_id ON inoltri (id);
 
 CREATE TABLE IF NOT EXISTS locali (
 	id SERIAL NOT NULL, 
@@ -117,13 +131,13 @@ CREATE TABLE IF NOT EXISTS locali (
 	FOREIGN KEY(agente_referente_id) REFERENCES agenti (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_locali_id ON locali (id);
-
 CREATE INDEX IF NOT EXISTS ix_locali_stato_relazione ON locali (stato_relazione);
+
+CREATE INDEX IF NOT EXISTS ix_locali_agente_referente_id ON locali (agente_referente_id);
 
 CREATE INDEX IF NOT EXISTS ix_locali_citta ON locali (citta);
 
-CREATE INDEX IF NOT EXISTS ix_locali_agente_referente_id ON locali (agente_referente_id);
+CREATE INDEX IF NOT EXISTS ix_locali_id ON locali (id);
 
 CREATE TABLE IF NOT EXISTS documenti (
 	id SERIAL NOT NULL, 
@@ -157,9 +171,9 @@ CREATE TABLE IF NOT EXISTS testi_categoria (
 	FOREIGN KEY(azienda_id) REFERENCES azienda (id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_testi_categoria_categoria ON testi_categoria (categoria);
-
 CREATE INDEX IF NOT EXISTS ix_testi_categoria_id ON testi_categoria (id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_testi_categoria_categoria ON testi_categoria (categoria);
 
 CREATE TABLE IF NOT EXISTS contatti (
 	id SERIAL NOT NULL, 
@@ -241,13 +255,13 @@ CREATE TABLE IF NOT EXISTS ticket (
 	FOREIGN KEY(contatto_id) REFERENCES contatti (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_ticket_stato ON ticket (stato);
-
 CREATE INDEX IF NOT EXISTS ix_ticket_created_at ON ticket (created_at);
 
 CREATE INDEX IF NOT EXISTS ix_ticket_id ON ticket (id);
 
 CREATE INDEX IF NOT EXISTS ix_ticket_priorita ON ticket (priorita);
+
+CREATE INDEX IF NOT EXISTS ix_ticket_stato ON ticket (stato);
 
 CREATE TABLE IF NOT EXISTS ordini (
 	id SERIAL NOT NULL, 
@@ -266,13 +280,13 @@ CREATE TABLE IF NOT EXISTS ordini (
 	FOREIGN KEY(agente_id) REFERENCES agenti (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_ordini_stato ON ordini (stato);
-
 CREATE INDEX IF NOT EXISTS ix_ordini_data ON ordini (data);
 
 CREATE INDEX IF NOT EXISTS ix_ordini_locale_id ON ordini (locale_id);
 
 CREATE INDEX IF NOT EXISTS ix_ordini_id ON ordini (id);
+
+CREATE INDEX IF NOT EXISTS ix_ordini_stato ON ordini (stato);
 
 CREATE TABLE IF NOT EXISTS promemoria (
 	id SERIAL NOT NULL, 
@@ -321,7 +335,7 @@ declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

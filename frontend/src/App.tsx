@@ -13,6 +13,7 @@ import ContattoDetail from './pages/ContattoDetail'
 import Assistente from './pages/Assistente'
 import Admin from './pages/Admin'
 import PromemoriaList from './pages/PromemoriaList'
+import Inoltri from './pages/Inoltri'
 import Documenti from './pages/Documenti'
 import DocumentoDetail from './pages/DocumentoDetail'
 import TicketList from './pages/Ticket'
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/assistente" element={<Assistente />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/promemoria" element={<PromemoriaList />} />
+        <Route path="/inoltri" element={<Inoltri />} />
       </Route>
       <Route path="*" element={<Navigate to="/societa" replace />} />
     </Routes>
