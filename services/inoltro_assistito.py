@@ -51,8 +51,9 @@ def _sessione_per_dest(dest_tel: str) -> dict | None:
 
 
 def avvia(entrante_tel: str, entrante_call_sid: str, entrante_host: str,
-          dest, chiamante: str, motivo: str) -> tuple[bool, str]:
-    """Lancia la chiamata in uscita verso `dest` (riga Inoltro). Ritorna (ok, errore)."""
+          dest, chiamante: str, motivo: str, apertura: str = "") -> tuple[bool, str]:
+    """Lancia la chiamata in uscita verso `dest` (riga Inoltro). `apertura` = frase parlata che
+    l'agente outbound dirà per prima (First message). Ritorna (ok, errore)."""
     if not configurato():
         return False, "Inoltro assistito non configurato (ELEVENLABS_API_KEY/AGENT_ID/PHONE_ID)."
     if not entrante_call_sid:
@@ -60,10 +61,15 @@ def avvia(entrante_tel: str, entrante_call_sid: str, entrante_host: str,
 
     stanza = "inoltro-" + (_norm(entrante_call_sid) or _norm(entrante_tel))
     motivo = (motivo or "").strip() or "una richiesta del cliente"
+    apertura = (apertura or "").strip() or (
+        f"Salve! Ho in linea {chiamante or 'un cliente'} che vorrebbe parlarle. "
+        "Posso passarglielo, oppure le dico che ora è occupato?"
+    )
     dvars = {
         "chiamante": chiamante or "un cliente",
         "motivo": motivo,
         "destinatario": dest.nome_completo,
+        "apertura": apertura,
         "sessione": _norm(dest.telefono),
     }
     body = {

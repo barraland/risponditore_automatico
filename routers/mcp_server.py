@@ -544,15 +544,19 @@ def _qualifica_chiamante(c) -> str:
 @mcp.tool()
 @_loggato
 def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "",
-                   chi_chiama: str = "") -> dict:
+                   chi_chiama: str = "", frase_apertura: str = "") -> dict:
     """[inoltro assistito] Avvia una chiamata in USCITA: un nostro assistente chiama la persona della
     rubrica inoltri (es. responsabile spedizioni) e le chiede se può ricevere ORA la chiamata.
     `telefono`=numero del chiamante; `motivo`=il problema/richiesta del cliente, descritto bene;
-    `chi_chiama`=chi è in linea, qualificato (nome e cognome, società/locale e città se li sai),
-    es. "Andrea Barral del chiosco di Piazza Piemonte, Milano"; destinatario per `nome_destinatario`
-    e/o `ruolo`. Usa SOLO se la richiesta rientra nelle regole di inoltro che vedi nel contesto.
-    DOPO aver chiamato questo: di' al cliente di restare in linea che stai provando a contattare la
-    persona, poi usa `attendi_esito`. Se più persone corrispondono, te le elenco: chiedi quale."""
+    `chi_chiama`=chi è in linea, qualificato (nome e cognome, società/locale e città se li sai);
+    `frase_apertura`=la FRASE PARLATA, naturale e già pronta, che il nostro assistente dirà per
+    prima al destinatario: deve qualificare chi è in linea (nome + società + città) e il motivo in
+    modo discorsivo, e finire offrendo di passarlo o no. Es: "Ciao, ho in linea Andrea Barral del
+    chiosco di Piazza Piemonte a Milano: ha un cliente che chiede una dilazione di pagamento e
+    vorrebbe parlartene. Te lo passo, o gli dico che ora sei occupato?". Destinatario per
+    `nome_destinatario` e/o `ruolo`. Usa SOLO se la richiesta rientra nelle regole di inoltro.
+    DOPO: di' al cliente di restare in linea, poi usa `attendi_esito`. Se più persone
+    corrispondono, te le elenco: chiedi quale."""
     _log_tool("chiama_persona", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
     db = SessionLocal()
     try:
@@ -570,7 +574,7 @@ def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruol
         chiamante = _qualifica_chiamante(c) if c else ((chi_chiama or "").strip() or "un cliente")
         ch = telefonia.dati_chiamata(telefono)
         ok, errore = inoltro_assistito.avvia(telefono, ch.get("call_sid"), ch.get("host"),
-                                             i, chiamante, motivo)
+                                             i, chiamante, motivo, frase_apertura)
         if ok:
             return {"ok": True, "chiamata_avviata": True, "destinatario": i.nome_completo,
                     "messaggio": ("Sto chiamando %s. Di' al cliente di restare in linea un momento, "
