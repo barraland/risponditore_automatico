@@ -64,7 +64,6 @@ def avvia(entrante_tel: str, entrante_call_sid: str, entrante_host: str,
         "chiamante": chiamante or "un cliente",
         "motivo": motivo,
         "destinatario": dest.nome_completo,
-        "azienda": "",
         "sessione": _norm(dest.telefono),
     }
     body = {

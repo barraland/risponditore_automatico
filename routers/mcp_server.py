@@ -565,7 +565,9 @@ def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruol
                     "messaggio": "Più destinatari possibili: chiedi al cliente quale e riprova."}
         i = cand[0]
         c = whatsapp_agent.trova_contatto(db, telefono) if telefono else None
-        chiamante = (chi_chiama or "").strip() or _qualifica_chiamante(c)
+        # Cliente NOTO: qualifica autorevole dai dati Supabase (nome + società + città).
+        # Sconosciuto/prospect: usa ciò che Margherita ha raccolto in chi_chiama.
+        chiamante = _qualifica_chiamante(c) if c else ((chi_chiama or "").strip() or "un cliente")
         ch = telefonia.dati_chiamata(telefono)
         ok, errore = inoltro_assistito.avvia(telefono, ch.get("call_sid"), ch.get("host"),
                                              i, chiamante, motivo)
