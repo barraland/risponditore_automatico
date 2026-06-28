@@ -525,16 +525,34 @@ def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ru
 
 # ---------- Inoltro ASSISTITO (un secondo agente chiama il destinatario) ----------
 
+def _qualifica_chiamante(c) -> str:
+    """Descrizione di chi è in linea da annunciare al destinatario: nome + società + città."""
+    if not c:
+        return "un cliente"
+    parti = [c.nome_completo]
+    soc = getattr(c, "societa", None)
+    nome_soc = ((getattr(soc, "insegna", None) or getattr(soc, "ragione_sociale", None)) if soc
+                else getattr(c, "ragione_sociale", None))
+    if nome_soc:
+        parti.append(f"di {nome_soc}")
+    citta = getattr(soc, "citta", None) if soc else None
+    if citta:
+        parti.append(f"({citta})")
+    return " ".join(p for p in parti if p)
+
+
 @mcp.tool()
 @_loggato
-def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "") -> dict:
+def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "",
+                   chi_chiama: str = "") -> dict:
     """[inoltro assistito] Avvia una chiamata in USCITA: un nostro assistente chiama la persona della
     rubrica inoltri (es. responsabile spedizioni) e le chiede se può ricevere ORA la chiamata.
-    `telefono`=numero del chiamante; `motivo`=cosa vuole il cliente; destinatario per
-    `nome_destinatario` e/o `ruolo`. Usa SOLO se la richiesta rientra nelle regole di inoltro che
-    vedi nel contesto. DOPO aver chiamato questo: di' al cliente di restare in linea che stai
-    provando a contattare la persona, poi usa `attendi_esito` per sapere com'è andata. Se più
-    persone corrispondono, te le elenco: chiedi al cliente quale."""
+    `telefono`=numero del chiamante; `motivo`=il problema/richiesta del cliente, descritto bene;
+    `chi_chiama`=chi è in linea, qualificato (nome e cognome, società/locale e città se li sai),
+    es. "Andrea Barral del chiosco di Piazza Piemonte, Milano"; destinatario per `nome_destinatario`
+    e/o `ruolo`. Usa SOLO se la richiesta rientra nelle regole di inoltro che vedi nel contesto.
+    DOPO aver chiamato questo: di' al cliente di restare in linea che stai provando a contattare la
+    persona, poi usa `attendi_esito`. Se più persone corrispondono, te le elenco: chiedi quale."""
     _log_tool("chiama_persona", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
     db = SessionLocal()
     try:
@@ -547,7 +565,7 @@ def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruol
                     "messaggio": "Più destinatari possibili: chiedi al cliente quale e riprova."}
         i = cand[0]
         c = whatsapp_agent.trova_contatto(db, telefono) if telefono else None
-        chiamante = c.nome_completo if c else "un cliente"
+        chiamante = (chi_chiama or "").strip() or _qualifica_chiamante(c)
         ch = telefonia.dati_chiamata(telefono)
         ok, errore = inoltro_assistito.avvia(telefono, ch.get("call_sid"), ch.get("host"),
                                              i, chiamante, motivo)
