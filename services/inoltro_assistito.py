@@ -38,6 +38,22 @@ def _norm(t: str) -> str:
     return re.sub(r"\D", "", t or "")
 
 
+_SALUTI = r"(ciao|salve|buongiorno|buonasera|buon pomeriggio|pronto|ehi|hey)"
+
+
+def _saluta_per_nome(apertura: str, nome_completo: str) -> str:
+    """Personalizza il saluto col nome di battesimo del destinatario: 'Buongiorno Valerio, ...'.
+    Se la frase inizia già con un saluto, ci infila il nome; altrimenti lo antepone."""
+    nome = (nome_completo or "").strip().split()[0] if (nome_completo or "").strip() else ""
+    if not nome:
+        return apertura
+    m = re.match(rf"^\s*{_SALUTI}\b[\s,!.]*", apertura, re.I)
+    if m:
+        resto = apertura[m.end():].lstrip()
+        return f"{m.group(1).capitalize()} {nome}, {resto}".strip()
+    return f"Ciao {nome}! {apertura}"
+
+
 def configurato() -> bool:
     return bool(ELEVENLABS_API_KEY and EL_OUTBOUND_AGENT_ID and EL_OUTBOUND_PHONE_ID)
 
@@ -65,6 +81,7 @@ def avvia(entrante_tel: str, entrante_call_sid: str, entrante_host: str,
         f"Salve! Ho in linea {chiamante or 'un cliente'} che vorrebbe parlarle. "
         "Posso passarglielo, oppure le dico che ora è occupato?"
     )
+    apertura = _saluta_per_nome(apertura, dest.nome_completo)  # 'Buongiorno Valerio, ...'
     dvars = {
         "chiamante": chiamante or "un cliente",
         "motivo": motivo,
