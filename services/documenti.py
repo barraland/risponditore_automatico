@@ -8,6 +8,10 @@ che va sempre conservato.
 import logging
 import os
 import re
+import shutil
+import tempfile
+
+import httpx
 
 from database import Documento, StatoDocumento
 from services import email as email_service
@@ -75,10 +79,50 @@ def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_a
             "allegato_richiesto_non_trovato": allegato_mancante}
 
 
+def _scarica_da_storage(storage_path: str) -> bytes | None:
+    """Scarica un file dal bucket privato 'documenti' su Supabase Storage usando la service role key
+    (il bucket è privato: l'anon key non basta). Ritorna i byte o None."""
+    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+           or os.getenv("SUPABASE_SERVICE_KEY", "").strip())
+    if not (url and key and storage_path):
+        return None
+    bucket = os.getenv("SUPABASE_BUCKET", "documenti")
+    path = storage_path.lstrip("/")
+    if path.startswith(bucket + "/"):
+        path = path[len(bucket) + 1:]
+    try:
+        r = httpx.get(f"{url}/storage/v1/object/{bucket}/{path}",
+                      headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=20)
+        if r.status_code == 200:
+            return r.content
+        logger.warning("Download da Storage fallito (%s) per %s: %s", r.status_code, path, r.text[:160])
+    except Exception as e:
+        logger.warning("Download da Storage errore per %s: %s", path, e)
+    return None
+
+
+def _percorso_allegato(doc) -> tuple[str | None, str | None]:
+    """Path locale del file da allegare. Se non è più sul disco (container riavviato), lo scarica da
+    Supabase Storage in un file temporaneo. Ritorna (percorso, cartella_temp_da_pulire | None)."""
+    if doc.percorso and os.path.exists(doc.percorso):
+        return doc.percorso, None
+    if doc.storage_path:
+        data = _scarica_da_storage(doc.storage_path)
+        if data:
+            tmp = tempfile.mkdtemp(prefix="alleg_")
+            p = os.path.join(tmp, _safe_filename(doc.nome_file))
+            with open(p, "wb") as f:
+                f.write(data)
+            return p, tmp
+    return None, None
+
+
 def invia_documento_email(db, email: str, documento_id: int, testo: str = "", oggetto: str = "",
                           nome_azienda: str = "") -> dict:
     """Invia via email UNO specifico documento (per id) come allegato. Destinatario = `email`
-    (Margherita la conosce o la chiede). Invia SOLO se il documento è marcato `inviabile`."""
+    (Margherita la conosce o la chiede). Invia SOLO se il documento è marcato `inviabile`.
+    L'allegato si prende dal disco; se non c'è (container effimero riavviato) si scarica da Storage."""
     email = (email or "").strip()
     if not email:
         return {"email_mancante": True,
@@ -89,12 +133,17 @@ def invia_documento_email(db, email: str, documento_id: int, testo: str = "", og
     if not doc.inviabile:
         return {"non_inviabile": True,
                 "messaggio": f"Il documento «{doc.nome_file}» non è inviabile ai clienti. Non inviarlo."}
-    if not (doc.percorso and os.path.exists(doc.percorso)):
-        return {"errore": f"Il file «{doc.nome_file}» non è al momento disponibile sul server."}
+    percorso, da_pulire = _percorso_allegato(doc)
+    if not percorso:
+        return {"errore": f"Il file «{doc.nome_file}» non è al momento disponibile (né su disco né su Storage)."}
     corpo = (testo or "").strip() or f"Gentile cliente,\nin allegato {doc.nome_file}.\n\n{nome_azienda or ''}".strip()
     oggetto = (oggetto or "").strip() or (nome_azienda or "Documento")
-    inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
-                                        allegati=[doc.percorso])
+    try:
+        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
+                                            allegati=[percorso])
+    finally:
+        if da_pulire:
+            shutil.rmtree(da_pulire, ignore_errors=True)
     if not inviata:
         return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
     return {"inviato": True, "email": email, "documento": doc.nome_file}

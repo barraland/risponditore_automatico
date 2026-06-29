@@ -73,6 +73,7 @@ add_secret dash-pass  DASHBOARD_PASSWORD        "${DASHBOARD_PASSWORD:-}"
 add_secret twilio-sid TWILIO_ACCOUNT_SID        "${TWILIO_ACCOUNT_SID:-}"   # inoltro chiamata (REST)
 add_secret twilio-tok TWILIO_AUTH_TOKEN         "${TWILIO_AUTH_TOKEN:-}"
 add_secret el-api-key ELEVENLABS_API_KEY        "${ELEVENLABS_API_KEY:-}"   # inoltro assistito (outbound)
+add_secret sb-svc-key SUPABASE_SERVICE_ROLE_KEY "${SUPABASE_SERVICE_ROLE_KEY:-}"  # download allegati da Storage
 
 # env in chiaro (non segrete), solo se presenti
 if [ -n "${GMAIL_FROM:-}" ]; then ENVS+=("GMAIL_FROM=$GMAIL_FROM"); fi
