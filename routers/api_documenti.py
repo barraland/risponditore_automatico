@@ -148,6 +148,13 @@ async def upload_documento(
             contiene_tabelle=is_tabellare, content_md=testo or None,
         ))
         db.commit()
+        # File tabellare: indicizzazione STRUTTURATA (righe + facet colonne) per le query.
+        if is_tabellare:
+            try:
+                from services import tabellare
+                tabellare.indicizza_tabella(db, doc.id)
+            except Exception as e:
+                logger.warning("Indicizzazione tabellare non riuscita per %s: %s", doc.nome_file, e)
 
     return {"id": doc.id, "nome_file": doc.nome_file, "categoria": doc.categoria, "stato": doc.stato.value}
 
@@ -189,5 +196,10 @@ async def retriever_test(
     if categoria and categoria not in _CATEGORIE_VALIDE:
         categoria = None
     esito = retriever.rispondi_vettoriale(db, domanda, categoria=categoria)
+    tab = retriever.rispondi_tabellare(db, domanda)
+    tabellare = None
+    if tab.get("errore") != "no_tables":
+        tabellare = {"risposta": tab.get("risposta", ""), "righe": tab.get("righe", []),
+                     "query": tab.get("query"), "errore": tab.get("errore")}
     return {"risposta": esito.get("risposta", ""), "chunk": esito.get("chunk", []),
-            "fonti": esito.get("fonti", []), "errore": esito.get("errore")}
+            "fonti": esito.get("fonti", []), "tabellare": tabellare, "errore": esito.get("errore")}

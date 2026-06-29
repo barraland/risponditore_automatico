@@ -432,6 +432,37 @@ class DocumentoChunk(Base):
     documento = relationship("Documento")
 
 
+class DocumentoColonna(Base):
+    """Una colonna di un file tabellare (CSV/Excel) con i suoi FACET, per guidare l'agente nelle
+    interrogazioni strutturate. `esaustivo`=True quando i valori distinti sono ≤ soglia (lista
+    completa, sicura per un filtro esatto); altrimenti `distinti` è solo un CAMPIONE."""
+    __tablename__ = "documento_colonna"
+
+    id = Column(Integer, primary_key=True, index=True)
+    documento_id = Column(Integer, ForeignKey("documenti.id", ondelete="CASCADE"), nullable=False, index=True)
+    nome = Column(String(200), nullable=False)
+    tipo = Column(String(20))                 # 'numero' | 'testo' | 'data'
+    n_distinti = Column(Integer, default=0)
+    esaustivo = Column(Boolean, default=True)  # i 'distinti' sono la lista COMPLETA (non un campione)
+    distinti = Column(Text)                    # JSON: lista di valori distinti (o campione se non esaustivo)
+    min_val = Column(String(120))              # per le colonne numeriche
+    max_val = Column(String(120))
+
+    documento = relationship("Documento")
+
+
+class DocumentoRiga(Base):
+    """Una riga di un file tabellare (CSV/Excel), dati come dizionario JSON colonna->valore."""
+    __tablename__ = "documento_riga"
+
+    id = Column(Integer, primary_key=True, index=True)
+    documento_id = Column(Integer, ForeignKey("documenti.id", ondelete="CASCADE"), nullable=False, index=True)
+    ordine = Column(Integer, nullable=False, default=0)
+    dati = Column(Text, nullable=False)        # JSON: {colonna: valore}
+
+    documento = relationship("Documento")
+
+
 class TestoCategoria(Base):
     """Testo libero che l'amministratore associa a una categoria di documenti.
 

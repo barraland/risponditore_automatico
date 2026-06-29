@@ -56,6 +56,28 @@ alter table public.documento_chunk add column if not exists embedding_vec vector
 -- create index if not exists ix_documento_chunk_vec on public.documento_chunk
 --   using hnsw (embedding_vec vector_cosine_ops);
 
+-- Interrogazione file tabellari (CSV/Excel): colonne con facet + righe (JSON).
+create table if not exists public.documento_colonna (
+  id           serial primary key,
+  documento_id integer not null references public.documenti(id) on delete cascade,
+  nome         varchar(200) not null,
+  tipo         varchar(20),
+  n_distinti   integer default 0,
+  esaustivo    boolean default true,
+  distinti     text,
+  min_val      varchar(120),
+  max_val      varchar(120)
+);
+create index if not exists ix_documento_colonna_documento on public.documento_colonna(documento_id);
+
+create table if not exists public.documento_riga (
+  id           serial primary key,
+  documento_id integer not null references public.documenti(id) on delete cascade,
+  ordine       integer not null default 0,
+  dati         text not null
+);
+create index if not exists ix_documento_riga_documento on public.documento_riga(documento_id);
+
 -- ---------- Colonne aggiunte nel tempo (no-op se già presenti) ----------
 alter table public.azienda   add column if not exists istruzioni_admin   text;
 alter table public.azienda   add column if not exists regole_commerciali text;
@@ -74,7 +96,7 @@ declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri','documento_chunk'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri','documento_chunk','documento_colonna','documento_riga'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

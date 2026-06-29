@@ -15,11 +15,12 @@ export default function RetrieverTest() {
   const [err, setErr] = useState<string | null>(null)
   const [risposta, setRisposta] = useState('')
   const [chunk, setChunk] = useState<Chunk[]>([])
+  const [tab, setTab] = useState<any>(null)
 
   async function chiedi() {
     if (!domanda.trim()) return
     if (!API) { setErr('VITE_API_BASE non configurato: serve l\'URL del backend.'); return }
-    setBusy(true); setErr(null); setRisposta(''); setChunk([])
+    setBusy(true); setErr(null); setRisposta(''); setChunk([]); setTab(null)
     try {
       const res = await fetch(`${API}/api/retriever/test`, {
         method: 'POST',
@@ -30,6 +31,7 @@ export default function RetrieverTest() {
       if (!res.ok) { setErr(data?.detail || 'Errore'); return }
       setRisposta(data.risposta || '')
       setChunk(data.chunk || [])
+      setTab(data.tabellare || null)
       if (data.errore) setErr(`(${data.errore})`)
     } catch (e: any) {
       setErr(e?.message || 'Errore di rete')
@@ -78,6 +80,33 @@ export default function RetrieverTest() {
         <div className="pw-card">
           <div className="pw-card-head"><h3>Risposta</h3></div>
           <div className="pw-card-body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{risposta}</div>
+        </div>
+      )}
+
+      {tab && (tab.risposta || (tab.righe && tab.righe.length > 0)) && (
+        <div className="pw-card">
+          <div className="pw-card-head"><h3>Risultato tabellare (CSV/Excel)</h3></div>
+          <div className="pw-card-body pw-stack" style={{ gap: 10 }}>
+            {tab.risposta && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{tab.risposta}</div>}
+            {tab.query && (
+              <div className="pw-muted" style={{ fontSize: 12 }}>
+                query: doc {tab.query.documento_id} · filtri {JSON.stringify(tab.query.filtri)}
+                {tab.query.order_by ? ` · order ${tab.query.order_by} ${tab.query.ascending ? '↑' : '↓'}` : ''}
+              </div>
+            )}
+            {tab.righe && tab.righe.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="pw-table">
+                  <thead><tr>{Object.keys(tab.righe[0]).map((k: string) => <th key={k}>{k}</th>)}</tr></thead>
+                  <tbody>
+                    {tab.righe.slice(0, 20).map((r: any, i: number) => (
+                      <tr key={i}>{Object.keys(tab.righe[0]).map((k: string) => <td key={k}>{String(r[k] ?? '')}</td>)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

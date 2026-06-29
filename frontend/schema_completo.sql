@@ -4,7 +4,7 @@
 -- Per l'uso quotidiano sul tuo account usa invece: supabase_setup.sql
 -- ============================================================
 
--- ---------- 0) pgvector + colonna vettoriale per la ricerca semantica documenti ----------
+-- ---------- 0) pgvector (ricerca semantica documenti) ----------
 create extension if not exists vector;
 
 -- ---------- 1) SCHEMA: tipi enum + tabelle (generato dai modelli) ----------
@@ -134,9 +134,9 @@ CREATE TABLE IF NOT EXISTS locali (
 	FOREIGN KEY(agente_referente_id) REFERENCES agenti (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_locali_agente_referente_id ON locali (agente_referente_id);
-
 CREATE INDEX IF NOT EXISTS ix_locali_citta ON locali (citta);
+
+CREATE INDEX IF NOT EXISTS ix_locali_agente_referente_id ON locali (agente_referente_id);
 
 CREATE INDEX IF NOT EXISTS ix_locali_id ON locali (id);
 
@@ -154,17 +154,17 @@ CREATE TABLE IF NOT EXISTS documenti (
 	dimensione INTEGER, 
 	stato statodocumento NOT NULL, 
 	errore TEXT, 
-	indice_raw TEXT,
-	riassunto TEXT,
-	inviabile BOOLEAN NOT NULL DEFAULT TRUE,
-	caricato_at TIMESTAMP WITHOUT TIME ZONE,
-	PRIMARY KEY (id),
+	indice_raw TEXT, 
+	riassunto TEXT, 
+	inviabile BOOLEAN NOT NULL, 
+	caricato_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
 	FOREIGN KEY(azienda_id) REFERENCES azienda (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_documenti_id ON documenti (id);
-
 CREATE INDEX IF NOT EXISTS ix_documenti_anno ON documenti (anno);
+
+CREATE INDEX IF NOT EXISTS ix_documenti_id ON documenti (id);
 
 CREATE TABLE IF NOT EXISTS testi_categoria (
 	id SERIAL NOT NULL, 
@@ -176,9 +176,9 @@ CREATE TABLE IF NOT EXISTS testi_categoria (
 	FOREIGN KEY(azienda_id) REFERENCES azienda (id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ix_testi_categoria_categoria ON testi_categoria (categoria);
-
 CREATE INDEX IF NOT EXISTS ix_testi_categoria_id ON testi_categoria (id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_testi_categoria_categoria ON testi_categoria (categoria);
 
 CREATE TABLE IF NOT EXISTS contatti (
 	id SERIAL NOT NULL, 
@@ -218,6 +218,37 @@ CREATE TABLE IF NOT EXISTS sezioni (
 );
 
 CREATE INDEX IF NOT EXISTS ix_sezioni_id ON sezioni (id);
+
+CREATE TABLE IF NOT EXISTS documento_colonna (
+	id SERIAL NOT NULL, 
+	documento_id INTEGER NOT NULL, 
+	nome VARCHAR(200) NOT NULL, 
+	tipo VARCHAR(20), 
+	n_distinti INTEGER, 
+	esaustivo BOOLEAN, 
+	distinti TEXT, 
+	min_val VARCHAR(120), 
+	max_val VARCHAR(120), 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(documento_id) REFERENCES documenti (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_documento_colonna_documento_id ON documento_colonna (documento_id);
+
+CREATE INDEX IF NOT EXISTS ix_documento_colonna_id ON documento_colonna (id);
+
+CREATE TABLE IF NOT EXISTS documento_riga (
+	id SERIAL NOT NULL, 
+	documento_id INTEGER NOT NULL, 
+	ordine INTEGER NOT NULL, 
+	dati TEXT NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(documento_id) REFERENCES documenti (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_documento_riga_documento_id ON documento_riga (documento_id);
+
+CREATE INDEX IF NOT EXISTS ix_documento_riga_id ON documento_riga (id);
 
 CREATE TABLE IF NOT EXISTS messaggi_chat (
 	id SERIAL NOT NULL, 
@@ -285,13 +316,13 @@ CREATE TABLE IF NOT EXISTS ordini (
 	FOREIGN KEY(agente_id) REFERENCES agenti (id)
 );
 
+CREATE INDEX IF NOT EXISTS ix_ordini_data ON ordini (data);
+
 CREATE INDEX IF NOT EXISTS ix_ordini_locale_id ON ordini (locale_id);
 
 CREATE INDEX IF NOT EXISTS ix_ordini_id ON ordini (id);
 
 CREATE INDEX IF NOT EXISTS ix_ordini_stato ON ordini (stato);
-
-CREATE INDEX IF NOT EXISTS ix_ordini_data ON ordini (data);
 
 CREATE TABLE IF NOT EXISTS documento_chunk (
 	id SERIAL NOT NULL, 
@@ -313,7 +344,6 @@ CREATE INDEX IF NOT EXISTS ix_documento_chunk_documento_id ON documento_chunk (d
 CREATE INDEX IF NOT EXISTS ix_documento_chunk_id ON documento_chunk (id);
 
 CREATE INDEX IF NOT EXISTS ix_documento_chunk_categoria ON documento_chunk (categoria);
-ALTER TABLE documento_chunk ADD COLUMN IF NOT EXISTS embedding_vec vector(1536);
 
 CREATE TABLE IF NOT EXISTS promemoria (
 	id SERIAL NOT NULL, 
@@ -325,11 +355,11 @@ CREATE TABLE IF NOT EXISTS promemoria (
 	FOREIGN KEY(contatto_id) REFERENCES contatti (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_promemoria_created_at ON promemoria (created_at);
-
 CREATE INDEX IF NOT EXISTS ix_promemoria_id ON promemoria (id);
 
 CREATE INDEX IF NOT EXISTS ix_promemoria_contatto_id ON promemoria (contatto_id);
+
+CREATE INDEX IF NOT EXISTS ix_promemoria_created_at ON promemoria (created_at);
 
 CREATE TABLE IF NOT EXISTS risposte_ticket (
 	id SERIAL NOT NULL, 
@@ -356,13 +386,17 @@ CREATE TABLE IF NOT EXISTS righe_ordine (
 
 CREATE INDEX IF NOT EXISTS ix_righe_ordine_id ON righe_ordine (id);
 
+-- colonna pgvector (non mappata nei modelli: la aggiungiamo qui)
+alter table documento_chunk add column if not exists embedding_vec vector(1536);
+
+
 -- ---------- 2) PERMESSI: RLS + grant per il ruolo 'authenticated' (la SPA) ----------
 do $$
 declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri','documento_chunk'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri','documento_chunk','documento_colonna','documento_riga'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

@@ -278,6 +278,81 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
     return _out(risposta=risposta, chunk=chunk, fonti=fonti, errore=None)
 
 
+TAB_PLAN_SYSTEM = """Sei un servizio che interroga TABELLE strutturate (CSV/Excel). Ricevi una domanda
+e lo SCHEMA delle tabelle: per ogni colonna vedi tipo e facet.
+
+REGOLE DEI FILTRI (tassative):
+- '=' o 'in' (valore esatto): SOLO su colonne con "valori AMMESSI (lista COMPLETA)". Mappa il termine
+  del cliente sul valore canonico della lista (es. "succhi" -> "Succhi").
+- '<','<=','>','>=' (intervalli): SOLO su colonne numeriche.
+- 'contains' (sottostringa, case-insensitive): per colonne testo marcate "CAMPIONE NON esaustivo".
+  NON usare MAI '=' su queste colonne (non conosci tutti i valori).
+Scegli UNA tabella (documento_id) pertinente e costruisci i filtri. Usa order_by/ascending/limit se
+utile (es. "il più economico" -> order_by sul prezzo, ascending=true, limit=1). I valori vanno come
+stringa. Se NESSUNA tabella è pertinente alla domanda, metti documento_id = 0. Non rispondere alla
+domanda: produci solo la query."""
+
+TAB_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ragionamento": {"type": "string"},
+        "documento_id": {"type": "integer"},
+        "filtri": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"campo": {"type": "string"}, "op": {"type": "string"}, "valore": {"type": "string"}},
+            "required": ["campo", "op", "valore"], "additionalProperties": False}},
+        "order_by": {"type": "string"},
+        "ascending": {"type": "boolean"},
+        "limit": {"type": "integer"},
+    },
+    "required": ["ragionamento", "documento_id", "filtri", "order_by", "ascending", "limit"],
+    "additionalProperties": False,
+}
+
+
+def rispondi_tabellare(db: Session, domanda: str, trace=None) -> dict:
+    """Interroga le TABELLE strutturate (CSV/Excel): l'LLM costruisce una query rispettando i facet
+    (filtro esatto solo su colonne esaustive, range su numeri, 'contains' sulle altre), poi filtra le
+    righe e compone la risposta. Ritorna {risposta, righe, query, errore, traccia}."""
+    from services import tabellare
+    if trace is None:
+        trace = []
+    schema = tabellare.schema_prompt(db)
+    if not schema:
+        return {"risposta": "", "righe": [], "query": None, "errore": "no_tables", "traccia": trace}
+    try:
+        client = _client()
+    except RuntimeError as e:
+        return {"risposta": "Servizio non disponibile.", "righe": [], "query": None, "errore": str(e), "traccia": trace}
+
+    user = f"DOMANDA:\n{domanda}\n\nSCHEMA TABELLE:\n{schema}"
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "system", "content": f"{TAB_PLAN_SYSTEM}\n\n{contesto_temporale()}"},
+                      {"role": "user", "content": user}],
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "query", "strict": True, "schema": TAB_PLAN_SCHEMA}},
+            reasoning_effort=EFFORT, max_completion_tokens=2000,
+        )
+        piano = json.loads(resp.choices[0].message.content or "{}")
+    except Exception as e:
+        logger.error("Pianificatore tabellare fallito: %s", e)
+        return {"risposta": "Errore nell'analisi della domanda.", "righe": [], "query": None,
+                "errore": str(e), "traccia": trace}
+    _rec(trace, "Query tabellare", user, json.dumps(piano, ensure_ascii=False))
+
+    did = int(piano.get("documento_id") or 0)
+    if not did:
+        return {"risposta": "", "righe": [], "query": piano, "errore": "no_match", "traccia": trace}
+    righe = tabellare.interroga(db, did, piano.get("filtri", []), piano.get("order_by") or None,
+                                bool(piano.get("ascending", True)), int(piano.get("limit") or 20))
+    contesto = json.dumps(righe[:30], ensure_ascii=False)
+    risposta = componi(client, domanda, f"RIGHE RISULTANTI DALLA TABELLA (rispondi sinteticamente):\n{contesto}",
+                       trace=trace)
+    return {"risposta": risposta, "righe": righe[:30], "query": piano, "errore": None, "traccia": trace}
+
+
 def rispondi(db: Session, domanda: str, trace=None) -> dict:
     """Esegue l'intero flusso del retriever. Ritorna:
       {"risposta": str,
