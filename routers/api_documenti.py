@@ -181,6 +181,28 @@ async def elimina_contatto(
     return {"ok": True}
 
 
+@router.post("/documenti/reindex")
+async def reindex(authorization: str | None = Header(None), db: Session = Depends(get_db)):
+    """Re-indicizza tutti i documenti: PDF -> chunk+embedding (dalle sezioni in DB), CSV/Excel ->
+    righe+facet (file da disco o Storage). Utile per i documenti caricati prima del retriever."""
+    await _verify_user(authorization)
+    from services import vettore, tabellare
+    out = []
+    for doc in db.query(Documento).all():
+        nome = (doc.nome_file or "").lower()
+        try:
+            if nome.endswith(".pdf"):
+                out.append({"id": doc.id, "file": doc.nome_file, "tipo": "pdf",
+                            "n": vettore.indicizza_documento(db, doc.id)})
+            elif nome.endswith((".csv", ".xlsx", ".xls")):
+                out.append({"id": doc.id, "file": doc.nome_file, "tipo": "tabellare",
+                            "n": tabellare.indicizza_tabella(db, doc.id)})
+        except Exception as e:
+            logger.warning("Reindex fallito per %s: %s", doc.nome_file, e)
+            out.append({"id": doc.id, "file": doc.nome_file, "errore": str(e)})
+    return {"reindicizzati": out}
+
+
 @router.post("/retriever/test")
 async def retriever_test(
     payload: dict = Body(...),
@@ -197,9 +219,7 @@ async def retriever_test(
         categoria = None
     esito = retriever.rispondi_vettoriale(db, domanda, categoria=categoria)
     tab = retriever.rispondi_tabellare(db, domanda)
-    tabellare = None
-    if tab.get("errore") != "no_tables":
-        tabellare = {"risposta": tab.get("risposta", ""), "righe": tab.get("righe", []),
-                     "query": tab.get("query"), "errore": tab.get("errore")}
     return {"risposta": esito.get("risposta", ""), "chunk": esito.get("chunk", []),
-            "fonti": esito.get("fonti", []), "tabellare": tabellare, "errore": esito.get("errore")}
+            "fonti": esito.get("fonti", []), "errore": esito.get("errore"),
+            "tabellare": {"risposta": tab.get("risposta", ""), "righe": tab.get("righe", []),
+                          "query": tab.get("query"), "errore": tab.get("errore")}}

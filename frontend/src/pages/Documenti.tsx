@@ -92,6 +92,7 @@ export default function Documenti() {
   const [err, setErr] = useState<string | null>(null)
   const [categoria, setCategoria] = useState('listino')
   const [busy, setBusy] = useState(false)
+  const [reindexing, setReindexing] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function carica() {
@@ -100,6 +101,21 @@ export default function Documenti() {
       .order('caricato_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
     setLoading(false)
+  }
+
+  async function reindicizza() {
+    if (!API) { setErr('VITE_API_BASE non configurato.'); return }
+    setReindexing(true); setErr(null)
+    try {
+      const res = await fetch(`${API}/api/documenti/reindex`, {
+        method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      const data = await res.json()
+      if (!res.ok) { setErr(data?.detail || 'Errore'); return }
+      const n = (data.reindicizzati || []).length
+      const errori = (data.reindicizzati || []).filter((x: any) => x.errore).length
+      alert(`Re-indicizzati ${n} documenti${errori ? ` (${errori} con errori)` : ''}.`)
+    } catch (e: any) { setErr(e?.message || 'Errore di rete') } finally { setReindexing(false) }
   }
 
   async function toggleInviabile(r: any) {
@@ -168,6 +184,9 @@ export default function Documenti() {
         </div>
         <div className="pw-row" style={{ gap: 8 }}>
           <Link to="/documenti/test" className="pw-btn pw-btn-ghost pw-btn-sm">🔎 Test agente retriever</Link>
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" disabled={reindexing} onClick={reindicizza}>
+            {reindexing ? 'Indicizzo…' : '⟳ Re-indicizza'}
+          </button>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={carica}>↻ Aggiorna</button>
         </div>
       </div>

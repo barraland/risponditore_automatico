@@ -83,10 +83,13 @@ export default function RetrieverTest() {
         </div>
       )}
 
-      {tab && (tab.risposta || (tab.righe && tab.righe.length > 0)) && (
+      {tab && (
         <div className="pw-card">
           <div className="pw-card-head"><h3>Risultato tabellare (CSV/Excel)</h3></div>
           <div className="pw-card-body pw-stack" style={{ gap: 10 }}>
+            {tab.errore === 'no_tables' && <div className="pw-muted">Nessun file tabellare (CSV/Excel) indicizzato. Carica un CSV/Excel e riprova.</div>}
+            {tab.errore === 'no_match' && <div className="pw-muted">L'agente non ha individuato una tabella pertinente a questa domanda.</div>}
+            {!tab.errore && (!tab.righe || tab.righe.length === 0) && <div className="pw-muted">Tabella selezionata, ma nessuna riga corrisponde ai filtri.</div>}
             {tab.risposta && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{tab.risposta}</div>}
             {tab.query && (
               <div className="pw-muted" style={{ fontSize: 12 }}>

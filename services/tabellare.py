@@ -11,7 +11,9 @@ enormi (1M SKU) la stessa interfaccia migra a una vera tabella SQL con indici.""
 
 import os
 import json
+import shutil
 import logging
+import tempfile
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -55,12 +57,36 @@ def _val(v):
     return s or None
 
 
+def _file_locale(doc) -> tuple[str | None, str | None]:
+    """Path del file da leggere: disco se presente, altrimenti scaricato da Supabase Storage in un
+    temp (a prova di restart del container). Ritorna (percorso, cartella_temp_da_pulire | None)."""
+    if doc.percorso and os.path.exists(doc.percorso):
+        return doc.percorso, None
+    if getattr(doc, "storage_path", None):
+        from services.documenti import _scarica_da_storage, _safe_filename
+        data = _scarica_da_storage(doc.storage_path)
+        if data:
+            tmp = tempfile.mkdtemp(prefix="tab_")
+            p = os.path.join(tmp, _safe_filename(doc.nome_file))
+            with open(p, "wb") as f:
+                f.write(data)
+            return p, tmp
+    return None, None
+
+
 def indicizza_tabella(db: Session, documento_id: int) -> int:
     """(Ri)costruisce righe + facet colonne di un file tabellare. Ritorna il numero di righe."""
     doc = db.get(Documento, documento_id)
-    if not doc or not (doc.percorso and os.path.exists(doc.percorso)):
+    if not doc:
         return 0
-    df = _leggi_df(doc.percorso)
+    percorso, da_pulire = _file_locale(doc)
+    if not percorso:
+        return 0
+    try:
+        df = _leggi_df(percorso)
+    finally:
+        if da_pulire:
+            shutil.rmtree(da_pulire, ignore_errors=True)
     if df is None or df.empty:
         return 0
     df.columns = [str(c).strip() for c in df.columns]
