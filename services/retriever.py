@@ -218,6 +218,60 @@ def _fonte_label(doc: Documento, sez: Sezione) -> str:
     return doc.nome_file
 
 
+def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None, k: int = 6,
+                        trace=None) -> dict:
+    """Retriever SEMANTICO: embedda la domanda, prende i top-K chunk per similarità coseno e fa
+    rispondere l'LLM solo su quelli (con citazioni). Ritorna:
+      {risposta, chunk: [{score, documento, categoria, pagine, estratto}], fonti: [...], traccia}.
+    """
+    from services import vettore
+    if trace is None:
+        trace = []
+
+    def _out(**kw):
+        kw.setdefault("chunk", [])
+        kw.setdefault("fonti", [])
+        kw["traccia"] = trace
+        return kw
+
+    domanda = (domanda or "").strip()
+    if not domanda:
+        return _out(risposta="Scrivi una domanda.", errore="empty")
+
+    try:
+        risultati = vettore.cerca(db, domanda, k=k, categoria=categoria)
+    except Exception as e:
+        logger.error("Ricerca vettoriale fallita: %s", e)
+        return _out(risposta="Errore nella ricerca.", errore=str(e))
+
+    if not risultati:
+        return _out(risposta="Non ho trovato nulla di pertinente nei documenti indicizzati.",
+                    errore="no_match")
+
+    # Contesto per lo stadio risposta + tracce/fonti per la UI.
+    parti, fonti, viste = [], [], set()
+    for r in risultati:
+        etichetta = r["documento"] + (f", pp. {r['pagine']}" if r.get("pagine") else "")
+        parti.append(f"FONTE: {etichetta}\n{r['testo']}")
+        if r["documento_id"] not in viste:
+            viste.add(r["documento_id"])
+            fonti.append({"documento_id": r["documento_id"], "documento": r["documento"],
+                          "categoria": r["categoria"], "pagine": r.get("pagine")})
+    contesto = "\n\n---\n\n".join(parti)
+
+    try:
+        client = _client()
+        risposta = componi(client, domanda, contesto, trace=trace)
+    except Exception as e:
+        logger.error("Risposta retriever (vett.) fallita: %s", e)
+        risposta = "Errore nella generazione della risposta."
+
+    chunk = [{"score": r["score"], "documento": r["documento"], "categoria": r["categoria"],
+              "pagine": r.get("pagine"), "estratto": (r["testo"][:300] + ("…" if len(r["testo"]) > 300 else ""))}
+             for r in risultati]
+    return _out(risposta=risposta, chunk=chunk, fonti=fonti, errore=None)
+
+
 def rispondi(db: Session, domanda: str, trace=None) -> dict:
     """Esegue l'intero flusso del retriever. Ritorna:
       {"risposta": str,

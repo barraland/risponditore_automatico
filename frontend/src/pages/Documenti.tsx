@@ -159,7 +159,10 @@ export default function Documenti() {
             Listini, schede, condizioni: una volta indicizzati, l'assistente li consulta su voce e WhatsApp.
           </div>
         </div>
-        <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={carica}>↻ Aggiorna</button>
+        <div className="pw-row" style={{ gap: 8 }}>
+          <Link to="/documenti/test" className="pw-btn pw-btn-ghost pw-btn-sm">🔎 Test agente retriever</Link>
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={carica}>↻ Aggiorna</button>
+        </div>
       </div>
 
       <div className="pw-card">

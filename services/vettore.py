@@ -1,0 +1,178 @@
+"""Strato vettoriale per la ricerca semantica sui documenti (PDF).
+
+All'ingestion ogni documento viene spezzato in chunk; per ogni chunk salviamo l'embedding
+(OpenAI) nella tabella documento_chunk, con i metadati per filtrare/citare (categoria = sezione
+della dashboard, pagine). A runtime la ricerca embedda la domanda e prende i top-K per similarità
+coseno. Inoltre genera un riassunto AI a livello di documento.
+
+NB v1: la similarità si calcola in Python (ok per la scala dei PDF della demo). La stessa tabella
+può migrare a pgvector per scalare a molti/grandi documenti senza cambiare l'interfaccia."""
+
+import os
+import re
+import json
+import math
+import logging
+
+from openai import OpenAI
+from sqlalchemy.orm import Session
+
+from database import Documento, Sezione, DocumentoChunk
+
+logger = logging.getLogger(__name__)
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+SUMMARY_MODEL = os.getenv("RETRIEVER_MODEL", "gpt-5-mini")
+CHUNK_CHARS = int(os.getenv("RETRIEVER_CHUNK_CHARS", "1100"))
+CHUNK_OVERLAP = int(os.getenv("RETRIEVER_CHUNK_OVERLAP", "150"))
+
+
+def _client() -> OpenAI:
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY non configurata nel .env.")
+    return OpenAI(api_key=OPENAI_API_KEY)
+
+
+# ---------- embedding + similarità ----------
+
+def embed_batch(testi: list[str]) -> list[list[float]]:
+    """Embedding di una lista di testi (in batch da 100)."""
+    out: list[list[float]] = []
+    cli = _client()
+    for i in range(0, len(testi), 100):
+        resp = cli.embeddings.create(model=EMBED_MODEL, input=testi[i:i + 100])
+        out.extend(d.embedding for d in resp.data)
+    return out
+
+
+def embed_uno(testo: str) -> list[float]:
+    return embed_batch([testo])[0]
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    s = da = db = 0.0
+    for x, y in zip(a, b):
+        s += x * y
+        da += x * x
+        db += y * y
+    if da == 0.0 or db == 0.0:
+        return 0.0
+    return s / math.sqrt(da * db)
+
+
+# ---------- chunking ----------
+
+def chunk_testo(testo: str, size: int = CHUNK_CHARS, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    """Spezza il testo in chunk di ~`size` caratteri, tagliando su un confine (spazio/newline)
+    e con un piccolo overlap per non perdere il contesto a cavallo del taglio."""
+    testo = re.sub(r"\n{3,}", "\n\n", (testo or "").strip())
+    if not testo:
+        return []
+    chunks, i, n = [], 0, len(testo)
+    while i < n:
+        end = min(i + size, n)
+        if end < n:  # estendi all'indietro fino a un confine pulito
+            taglio = max(testo.rfind(" ", i + int(size * 0.6), end),
+                         testo.rfind("\n", i + int(size * 0.6), end))
+            if taglio > i:
+                end = taglio
+        pezzo = testo[i:end].strip()
+        if pezzo:
+            chunks.append(pezzo)
+        if end >= n:
+            break
+        i = max(end - overlap, i + 1)
+    return chunks
+
+
+# ---------- indicizzazione (all'ingestion) ----------
+
+def indicizza_documento(db: Session, documento_id: int) -> int:
+    """(Ri)costruisce i chunk + embedding di un documento e ne genera il riassunto AI.
+    Ritorna il numero di chunk creati. Va chiamata dopo che le Sezioni sono state salvate."""
+    doc = db.get(Documento, documento_id)
+    if not doc or not doc.sezioni:
+        return 0
+
+    db.query(DocumentoChunk).filter(DocumentoChunk.documento_id == doc.id).delete()
+
+    pezzi: list[dict] = []
+    for sez in sorted(doc.sezioni, key=lambda s: s.ordine):
+        for testo in chunk_testo(sez.content_md or ""):
+            pezzi.append({"testo": testo, "page_start": sez.page_start, "page_end": sez.page_end,
+                          "sezione_id": sez.id})
+    if not pezzi:
+        return 0
+
+    embeddings = embed_batch([p["testo"] for p in pezzi])
+    for ordine, (p, emb) in enumerate(zip(pezzi, embeddings)):
+        db.add(DocumentoChunk(
+            documento_id=doc.id, sezione_id=p["sezione_id"], ordine=ordine, categoria=doc.categoria,
+            page_start=p["page_start"], page_end=p["page_end"], testo=p["testo"],
+            embedding=json.dumps(emb),
+        ))
+
+    doc.riassunto = genera_riassunto(doc)
+    db.commit()
+    logger.info("🔎 Indicizzato '%s': %d chunk (categoria=%s)", doc.nome_file, len(pezzi), doc.categoria)
+    return len(pezzi)
+
+
+def genera_riassunto(doc: Documento) -> str:
+    """Riassunto AI del documento (2-3 frasi) a partire dai riassunti di sezione o dal contenuto."""
+    base = "\n".join(f"- {s.titolo}: {s.summary or ''}" for s in doc.sezioni if (s.summary or s.titolo))
+    if not base.strip():
+        base = "\n\n".join((s.content_md or "")[:1500] for s in doc.sezioni[:3])
+    base = base[:8000]
+    try:
+        resp = _client().chat.completions.create(
+            model=SUMMARY_MODEL,
+            messages=[
+                {"role": "system", "content": "Riassumi in 2-3 frasi, in italiano, cosa contiene questo "
+                 "documento e a quali domande risponde. Solo il riassunto, niente preamboli."},
+                {"role": "user", "content": f"Documento «{doc.nome_file}» (categoria: {doc.categoria}).\n{base}"},
+            ],
+            reasoning_effort="low",
+            max_completion_tokens=400,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        logger.warning("Riassunto AI non generato per %s: %s", doc.nome_file, e)
+        return ""
+
+
+# ---------- ricerca ----------
+
+def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None) -> list[dict]:
+    """Top-K chunk per similarità con la domanda. Ritorna dict con testo, score e metadati/fonte."""
+    domanda = (domanda or "").strip()
+    if not domanda:
+        return []
+    q = db.query(DocumentoChunk).filter(DocumentoChunk.embedding.isnot(None))
+    if categoria:
+        q = q.filter(DocumentoChunk.categoria == categoria)
+    chunks = q.all()
+    if not chunks:
+        return []
+    qemb = embed_uno(domanda)
+    scored = []
+    for c in chunks:
+        try:
+            emb = json.loads(c.embedding)
+        except Exception:
+            continue
+        scored.append((cosine(qemb, emb), c))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    out = []
+    for score, c in scored[:k]:
+        doc = c.documento
+        out.append({
+            "score": round(score, 4),
+            "testo": c.testo,
+            "documento_id": c.documento_id,
+            "documento": doc.nome_file if doc else "",
+            "categoria": c.categoria,
+            "pagine": f"{c.page_start}-{c.page_end}" if c.page_start else None,
+        })
+    return out

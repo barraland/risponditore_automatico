@@ -14,7 +14,7 @@ import os
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, UploadFile, File, Form, Header, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, UploadFile, File, Form, Header, HTTPException, BackgroundTasks, Body
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto, Ordine
@@ -80,6 +80,13 @@ def _ingest_pdf(documento_id: int) -> None:
             doc.anno = ingestion.estrai_anno(doc.nome_file, snippet[:4000])
         db.commit()
         logger.info("Ingestion %s -> %s (%d sezioni)", doc.nome_file, doc.stato.value, len(sezioni))
+        # In parallelo al salvataggio dell'originale su Storage: indicizzazione vettoriale (chunk +
+        # embedding + riassunto AI). Non blocca l'esito dell'ingestion se fallisce.
+        try:
+            from services import vettore
+            vettore.indicizza_documento(db, doc.id)
+        except Exception as e:
+            logger.warning("Indicizzazione vettoriale non riuscita per %s: %s", doc.nome_file, e)
     except Exception as e:
         logger.error("Ingestion fallita per doc %s: %s", documento_id, e)
         d = db.get(Documento, documento_id)
@@ -165,3 +172,22 @@ async def elimina_contatto(
     db.delete(c)  # cascade: messaggi_chat, chiamate_voce, ticket
     db.commit()
     return {"ok": True}
+
+
+@router.post("/retriever/test")
+async def retriever_test(
+    payload: dict = Body(...),
+    authorization: str | None = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Banco di prova del retriever semantico (usato dalla schermata 'Test agente retriever').
+    Body: {domanda, categoria?}. Ritorna risposta + chunk recuperati (con score e fonte)."""
+    await _verify_user(authorization)
+    from services import retriever
+    domanda = (payload.get("domanda") or "").strip()
+    categoria = (payload.get("categoria") or "").strip() or None
+    if categoria and categoria not in _CATEGORIE_VALIDE:
+        categoria = None
+    esito = retriever.rispondi_vettoriale(db, domanda, categoria=categoria)
+    return {"risposta": esito.get("risposta", ""), "chunk": esito.get("chunk", []),
+            "fonti": esito.get("fonti", []), "errore": esito.get("errore")}

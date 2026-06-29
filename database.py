@@ -384,6 +384,7 @@ class Documento(Base):
     stato = Column(Enum(StatoDocumento), default=StatoDocumento.PROCESSING, nullable=False)
     errore = Column(Text, nullable=True)             # messaggio in caso di stato ERROR
     indice_raw = Column(Text, nullable=True)         # output grezzo del sezionatore (per ispezione / needs_review)
+    riassunto = Column(Text, nullable=True)          # summary generato da AI (metadato per il retriever)
     caricato_at = Column(DateTime, default=datetime.utcnow)
 
     sezioni = relationship(
@@ -408,6 +409,26 @@ class Sezione(Base):
     content_md = Column(Text, nullable=True)            # testo integrale delle pagine del range, con marcatori
 
     documento = relationship("Documento", back_populates="sezioni")
+
+
+class DocumentoChunk(Base):
+    """Pezzo di documento (PDF) per la ricerca semantica. Ogni chunk ha il suo embedding
+    (lista di float serializzata in JSON) e i metadati denormalizzati per filtrare/citare:
+    categoria (= sezione della dashboard) e range pagine. Popolato all'ingestion, in parallelo
+    al salvataggio dell'originale su Supabase Storage."""
+    __tablename__ = "documento_chunk"
+
+    id = Column(Integer, primary_key=True, index=True)
+    documento_id = Column(Integer, ForeignKey("documenti.id", ondelete="CASCADE"), nullable=False, index=True)
+    sezione_id = Column(Integer, ForeignKey("sezioni.id", ondelete="CASCADE"), nullable=True)
+    ordine = Column(Integer, nullable=False, default=0)   # ordine del chunk nel documento
+    categoria = Column(String(40), index=True)            # denormalizzato dal documento (per filtro)
+    page_start = Column(Integer, nullable=True)
+    page_end = Column(Integer, nullable=True)
+    testo = Column(Text, nullable=False)                  # testo del chunk
+    embedding = Column(Text, nullable=True)               # JSON: lista di float
+
+    documento = relationship("Documento")
 
 
 class TestoCategoria(Base):

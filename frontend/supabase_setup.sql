@@ -35,6 +35,21 @@ create table if not exists public.inoltri (
   created_at timestamp default now()
 );
 
+-- Ricerca semantica documenti: chunk + embedding (JSON) + metadati per filtro/citazione.
+create table if not exists public.documento_chunk (
+  id           serial primary key,
+  documento_id integer not null references public.documenti(id) on delete cascade,
+  sezione_id   integer references public.sezioni(id) on delete cascade,
+  ordine       integer not null default 0,
+  categoria    varchar(40),
+  page_start   integer,
+  page_end     integer,
+  testo        text not null,
+  embedding    text
+);
+create index if not exists ix_documento_chunk_documento on public.documento_chunk(documento_id);
+create index if not exists ix_documento_chunk_categoria on public.documento_chunk(categoria);
+
 -- ---------- Colonne aggiunte nel tempo (no-op se già presenti) ----------
 alter table public.azienda   add column if not exists istruzioni_admin   text;
 alter table public.azienda   add column if not exists regole_commerciali text;
@@ -43,6 +58,7 @@ alter table public.azienda   add column if not exists admin_telefoni     text;
 alter table public.azienda   add column if not exists saluto             text;
 alter table public.azienda   add column if not exists saluto_sconosciuto text;
 alter table public.documenti add column if not exists storage_path       varchar(500);
+alter table public.documenti add column if not exists riassunto          text;
 alter table public.contatti  add column if not exists titolo             varchar(20);
 
 -- ---------- Permessi: RLS + grant per il ruolo 'authenticated' (la SPA) ----------
@@ -51,7 +67,7 @@ declare t text;
 begin
   foreach t in array array[
     'locali','agenti','contatti','ordini','righe_ordine','azienda','documenti','sezioni',
-    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri'
+    'testi_categoria','ticket','messaggi_chat','chiamate_voce','risposte_ticket','promemoria','amministratori','inoltri','documento_chunk'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);

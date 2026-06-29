@@ -16,6 +16,7 @@ import PromemoriaList from './pages/PromemoriaList'
 import Inoltri from './pages/Inoltri'
 import Documenti from './pages/Documenti'
 import DocumentoDetail from './pages/DocumentoDetail'
+import RetrieverTest from './pages/RetrieverTest'
 import TicketList from './pages/Ticket'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/contatti/:id" element={<ContattoDetail />} />
         <Route path="/ticket" element={<TicketList />} />
         <Route path="/documenti" element={<Documenti />} />
+        <Route path="/documenti/test" element={<RetrieverTest />} />
         <Route path="/documenti/:id" element={<DocumentoDetail />} />
         <Route path="/assistente" element={<Assistente />} />
         <Route path="/admin" element={<Admin />} />
