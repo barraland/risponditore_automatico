@@ -185,18 +185,19 @@ def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None) -
     return _cerca_python(db, qemb, k, categoria)
 
 
-def _riga(documento_id, documento, categoria, page_start, page_end, testo, score) -> dict:
+def _riga(documento_id, documento, categoria, page_start, page_end, testo, score, inviabile=True) -> dict:
     return {
         "score": round(float(score), 4), "testo": testo, "documento_id": documento_id,
         "documento": documento or "", "categoria": categoria,
         "pagine": f"{page_start}-{page_end}" if page_start else None,
+        "inviabile": bool(inviabile),
     }
 
 
 def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None) -> list[dict]:
     filtro = " and c.categoria = :cat" if categoria else ""
     sql = text(
-        "select c.documento_id, c.categoria, c.page_start, c.page_end, c.testo, d.nome_file, "
+        "select c.documento_id, c.categoria, c.page_start, c.page_end, c.testo, d.nome_file, d.inviabile, "
         "1 - (c.embedding_vec <=> cast(:q as vector)) as score "
         "from documento_chunk c join documenti d on d.id = c.documento_id "
         f"where c.embedding_vec is not null{filtro} "
@@ -207,7 +208,7 @@ def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None) -> 
         params["cat"] = categoria
     rows = db.execute(sql, params).mappings().all()
     return [_riga(r["documento_id"], r["nome_file"], r["categoria"], r["page_start"], r["page_end"],
-                  r["testo"], r["score"]) for r in rows]
+                  r["testo"], r["score"], r["inviabile"]) for r in rows]
 
 
 def _cerca_python(db: Session, qemb: list[float], k: int, categoria: str | None) -> list[dict]:
@@ -223,4 +224,5 @@ def _cerca_python(db: Session, qemb: list[float], k: int, categoria: str | None)
         scored.append((cosine(qemb, emb), c))
     scored.sort(key=lambda t: t[0], reverse=True)
     return [_riga(c.documento_id, c.documento.nome_file if c.documento else "", c.categoria,
-                  c.page_start, c.page_end, c.testo, score) for score, c in scored[:k]]
+                  c.page_start, c.page_end, c.testo, score,
+                  c.documento.inviabile if c.documento else True) for score, c in scored[:k]]

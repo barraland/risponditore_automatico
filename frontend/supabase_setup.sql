@@ -65,6 +65,7 @@ alter table public.azienda   add column if not exists saluto             text;
 alter table public.azienda   add column if not exists saluto_sconosciuto text;
 alter table public.documenti add column if not exists storage_path       varchar(500);
 alter table public.documenti add column if not exists riassunto          text;
+alter table public.documenti add column if not exists inviabile          boolean not null default true;
 alter table public.contatti  add column if not exists titolo             varchar(20);
 
 -- ---------- Permessi: RLS + grant per il ruolo 'authenticated' (la SPA) ----------

@@ -154,10 +154,11 @@ CREATE TABLE IF NOT EXISTS documenti (
 	dimensione INTEGER, 
 	stato statodocumento NOT NULL, 
 	errore TEXT, 
-	indice_raw TEXT, 
-	riassunto TEXT, 
-	caricato_at TIMESTAMP WITHOUT TIME ZONE, 
-	PRIMARY KEY (id), 
+	indice_raw TEXT,
+	riassunto TEXT,
+	inviabile BOOLEAN NOT NULL DEFAULT TRUE,
+	caricato_at TIMESTAMP WITHOUT TIME ZONE,
+	PRIMARY KEY (id),
 	FOREIGN KEY(azienda_id) REFERENCES azienda (id)
 );
 

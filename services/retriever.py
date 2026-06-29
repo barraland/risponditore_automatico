@@ -260,7 +260,8 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
         if r["documento_id"] not in viste:
             viste.add(r["documento_id"])
             fonti.append({"documento_id": r["documento_id"], "documento": r["documento"],
-                          "categoria": r["categoria"], "pagine": r.get("pagine")})
+                          "categoria": r["categoria"], "pagine": r.get("pagine"),
+                          "inviabile": r.get("inviabile", True)})
     contesto = "\n\n---\n\n".join(parti)
 
     try:
@@ -270,8 +271,9 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
         logger.error("Risposta retriever (vett.) fallita: %s", e)
         risposta = "Errore nella generazione della risposta."
 
-    chunk = [{"score": r["score"], "documento": r["documento"], "categoria": r["categoria"],
-              "pagine": r.get("pagine"), "estratto": (r["testo"][:300] + ("…" if len(r["testo"]) > 300 else ""))}
+    chunk = [{"score": r["score"], "documento_id": r["documento_id"], "documento": r["documento"],
+              "categoria": r["categoria"], "pagine": r.get("pagine"), "inviabile": r.get("inviabile", True),
+              "estratto": (r["testo"][:300] + ("…" if len(r["testo"]) > 300 else ""))}
              for r in risultati]
     return _out(risposta=risposta, chunk=chunk, fonti=fonti, errore=None)
 

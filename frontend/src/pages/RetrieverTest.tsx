@@ -5,7 +5,7 @@ import { DOC_CATEGORIE, labelCategoria } from '../lib/format'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
-type Chunk = { score: number; documento: string; categoria: string; pagine: string | null; estratto: string }
+type Chunk = { score: number; documento_id: number; documento: string; categoria: string; pagine: string | null; inviabile: boolean; estratto: string }
 
 export default function RetrieverTest() {
   const { session } = useAuth()
@@ -90,6 +90,10 @@ export default function RetrieverTest() {
                 <div className="pw-row" style={{ justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
                   <span style={{ fontWeight: 600, color: 'var(--fg)' }}>
                     {c.documento}{c.pagine ? ` · pp. ${c.pagine}` : ''}
+                    <span title="Inviabile al cliente come allegato" style={{ marginLeft: 8, fontSize: 11, fontWeight: 500,
+                      color: c.inviabile ? 'var(--ok, #2e7d32)' : 'var(--muted, #888)' }}>
+                      {c.inviabile ? '📎 inviabile' : '🔒 non inviabile'}
+                    </span>
                   </span>
                   <span className="pw-muted">{labelCategoria(c.categoria)} · score {c.score}</span>
                 </div>

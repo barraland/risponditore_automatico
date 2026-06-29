@@ -96,10 +96,17 @@ export default function Documenti() {
 
   async function carica() {
     const { data, error } = await supabase.from('documenti')
-      .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore')
+      .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore, inviabile')
       .order('caricato_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
     setLoading(false)
+  }
+
+  async function toggleInviabile(r: any) {
+    const nuovo = !r.inviabile
+    setRighe(rs => rs.map(x => x.id === r.id ? { ...x, inviabile: nuovo } : x))  // ottimistico
+    const { error } = await supabase.from('documenti').update({ inviabile: nuovo }).eq('id', r.id)
+    if (error) { setErr(error.message); carica() }
   }
   useEffect(() => { carica() }, [])
 
@@ -194,7 +201,7 @@ export default function Documenti() {
           : (
           <div style={{ overflowX: 'auto' }}>
             <table className="pw-table">
-              <thead><tr><th>Nome</th><th>Categoria</th><th>Dimensione</th><th>Caricato</th><th>Stato</th><th></th></tr></thead>
+              <thead><tr><th>Nome</th><th>Categoria</th><th>Dimensione</th><th>Caricato</th><th>Stato</th><th>Inviabile</th><th></th></tr></thead>
               <tbody>
                 {righe.map(r => (
                   <tr key={r.id} style={{ cursor: 'default' }}>
@@ -204,6 +211,13 @@ export default function Documenti() {
                     <td>{dataBreve(r.caricato_at)}</td>
                     <td>
                       <span className={`pw-badge ${badgeDoc(r.stato)}`} title={r.errore || ''}>{statoDoc(r.stato)}</span>
+                    </td>
+                    <td>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}
+                        title="Se attivo, l'assistente può inviare questo documento al cliente come allegato">
+                        <input type="checkbox" checked={r.inviabile !== false} onChange={() => toggleInviabile(r)} />
+                        {r.inviabile !== false ? 'Sì' : 'No'}
+                      </label>
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => scarica(r)} disabled={!r.storage_path}>Scarica</button>{' '}
