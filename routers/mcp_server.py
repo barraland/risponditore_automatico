@@ -141,47 +141,74 @@ def _leggi_categoria(categoria: str) -> dict:
 
 @mcp.tool()
 @_loggato
-def leggi_listini_prezzi() -> dict:
-    """Restituisce per intero i LISTINI e i PREZZI caricati. Usalo quando il cliente chiede
-    quanto costa un prodotto, sconti di listino, formati/confezioni e relativi prezzi."""
-    _log_tool("leggi_listini_prezzi")
-    return _leggi_categoria("listino")
+def cerca_documenti(domanda: str, categoria: str = "") -> dict:
+    """Cerca nei DOCUMENTI aziendali la risposta a una domanda (ricerca semantica) e restituisce una
+    risposta sintetica + le fonti. Usalo per prezzi, condizioni di vendita, schede prodotto, FAQ, ecc.
+    Ogni fonte ha `documento_id` e `inviabile`: se il cliente vuole RICEVERE quel documento e
+    `inviabile` è true, invialo con invia_documento usando quel documento_id. `categoria` opzionale
+    per restringere (listino/contratti/schede_prodotto/faq/altro)."""
+    _log_tool("cerca_documenti")
+    db = SessionLocal()
+    try:
+        from services import retriever
+        esito = retriever.rispondi_vettoriale(db, domanda, categoria=(categoria.strip() or None))
+        return {"risposta": esito.get("risposta", ""), "fonti": esito.get("fonti", [])}
+    finally:
+        db.close()
 
 
 @mcp.tool()
 @_loggato
-def leggi_condizioni_vendita() -> dict:
-    """Restituisce per intero le CONDIZIONI DI VENDITA e i contratti: tempi e modalità di
-    consegna, ordine minimo, modalità di pagamento, termini contrattuali."""
-    _log_tool("leggi_condizioni_vendita")
-    return _leggi_categoria("contratti")
+def invia_documento(email: str, documento_id: int, testo: str = "") -> dict:
+    """Invia al cliente, via EMAIL, UNO specifico documento come allegato. `email`=indirizzo del
+    destinatario (se non lo conosci, chiedilo al cliente PRIMA, scandito e confermato); `documento_id`
+    =l'id del documento da inviare (lo trovi nelle fonti di cerca_documenti); `testo`=corpo del
+    messaggio (opzionale). Invia SOLO i documenti permessi: se non è inviabile te lo segnalo."""
+    _log_tool("invia_documento", telefono=email)
+    db = SessionLocal()
+    try:
+        return documenti_service.invia_documento_email(db, email, documento_id, testo,
+                                                        nome_azienda=profilo.nome_azienda(db))
+    finally:
+        db.close()
 
 
-@mcp.tool()
-@_loggato
-def leggi_schede_prodotto() -> dict:
-    """Restituisce per intero le SCHEDE PRODOTTO/SERVIZIO: caratteristiche, formati, dettagli
-    tecnici, ingredienti/specifiche dei prodotti."""
-    _log_tool("leggi_schede_prodotto")
-    return _leggi_categoria("schede_prodotto")
-
-
-@mcp.tool()
-@_loggato
-def leggi_faq() -> dict:
-    """Restituisce per intero le FAQ e il materiale informativo generale (domande frequenti,
-    informazioni sull'azienda e sul servizio)."""
-    _log_tool("leggi_faq")
-    return _leggi_categoria("faq")
-
-
-@mcp.tool()
-@_loggato
-def leggi_altri_documenti() -> dict:
-    """Restituisce per intero i documenti della categoria «altro» (non classificati nelle
-    categorie precedenti)."""
-    _log_tool("leggi_altri_documenti")
-    return _leggi_categoria("altro")
+# ---------- [DISMESSI] vecchi tool di ricerca per CATEGORIA -------------------------------------
+# Sostituiti da cerca_documenti (ricerca semantica). Tenuti commentati per sicurezza, non si sa mai.
+# @mcp.tool()
+# @_loggato
+# def leggi_listini_prezzi() -> dict:
+#     """Restituisce per intero i LISTINI e i PREZZI caricati."""
+#     _log_tool("leggi_listini_prezzi")
+#     return _leggi_categoria("listino")
+#
+# @mcp.tool()
+# @_loggato
+# def leggi_condizioni_vendita() -> dict:
+#     """Restituisce per intero le CONDIZIONI DI VENDITA e i contratti."""
+#     _log_tool("leggi_condizioni_vendita")
+#     return _leggi_categoria("contratti")
+#
+# @mcp.tool()
+# @_loggato
+# def leggi_schede_prodotto() -> dict:
+#     """Restituisce per intero le SCHEDE PRODOTTO/SERVIZIO."""
+#     _log_tool("leggi_schede_prodotto")
+#     return _leggi_categoria("schede_prodotto")
+#
+# @mcp.tool()
+# @_loggato
+# def leggi_faq() -> dict:
+#     """Restituisce per intero le FAQ e il materiale informativo generale."""
+#     _log_tool("leggi_faq")
+#     return _leggi_categoria("faq")
+#
+# @mcp.tool()
+# @_loggato
+# def leggi_altri_documenti() -> dict:
+#     """Restituisce per intero i documenti della categoria «altro»."""
+#     _log_tool("leggi_altri_documenti")
+#     return _leggi_categoria("altro")
 
 
 def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: str,

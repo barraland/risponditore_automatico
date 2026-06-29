@@ -74,6 +74,31 @@ def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_a
     return {"inviato": True, "email": email, "allegati": nomi,
             "allegato_richiesto_non_trovato": allegato_mancante}
 
+
+def invia_documento_email(db, email: str, documento_id: int, testo: str = "", oggetto: str = "",
+                          nome_azienda: str = "") -> dict:
+    """Invia via email UNO specifico documento (per id) come allegato. Destinatario = `email`
+    (Margherita la conosce o la chiede). Invia SOLO se il documento è marcato `inviabile`."""
+    email = (email or "").strip()
+    if not email:
+        return {"email_mancante": True,
+                "messaggio": "Manca l'email del destinatario: chiedila al cliente e riprova."}
+    doc = db.get(Documento, int(documento_id)) if documento_id else None
+    if not doc:
+        return {"errore": "Documento non trovato (documento_id errato)."}
+    if not doc.inviabile:
+        return {"non_inviabile": True,
+                "messaggio": f"Il documento «{doc.nome_file}» non è inviabile ai clienti. Non inviarlo."}
+    if not (doc.percorso and os.path.exists(doc.percorso)):
+        return {"errore": f"Il file «{doc.nome_file}» non è al momento disponibile sul server."}
+    corpo = (testo or "").strip() or f"Gentile cliente,\nin allegato {doc.nome_file}.\n\n{nome_azienda or ''}".strip()
+    oggetto = (oggetto or "").strip() or (nome_azienda or "Documento")
+    inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
+                                        allegati=[doc.percorso])
+    if not inviata:
+        return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
+    return {"inviato": True, "email": email, "documento": doc.nome_file}
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.getenv("DOCUMENTI_DIR", "data/documenti")
