@@ -153,6 +153,19 @@ def schema_prompt(db: Session) -> str:
     return "\n\n".join(blocchi)
 
 
+def formatta_righe(righe: list[dict], max_righe: int = 15) -> str:
+    """Rendering DETERMINISTICO delle righe (nessun LLM): i dati restano ESATTAMENTE quelli del CSV."""
+    if not righe:
+        return "Nessun risultato corrisponde alla richiesta."
+    out = [f"{len(righe)} risultato/i:"]
+    for r in righe[:max_righe]:
+        campi = "; ".join(f"{k}: {v}" for k, v in r.items() if v not in (None, ""))
+        out.append(f"- {campi}")
+    if len(righe) > max_righe:
+        out.append(f"… e altri {len(righe) - max_righe}.")
+    return "\n".join(out)
+
+
 def interroga(db: Session, documento_id: int, filtri: list[dict], order_by: str | None = None,
               ascending: bool = True, limit: int = 30) -> list[dict]:
     """Filtra le righe di una tabella. `filtri` = lista di {campo, op, valore}. I filtri su colonne

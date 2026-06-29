@@ -153,8 +153,9 @@ def cerca(domanda: str) -> dict:
     try:
         from services import retriever
         esito = retriever.cerca(db, domanda)
+        # Per le tabelle ritorniamo le righe ESATTE del CSV (non una parafrasi): leggile come sono.
         return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
-                "fonti": esito.get("fonti", [])}
+                "fonti": esito.get("fonti", []), "righe": esito.get("righe", [])[:15]}
     finally:
         db.close()
 

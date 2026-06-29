@@ -449,10 +449,9 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None) -
     if fonte == "tabella" and did:
         righe = tabellare.interroga(db, did, piano.get("filtri", []), piano.get("order_by") or None,
                                     bool(piano.get("ascending", True)), int(piano.get("limit") or 20))
-        risposta = componi(client, domanda,
-                           f"RIGHE RISULTANTI DALLA TABELLA (rispondi sinteticamente):\n"
-                           f"{json.dumps(righe[:30], ensure_ascii=False)}", trace=trace)
-        return _out(risposta=risposta, fonte="tabella", righe=righe[:30], query=piano, errore=None)
+        # NIENTE LLM sui dati: i valori restano ESATTAMENTE quelli del CSV (rendering deterministico).
+        return _out(risposta=tabellare.formatta_righe(righe), fonte="tabella", righe=righe[:30],
+                    query=piano, errore=None)
     if fonte == "documenti":
         ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace)
         return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
