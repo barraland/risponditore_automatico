@@ -58,21 +58,26 @@ def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_a
                 "messaggio": "Il cliente non ha un'email salvata: chiedigliela, salvala e riprova."}
     if not (testo or "").strip():
         return {"errore": "Testo della mail mancante: scrivi tu il corpo del messaggio."}
-    allegati, nomi, allegato_mancante = [], [], False
+    allegati, nomi, da_pulire, allegato_mancante = [], [], [], False
     cat = (categoria_allegato or "").strip()
     if cat:
         docs = (db.query(Documento)
                 .filter(Documento.categoria == cat,
                         Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW])).all())
-        att = [(d.nome_file, d.percorso) for d in docs if d.percorso and os.path.exists(d.percorso)]
-        if att:
-            nomi = [n for n, _ in att]
-            allegati = [p for _, p in att]
-        else:
-            allegato_mancante = True
+        for d in docs:
+            p, tmp = _percorso_allegato(d)   # disco o Supabase Storage (a prova di restart)
+            if p:
+                allegati.append(p); nomi.append(d.nome_file)
+                if tmp:
+                    da_pulire.append(tmp)
+        allegato_mancante = not allegati
     oggetto = (oggetto or "").strip() or (nome_azienda or "Informazioni")
-    inviata = email_service.invia_email(destinatario=email, oggetto=oggetto,
-                                        corpo=testo.strip(), allegati=allegati or None)
+    try:
+        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto,
+                                            corpo=testo.strip(), allegati=allegati or None)
+    finally:
+        for tmp in da_pulire:
+            shutil.rmtree(tmp, ignore_errors=True)
     if not inviata:
         return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
     return {"inviato": True, "email": email, "allegati": nomi,

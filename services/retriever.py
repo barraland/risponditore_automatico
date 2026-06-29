@@ -449,9 +449,13 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None) -
     if fonte == "tabella" and did:
         righe = tabellare.interroga(db, did, piano.get("filtri", []), piano.get("order_by") or None,
                                     bool(piano.get("ascending", True)), int(piano.get("limit") or 20))
-        # NIENTE LLM sui dati: i valori restano ESATTAMENTE quelli del CSV (rendering deterministico).
+        # Esponi la fonte (il file CSV) con documento_id + inviabile: così l'agente può inviarlo
+        # con invia_documento. NIENTE LLM sui dati: valori esatti (rendering deterministico).
+        doc = db.get(Documento, did)
+        fonti = ([{"documento_id": did, "documento": doc.nome_file, "categoria": doc.categoria,
+                   "pagine": None, "inviabile": bool(doc.inviabile)}] if doc else [])
         return _out(risposta=tabellare.formatta_righe(righe), fonte="tabella", righe=righe[:30],
-                    query=piano, errore=None)
+                    fonti=fonti, query=piano, errore=None)
     if fonte == "documenti":
         ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace)
         return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
