@@ -5,6 +5,7 @@ follow-up con titolo riassuntivo, priorità (alta/media/bassa) e trascrizione de
 conversazione. I ticket aperti sono visibili in dashboard.
 """
 
+import os
 import logging
 import threading
 
@@ -16,6 +17,19 @@ from services import email as email_service
 logger = logging.getLogger(__name__)
 
 _CAMPO_PRIORITA = {"alta": "inoltra_alta", "media": "inoltra_media", "bassa": "inoltra_bassa"}
+
+
+def _spa_base() -> str:
+    """URL base della dashboard per il link al ticket: SPA_BASE_URL, o la prima origine https
+    di CORS_ORIGINS, altrimenti vuoto (niente link)."""
+    base = os.getenv("SPA_BASE_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    for o in os.getenv("CORS_ORIGINS", "").split(","):
+        o = o.strip().rstrip("/")
+        if o.startswith("https://"):
+            return o
+    return ""
 
 
 def _inoltra_ticket_admin(ticket_id: int) -> None:
@@ -46,6 +60,9 @@ def _inoltra_ticket_admin(ticket_id: int) -> None:
         )
         if t.storia:
             corpo += f"\nConversazione:\n{t.storia}\n"
+        base = _spa_base()
+        if base:
+            corpo += f"\nApri la dashboard (ticket #{t.id}): {base}/ticket\n"
         for em in dest:
             email_service.invia_email(destinatario=em, oggetto=oggetto, corpo=corpo)
         logger.info("📧 Ticket #%s inoltrato a %d admin (priorità %s)", t.id, len(dest), t.priorita.value)
