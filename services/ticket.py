@@ -6,12 +6,57 @@ conversazione. I ticket aperti sono visibili in dashboard.
 """
 
 import logging
+import threading
 
 from sqlalchemy.orm import Session
 
-from database import Ticket, StatoTicket, PrioritaTicket
+from database import Ticket, StatoTicket, PrioritaTicket, Amministratore, Contatto, SessionLocal
+from services import email as email_service
 
 logger = logging.getLogger(__name__)
+
+_CAMPO_PRIORITA = {"alta": "inoltra_alta", "media": "inoltra_media", "bassa": "inoltra_bassa"}
+
+
+def _inoltra_ticket_admin(ticket_id: int) -> None:
+    """Invia il ticket via email agli amministratori che hanno il flag attivo per la sua priorità.
+    Gira in un thread separato (apre la propria sessione) per non rallentare la chiamata."""
+    db = SessionLocal()
+    try:
+        t = db.get(Ticket, ticket_id)
+        if not t or not t.priorita:
+            return
+        campo = _CAMPO_PRIORITA.get(t.priorita.value)
+        if not campo:
+            return
+        admins = db.query(Amministratore).filter(getattr(Amministratore, campo).is_(True)).all()
+        dest = [(a.email or "").strip() for a in admins if (a.email or "").strip()]
+        if not dest:
+            return
+        c = db.get(Contatto, t.contatto_id) if t.contatto_id else None
+        cliente = (c.nome_completo if c else "Contatto sconosciuto")
+        tel = (c.telefono if c else "") or ""
+        oggetto = f"[Ticket #{t.id}] {t.priorita.value.upper()} — {t.titolo}"
+        corpo = (
+            f"Nuovo ticket (priorità {t.priorita.value}).\n\n"
+            f"Cliente: {cliente}" + (f" — {tel}" if tel else "") + "\n"
+            f"Canale: {t.canale or '-'}\n"
+            f"Titolo: {t.titolo}\n"
+            f"Descrizione: {t.descrizione or '-'}\n"
+        )
+        if t.storia:
+            corpo += f"\nConversazione:\n{t.storia}\n"
+        for em in dest:
+            email_service.invia_email(destinatario=em, oggetto=oggetto, corpo=corpo)
+        logger.info("📧 Ticket #%s inoltrato a %d admin (priorità %s)", t.id, len(dest), t.priorita.value)
+    except Exception as e:
+        logger.error("Inoltro ticket via email fallito (#%s): %s", ticket_id, e)
+    finally:
+        db.close()
+
+
+def inoltra_ticket_async(ticket_id: int) -> None:
+    threading.Thread(target=_inoltra_ticket_admin, args=(ticket_id,), daemon=True).start()
 
 
 def normalizza_priorita(valore) -> PrioritaTicket | None:
@@ -59,6 +104,7 @@ def apri_ticket(db: Session, contatto_id, titolo: str, priorita=None,
         db.refresh(t)
         logger.info("Ticket #%s aperto (contatto=%s, priorità=%s, canale=%s)",
                     t.id, contatto_id, t.priorita.value if t.priorita else "-", canale)
+        inoltra_ticket_async(t.id)  # email agli admin con flag attivo per questa priorità (non blocca)
         return t
     except Exception as e:
         logger.error("Apertura ticket fallita: %s", e)

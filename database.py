@@ -502,6 +502,11 @@ class Amministratore(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(150))
     telefono = Column(String(30), nullable=False, index=True)
+    email = Column(String(150))
+    # Inoltro dei nuovi ticket via email a questo admin, per priorità:
+    inoltra_alta = Column(Boolean, default=False, nullable=False)
+    inoltra_media = Column(Boolean, default=False, nullable=False)
+    inoltra_bassa = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
