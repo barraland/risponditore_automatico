@@ -141,18 +141,20 @@ def _leggi_categoria(categoria: str) -> dict:
 
 @mcp.tool()
 @_loggato
-def cerca_documenti(domanda: str, categoria: str = "") -> dict:
-    """Cerca nei DOCUMENTI aziendali la risposta a una domanda (ricerca semantica) e restituisce una
-    risposta sintetica + le fonti. Usalo per prezzi, condizioni di vendita, schede prodotto, FAQ, ecc.
-    Ogni fonte ha `documento_id` e `inviabile`: se il cliente vuole RICEVERE quel documento e
-    `inviabile` è true, invialo con invia_documento usando quel documento_id. `categoria` opzionale
-    per restringere (listino/contratti/schede_prodotto/faq/altro)."""
-    _log_tool("cerca_documenti")
+def cerca(domanda: str) -> dict:
+    """Cerca la risposta a una domanda nella base di conoscenza aziendale. Decide DA SÉ se la risposta
+    sta in un DOCUMENTO (PDF: condizioni di vendita, FAQ, descrizioni) o in una TABELLA (CSV/Excel:
+    prezzi, disponibilità, formati, anagrafiche) e risponde in modo sintetico. Usalo per qualsiasi
+    domanda su prodotti, prezzi, condizioni, schede, FAQ, dati. Ritorna `risposta`, `fonte`
+    (tabella/documenti/nessuna) e `fonti`: se una fonte ha `documento_id` con `inviabile`=true e il
+    cliente vuole riceverla, mandala con invia_documento usando quel documento_id."""
+    _log_tool("cerca")
     db = SessionLocal()
     try:
         from services import retriever
-        esito = retriever.rispondi_vettoriale(db, domanda, categoria=(categoria.strip() or None))
-        return {"risposta": esito.get("risposta", ""), "fonti": esito.get("fonti", [])}
+        esito = retriever.cerca(db, domanda)
+        return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
+                "fonti": esito.get("fonti", [])}
     finally:
         db.close()
 

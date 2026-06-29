@@ -7,6 +7,8 @@ const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
 type Chunk = { score: number; documento_id: number; documento: string; categoria: string; pagine: string | null; inviabile: boolean; estratto: string }
 
+const FONTE_LABEL: Record<string, string> = { tabella: '📊 Tabella (CSV/Excel)', documenti: '📄 Documenti (PDF)', nessuna: '— Nessuna fonte' }
+
 export default function RetrieverTest() {
   const { session } = useAuth()
   const [domanda, setDomanda] = useState('')
@@ -14,13 +16,16 @@ export default function RetrieverTest() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [risposta, setRisposta] = useState('')
+  const [fonte, setFonte] = useState('')
   const [chunk, setChunk] = useState<Chunk[]>([])
-  const [tab, setTab] = useState<any>(null)
+  const [righe, setRighe] = useState<any[]>([])
+  const [query, setQuery] = useState<any>(null)
+  const [done, setDone] = useState(false)
 
   async function chiedi() {
     if (!domanda.trim()) return
     if (!API) { setErr('VITE_API_BASE non configurato: serve l\'URL del backend.'); return }
-    setBusy(true); setErr(null); setRisposta(''); setChunk([]); setTab(null)
+    setBusy(true); setErr(null); setRisposta(''); setChunk([]); setRighe([]); setQuery(null); setFonte(''); setDone(false)
     try {
       const res = await fetch(`${API}/api/retriever/test`, {
         method: 'POST',
@@ -29,9 +34,8 @@ export default function RetrieverTest() {
       })
       const data = await res.json()
       if (!res.ok) { setErr(data?.detail || 'Errore'); return }
-      setRisposta(data.risposta || '')
-      setChunk(data.chunk || [])
-      setTab(data.tabellare || null)
+      setRisposta(data.risposta || ''); setFonte(data.fonte || '')
+      setChunk(data.chunk || []); setRighe(data.righe || []); setQuery(data.query || null); setDone(true)
       if (data.errore) setErr(`(${data.errore})`)
     } catch (e: any) {
       setErr(e?.message || 'Errore di rete')
@@ -46,8 +50,8 @@ export default function RetrieverTest() {
         <div className="pw-eyebrow"><Link to="/documenti">Documenti</Link> · Test</div>
         <h1 style={{ fontSize: 28, marginTop: 6 }}>Test agente retriever</h1>
         <div className="pw-muted" style={{ fontSize: 14, marginTop: 6 }}>
-          Fai una domanda in linguaggio naturale: l'agente cerca nei chunk indicizzati (ricerca
-          semantica) e risponde citando le fonti. Sotto vedi i pezzi recuperati e il punteggio.
+          Fai una domanda in linguaggio naturale: il retriever decide da sé se rispondere dai
+          DOCUMENTI (PDF) o da una TABELLA (CSV/Excel) e mostra come ci è arrivato.
         </div>
       </div>
 
@@ -62,7 +66,7 @@ export default function RetrieverTest() {
           </div>
           <div className="pw-row" style={{ gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div className="pw-field" style={{ minWidth: 220 }}>
-              <label>Filtra per categoria (opzionale)</label>
+              <label>Filtra documenti per categoria (opzionale)</label>
               <select className="pw-input" value={categoria} onChange={e => setCategoria(e.target.value)}>
                 <option value="">Tutte</option>
                 {DOC_CATEGORIE.map(([val, lab]) => <option key={val} value={val}>{lab}</option>)}
@@ -76,44 +80,47 @@ export default function RetrieverTest() {
         </div>
       </div>
 
-      {risposta && (
+      {done && (
         <div className="pw-card">
-          <div className="pw-card-head"><h3>Risposta</h3></div>
-          <div className="pw-card-body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{risposta}</div>
-        </div>
-      )}
-
-      {tab && (
-        <div className="pw-card">
-          <div className="pw-card-head"><h3>Risultato tabellare (CSV/Excel)</h3></div>
-          <div className="pw-card-body pw-stack" style={{ gap: 10 }}>
-            {tab.errore === 'no_tables' && <div className="pw-muted">Nessun file tabellare (CSV/Excel) indicizzato. Carica un CSV/Excel e riprova.</div>}
-            {tab.errore === 'no_match' && <div className="pw-muted">L'agente non ha individuato una tabella pertinente a questa domanda.</div>}
-            {!tab.errore && (!tab.righe || tab.righe.length === 0) && <div className="pw-muted">Tabella selezionata, ma nessuna riga corrisponde ai filtri.</div>}
-            {tab.risposta && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{tab.risposta}</div>}
-            {tab.query && (
-              <div className="pw-muted" style={{ fontSize: 12 }}>
-                query: doc {tab.query.documento_id} · filtri {JSON.stringify(tab.query.filtri)}
-                {tab.query.order_by ? ` · order ${tab.query.order_by} ${tab.query.ascending ? '↑' : '↓'}` : ''}
-              </div>
-            )}
-            {tab.righe && tab.righe.length > 0 && (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="pw-table">
-                  <thead><tr>{Object.keys(tab.righe[0]).map((k: string) => <th key={k}>{k}</th>)}</tr></thead>
-                  <tbody>
-                    {tab.righe.slice(0, 20).map((r: any, i: number) => (
-                      <tr key={i}>{Object.keys(tab.righe[0]).map((k: string) => <td key={k}>{String(r[k] ?? '')}</td>)}</tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+          <div className="pw-card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Risposta</h3>
+            {fonte && <span className="pw-badge" title="Fonte scelta dal router">{FONTE_LABEL[fonte] || fonte}</span>}
+          </div>
+          <div className="pw-card-body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+            {risposta || <span className="pw-muted">—</span>}
           </div>
         </div>
       )}
 
-      {chunk.length > 0 && (
+      {fonte === 'tabella' && (
+        <div className="pw-card">
+          <div className="pw-card-head"><h3>Dati tabellari</h3></div>
+          <div className="pw-card-body pw-stack" style={{ gap: 10 }}>
+            {query && (
+              <div className="pw-muted" style={{ fontSize: 12 }}>
+                query: doc {query.documento_id} · filtri {JSON.stringify(query.filtri)}
+                {query.order_by ? ` · order ${query.order_by} ${query.ascending ? '↑' : '↓'}` : ''}
+              </div>
+            )}
+            {righe.length === 0
+              ? <div className="pw-muted">Nessuna riga corrisponde ai filtri.</div>
+              : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="pw-table">
+                    <thead><tr>{Object.keys(righe[0]).map((k) => <th key={k}>{k}</th>)}</tr></thead>
+                    <tbody>
+                      {righe.slice(0, 20).map((r: any, i: number) => (
+                        <tr key={i}>{Object.keys(righe[0]).map((k) => <td key={k}>{String(r[k] ?? '')}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+          </div>
+        </div>
+      )}
+
+      {fonte === 'documenti' && chunk.length > 0 && (
         <div className="pw-card">
           <div className="pw-card-head"><h3>Chunk recuperati ({chunk.length})</h3></div>
           <div className="pw-card-body pw-stack" style={{ gap: 10 }}>

@@ -353,6 +353,114 @@ def rispondi_tabellare(db: Session, domanda: str, trace=None) -> dict:
     return {"risposta": risposta, "righe": righe[:30], "query": piano, "errore": None, "traccia": trace}
 
 
+# ---------- Retriever AGNOSTICO: un router decide tabella vs documenti ----------
+
+ROUTER_SYSTEM = """Sei il ROUTER di un servizio di retrieval. Decidi DOVE sta la risposta a una domanda:
+- "tabella": dati strutturati (CSV/Excel: prezzi, disponibilità, formati, anagrafiche, record precisi).
+- "documenti": testi/PDF (condizioni di vendita, FAQ, descrizioni, spiegazioni).
+- "nessuna": nessuna fonte pertinente.
+Vedi l'INDICE DOCUMENTI e gli SCHEMI TABELLE (con i facet di ogni colonna).
+
+Se fonte="tabella": scegli documento_id e costruisci i filtri rispettando i FACET:
+- '=' o 'in' (valore esatto): SOLO su colonne con "valori AMMESSI (lista COMPLETA)". Mappa il termine
+  del cliente sul valore canonico (es. "succhi" -> "succhi").
+- '<','<=','>','>=': SOLO su colonne numeriche. Usa la SOGLIA numerica ESATTA detta dal cliente
+  (se dice "sotto i 2 euro" il valore è 2, non un altro numero).
+- 'contains' (sottostringa): sulle colonne testo "CAMPIONE NON esaustivo". MAI '=' su queste.
+- order_by/ascending/limit se utile ("il più economico" -> order_by sul prezzo, ascending=true, limit=1).
+Se fonte="documenti" o "nessuna": documento_id=0 e filtri=[].
+Produci solo il JSON; non rispondere alla domanda."""
+
+ROUTER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ragionamento": {"type": "string"},
+        "fonte": {"type": "string", "enum": ["tabella", "documenti", "nessuna"]},
+        "documento_id": {"type": "integer"},
+        "filtri": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"campo": {"type": "string"}, "op": {"type": "string"}, "valore": {"type": "string"}},
+            "required": ["campo", "op", "valore"], "additionalProperties": False}},
+        "order_by": {"type": "string"},
+        "ascending": {"type": "boolean"},
+        "limit": {"type": "integer"},
+    },
+    "required": ["ragionamento", "fonte", "documento_id", "filtri", "order_by", "ascending", "limit"],
+    "additionalProperties": False,
+}
+
+
+def _indice_documenti(db: Session) -> str:
+    """Indice compatto dei documenti (PDF) per il router: nome, categoria e riassunto/titoli."""
+    docs = db.query(Documento).filter(Documento.nome_file.ilike("%.pdf")).all()
+    righe = []
+    for d in docs:
+        if not d.sezioni:
+            continue
+        descr = (d.riassunto or "").strip() or "; ".join(s.titolo for s in d.sezioni[:5])
+        righe.append(f"- «{d.nome_file}» (categoria {d.categoria}): {descr[:300]}")
+    return "\n".join(righe)
+
+
+def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None) -> dict:
+    """Retriever AGNOSTICO: un router-planner decide se la risposta sta in una TABELLA (CSV/Excel) o
+    nei DOCUMENTI (PDF) e instrada di conseguenza. Una sola chiamata di routing + una di risposta.
+    Ritorna {risposta, fonte, fonti, chunk, righe, query, errore, traccia}."""
+    from services import tabellare
+    if trace is None:
+        trace = []
+
+    def _out(**kw):
+        kw.setdefault("fonte", "nessuna"); kw.setdefault("fonti", []); kw.setdefault("chunk", [])
+        kw.setdefault("righe", []); kw.setdefault("query", None); kw["traccia"] = trace
+        return kw
+
+    domanda = (domanda or "").strip()
+    if not domanda:
+        return _out(risposta="Scrivi una domanda.", errore="empty")
+    schema = tabellare.schema_prompt(db)
+    indice = _indice_documenti(db)
+    if not schema and not indice:
+        return _out(risposta="Non ci sono ancora documenti o dati consultabili.", errore="no_sources")
+    try:
+        client = _client()
+    except RuntimeError as e:
+        return _out(risposta="Servizio non disponibile.", errore=str(e))
+
+    user = (f"DOMANDA:\n{domanda}\n\nINDICE DOCUMENTI:\n{indice or '(nessuno)'}"
+            f"\n\nSCHEMI TABELLE:\n{schema or '(nessuna)'}")
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "system", "content": f"{ROUTER_SYSTEM}\n\n{contesto_temporale()}"},
+                      {"role": "user", "content": user}],
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "route", "strict": True, "schema": ROUTER_SCHEMA}},
+            reasoning_effort=EFFORT, max_completion_tokens=2000,
+        )
+        piano = json.loads(resp.choices[0].message.content or "{}")
+    except Exception as e:
+        logger.error("Router retriever fallito: %s", e)
+        return _out(risposta="Errore nell'analisi della domanda.", errore=str(e))
+    _rec(trace, "Router", user, json.dumps(piano, ensure_ascii=False))
+
+    fonte = piano.get("fonte")
+    did = int(piano.get("documento_id") or 0)
+    if fonte == "tabella" and did:
+        righe = tabellare.interroga(db, did, piano.get("filtri", []), piano.get("order_by") or None,
+                                    bool(piano.get("ascending", True)), int(piano.get("limit") or 20))
+        risposta = componi(client, domanda,
+                           f"RIGHE RISULTANTI DALLA TABELLA (rispondi sinteticamente):\n"
+                           f"{json.dumps(righe[:30], ensure_ascii=False)}", trace=trace)
+        return _out(risposta=risposta, fonte="tabella", righe=righe[:30], query=piano, errore=None)
+    if fonte == "documenti":
+        ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace)
+        return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
+                    chunk=ris.get("chunk", []), query=piano, errore=ris.get("errore"))
+    return _out(risposta="Non disponibile nei documenti né nei dati a disposizione.",
+                fonte="nessuna", query=piano, errore=None)
+
+
 def rispondi(db: Session, domanda: str, trace=None) -> dict:
     """Esegue l'intero flusso del retriever. Ritorna:
       {"risposta": str,

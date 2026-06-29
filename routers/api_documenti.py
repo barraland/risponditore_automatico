@@ -217,9 +217,7 @@ async def retriever_test(
     categoria = (payload.get("categoria") or "").strip() or None
     if categoria and categoria not in _CATEGORIE_VALIDE:
         categoria = None
-    esito = retriever.rispondi_vettoriale(db, domanda, categoria=categoria)
-    tab = retriever.rispondi_tabellare(db, domanda)
-    return {"risposta": esito.get("risposta", ""), "chunk": esito.get("chunk", []),
-            "fonti": esito.get("fonti", []), "errore": esito.get("errore"),
-            "tabellare": {"risposta": tab.get("risposta", ""), "righe": tab.get("righe", []),
-                          "query": tab.get("query"), "errore": tab.get("errore")}}
+    esito = retriever.cerca(db, domanda, categoria=categoria)
+    return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
+            "chunk": esito.get("chunk", []), "fonti": esito.get("fonti", []),
+            "righe": esito.get("righe", []), "query": esito.get("query"), "errore": esito.get("errore")}
