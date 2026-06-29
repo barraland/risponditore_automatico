@@ -15,9 +15,22 @@ import math
 import logging
 
 from openai import OpenAI
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import Documento, Sezione, DocumentoChunk
+
+
+def _is_postgres(db: Session) -> bool:
+    try:
+        return db.bind.dialect.name == "postgresql"
+    except Exception:
+        return False
+
+
+def _vec_literal(emb: list[float]) -> str:
+    """Rappresentazione testuale di un vettore per pgvector: '[0.1,0.2,...]'."""
+    return "[" + ",".join(f"{x:.7f}" for x in emb) + "]"
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +119,25 @@ def indicizza_documento(db: Session, documento_id: int) -> int:
         return 0
 
     embeddings = embed_batch([p["testo"] for p in pezzi])
+    creati = []
     for ordine, (p, emb) in enumerate(zip(pezzi, embeddings)):
-        db.add(DocumentoChunk(
+        ch = DocumentoChunk(
             documento_id=doc.id, sezione_id=p["sezione_id"], ordine=ordine, categoria=doc.categoria,
             page_start=p["page_start"], page_end=p["page_end"], testo=p["testo"],
             embedding=json.dumps(emb),
-        ))
+        )
+        db.add(ch)
+        creati.append((ch, emb))
+
+    # Su Postgres popola anche la colonna pgvector (la similarità la calcola poi il DB).
+    if _is_postgres(db):
+        try:
+            db.flush()  # serve l'id dei chunk
+            for ch, emb in creati:
+                db.execute(text("UPDATE documento_chunk SET embedding_vec = CAST(:v AS vector) WHERE id = :id"),
+                           {"v": _vec_literal(emb), "id": ch.id})
+        except Exception as e:
+            logger.warning("Popolamento pgvector saltato (colonna/estensione assente?): %s", e)
 
     doc.riassunto = genera_riassunto(doc)
     db.commit()
@@ -145,34 +171,56 @@ def genera_riassunto(doc: Documento) -> str:
 # ---------- ricerca ----------
 
 def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None) -> list[dict]:
-    """Top-K chunk per similarità con la domanda. Ritorna dict con testo, score e metadati/fonte."""
+    """Top-K chunk per similarità con la domanda. Su Postgres la distanza la calcola pgvector;
+    altrove (dev/SQLite, o se pgvector non è disponibile) si ripiega sul coseno in Python."""
     domanda = (domanda or "").strip()
     if not domanda:
         return []
+    qemb = embed_uno(domanda)
+    if _is_postgres(db):
+        try:
+            return _cerca_pg(db, qemb, k, categoria)
+        except Exception as e:
+            logger.warning("Ricerca pgvector fallita, uso fallback Python: %s", e)
+    return _cerca_python(db, qemb, k, categoria)
+
+
+def _riga(documento_id, documento, categoria, page_start, page_end, testo, score) -> dict:
+    return {
+        "score": round(float(score), 4), "testo": testo, "documento_id": documento_id,
+        "documento": documento or "", "categoria": categoria,
+        "pagine": f"{page_start}-{page_end}" if page_start else None,
+    }
+
+
+def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None) -> list[dict]:
+    filtro = " and c.categoria = :cat" if categoria else ""
+    sql = text(
+        "select c.documento_id, c.categoria, c.page_start, c.page_end, c.testo, d.nome_file, "
+        "1 - (c.embedding_vec <=> cast(:q as vector)) as score "
+        "from documento_chunk c join documenti d on d.id = c.documento_id "
+        f"where c.embedding_vec is not null{filtro} "
+        "order by c.embedding_vec <=> cast(:q as vector) limit :k"
+    )
+    params = {"q": _vec_literal(qemb), "k": k}
+    if categoria:
+        params["cat"] = categoria
+    rows = db.execute(sql, params).mappings().all()
+    return [_riga(r["documento_id"], r["nome_file"], r["categoria"], r["page_start"], r["page_end"],
+                  r["testo"], r["score"]) for r in rows]
+
+
+def _cerca_python(db: Session, qemb: list[float], k: int, categoria: str | None) -> list[dict]:
     q = db.query(DocumentoChunk).filter(DocumentoChunk.embedding.isnot(None))
     if categoria:
         q = q.filter(DocumentoChunk.categoria == categoria)
-    chunks = q.all()
-    if not chunks:
-        return []
-    qemb = embed_uno(domanda)
     scored = []
-    for c in chunks:
+    for c in q.all():
         try:
             emb = json.loads(c.embedding)
         except Exception:
             continue
         scored.append((cosine(qemb, emb), c))
     scored.sort(key=lambda t: t[0], reverse=True)
-    out = []
-    for score, c in scored[:k]:
-        doc = c.documento
-        out.append({
-            "score": round(score, 4),
-            "testo": c.testo,
-            "documento_id": c.documento_id,
-            "documento": doc.nome_file if doc else "",
-            "categoria": c.categoria,
-            "pagine": f"{c.page_start}-{c.page_end}" if c.page_start else None,
-        })
-    return out
+    return [_riga(c.documento_id, c.documento.nome_file if c.documento else "", c.categoria,
+                  c.page_start, c.page_end, c.testo, score) for score, c in scored[:k]]

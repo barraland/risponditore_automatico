@@ -179,17 +179,21 @@ def pianifica(client: OpenAI, domanda: str, catalogo: str, note: str, trace=None
 
 # ---------- Stadio 2: risposta ----------
 
-ANSWER_SYSTEM = """Sei un assistente che risponde a domande basandoti ESCLUSIVAMENTE sui documenti
-forniti (e sulle note dell'amministratore). Ricevi la domanda e il contenuto integrale delle sezioni
-di documento selezionate come rilevanti.
+ANSWER_SYSTEM = """Sei un servizio di retrieval. La tua risposta NON è letta da un umano: la riceve
+un AGENTE TELEFONICO che la riformulerà a voce al cliente. Conta solo il contenuto utile.
+
+OBIETTIVO: massima densità di informazione, minimo numero di token in output. La latenza è critica,
+quindi ogni parola in più costa tempo all'agente: sii il più breve possibile.
 
 Regole:
-- Usa solo le informazioni presenti nel contenuto fornito; non inventare e non aggiungere conoscenza
-  esterna.
-- Cita le fonti tra parentesi alla fine delle affermazioni rilevanti, indicando il documento (es.
-  "(listino_2025.pdf, pp. 12-14)" oppure "(prezzi.xlsx)").
-- Se il contenuto fornito non risponde alla domanda, dillo onestamente: non improvvisare.
-- Sii chiaro e sintetico: vai al punto."""
+- Rispondi SUBITO con i fatti. NIENTE saluti ("buongiorno"), NIENTE intercalari ("un attimo",
+  "certo"), NIENTE preamboli o frasi di cortesia, NIENTE riformulazione della domanda. Solo
+  l'informazione che serve, in forma essenziale.
+- Usa solo ciò che è nei documenti forniti (e nelle note dell'amministratore); non inventare.
+- Cita la fonte in parentesi in modo COMPATTO e solo se utile a identificare il documento
+  (es. "(natys_gin_tonica.pdf, p.15)"). Una sola volta, non ripetuta.
+- Se i documenti non contengono la risposta, di' solo, in poche parole, che l'informazione non è
+  disponibile nei documenti."""
 
 
 def componi(client: OpenAI, domanda: str, contesto: str, trace=None) -> str:

@@ -4,6 +4,9 @@
 -- Per l'uso quotidiano sul tuo account usa invece: supabase_setup.sql
 -- ============================================================
 
+-- ---------- 0) pgvector + colonna vettoriale per la ricerca semantica documenti ----------
+create extension if not exists vector;
+
 -- ---------- 1) SCHEMA: tipi enum + tabelle (generato dai modelli) ----------
 do $$ begin
   create type contattostato as enum ('CLIENTE', 'PROSPECT');
@@ -309,6 +312,7 @@ CREATE INDEX IF NOT EXISTS ix_documento_chunk_documento_id ON documento_chunk (d
 CREATE INDEX IF NOT EXISTS ix_documento_chunk_id ON documento_chunk (id);
 
 CREATE INDEX IF NOT EXISTS ix_documento_chunk_categoria ON documento_chunk (categoria);
+ALTER TABLE documento_chunk ADD COLUMN IF NOT EXISTS embedding_vec vector(1536);
 
 CREATE TABLE IF NOT EXISTS promemoria (
 	id SERIAL NOT NULL, 

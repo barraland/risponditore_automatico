@@ -49,6 +49,12 @@ create table if not exists public.documento_chunk (
 );
 create index if not exists ix_documento_chunk_documento on public.documento_chunk(documento_id);
 create index if not exists ix_documento_chunk_categoria on public.documento_chunk(categoria);
+-- pgvector: la similarità coseno la calcola il DB. 1536 = dim. di text-embedding-3-small.
+create extension if not exists vector;
+alter table public.documento_chunk add column if not exists embedding_vec vector(1536);
+-- (opzionale, per scalare) indice ANN:
+-- create index if not exists ix_documento_chunk_vec on public.documento_chunk
+--   using hnsw (embedding_vec vector_cosine_ops);
 
 -- ---------- Colonne aggiunte nel tempo (no-op se già presenti) ----------
 alter table public.azienda   add column if not exists istruzioni_admin   text;
