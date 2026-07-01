@@ -43,10 +43,12 @@ export default function Clienti() {
     await reload() // aggiorna il selettore in alto
   }
 
-  async function salvaCampo(r: Riga, campo: 'numeri_voce' | 'whatsapp_phone_id', valore: string) {
-    const { error } = await supabase.from('azienda').update({ [campo]: valore.trim() || null }).eq('id', r.id)
+  async function salvaCampo(r: Riga, campo: 'nome' | 'numeri_voce' | 'whatsapp_phone_id', valore: string) {
+    const v = valore.trim()
+    if (campo === 'nome' && !v) { setErr('Il nome del cliente non può essere vuoto.'); await carica(); return }
+    const { error } = await supabase.from('azienda').update({ [campo]: campo === 'nome' ? v : (v || null) }).eq('id', r.id)
     if (error) setErr(error.message)
-    else { await carica(); await reload() }
+    else { setErr(null); await carica(); await reload() } // reload aggiorna anche il selettore in alto
   }
 
   if (ready && !isSuperAdmin) {
@@ -89,7 +91,12 @@ export default function Clienti() {
             {righe.map(r => (
               <tr key={r.id}>
                 <td>{r.id}</td>
-                <td>{r.nome}</td>
+                <td>
+                  <input className="pw-input pw-btn-sm" style={{ fontWeight: 600 }} defaultValue={r.nome}
+                    title="Rinomina il cliente (invio o click fuori per salvare)"
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    onBlur={e => e.target.value.trim() !== r.nome && salvaCampo(r, 'nome', e.target.value)} />
+                </td>
                 <td>
                   <input className="pw-input pw-btn-sm" defaultValue={r.numeri_voce || ''}
                     onBlur={e => e.target.value !== (r.numeri_voce || '') && salvaCampo(r, 'numeri_voce', e.target.value)} />
