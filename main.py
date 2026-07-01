@@ -165,6 +165,23 @@ logger.info("CORS abilitato per: %s", ", ".join(_CORS_ORIGINS))
 
 # ---------- Seed Data ----------
 
+def _backfill_tenant(db):
+    """Multi-tenant: assegna azienda_id (il primo tenant) ai dati che ne sono privi (seed/legacy).
+    Così i dati esistenti appartengono al tenant #1 e restano visibili con lo scoping per tenant."""
+    from database import (Contatto, Societa, Agente, Ordine, Ticket, Promemoria,
+                          Amministratore, Inoltro, Documento, TestoCategoria)
+    az = db.query(Azienda).first()
+    if not az:
+        return
+    for Model in (Contatto, Societa, Agente, Ordine, Ticket, Promemoria, Amministratore,
+                  Inoltro, Documento, TestoCategoria):
+        try:
+            db.query(Model).filter(Model.azienda_id.is_(None)).update({Model.azienda_id: az.id})
+        except Exception:
+            db.rollback()
+    db.commit()
+
+
 def seed_data():
     """Popola il DB con uno scenario HORECA demo se vuoto."""
     db = SessionLocal()
@@ -190,6 +207,7 @@ def seed_data():
 
         if db.query(Societa).first():
             logger.info("DB già popolato, skip seed")
+            _backfill_tenant(db)   # assicura azienda_id sui dati legacy/seed (idempotente)
             return
 
         logger.info("Popolamento scenario HORECA demo...")
@@ -280,6 +298,7 @@ def seed_data():
 
         db.commit()
         logger.info("Seed HORECA completato: 2 agenti, 4 locali, 4 contatti, 3 ordini")
+        _backfill_tenant(db)
 
     except Exception as e:
         logger.error("Errore seed data: %s", e)

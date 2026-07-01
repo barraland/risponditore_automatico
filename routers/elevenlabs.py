@@ -28,6 +28,7 @@ from services import promemoria
 from services import prompts
 from services import inoltri
 from services import telefonia
+from services import tenant as tenant_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/elevenlabs")
@@ -115,17 +116,20 @@ async def init_conversazione(request: Request):
         form = await request.form()
         data = dict(form)
     caller = (data.get("caller_id") or "").strip()
+    called = (data.get("called_number") or "").strip()   # numero CHIAMATO → identifica il tenant
     # Registra la chiamata per l'eventuale inoltro: ElevenLabs gira sul tuo Twilio, quindi col
     # call_sid possiamo comandare la call. L'host pubblico serve per le TwiML di whisper.
     telefonia.registra_chiamata(caller, (data.get("call_sid") or "").strip(),
-                                request.headers.get("host", request.url.hostname),
-                                (data.get("called_number") or "").strip())
+                                request.headers.get("host", request.url.hostname), called)
 
     db = SessionLocal()
     try:
-        admin = promemoria.is_admin(caller, db) if caller else False
-        contatto = whatsapp_agent.trova_contatto(db, caller) if (caller and not admin) else None
-        az = profilo.get_azienda(db)
+        # MULTI-TENANT: il tenant è l'azienda a cui appartiene il NUMERO CHIAMATO.
+        azienda = tenant_service.risolvi(db, numero_chiamato=called)
+        aid = azienda.id if azienda else None
+        admin = promemoria.is_admin(caller, db, azienda_id=aid) if caller else False
+        contatto = whatsapp_agent.trova_contatto(db, caller, azienda_id=aid) if (caller and not admin) else None
+        az = azienda or profilo.get_azienda(db)
         template_noto = ((az.saluto or "").strip() if az else "")
         template_sconosciuto = ((az.saluto_sconosciuto or "").strip() if az else "")
         az_nome = (az.nome if az else "") or ""
@@ -170,6 +174,7 @@ async def init_conversazione(request: Request):
         # Numero del chiamante tra le variabili: torna nel payload post-call, così a fine
         # chiamata sappiamo a quale contatto associare la trascrizione.
         dv["telefono_chiamante"] = caller
+        dv["tenant"] = str(aid or "")   # i tool MCP lo ricevono per operare sui dati del tenant giusto
         # "Configurazione assistente" della dashboard (profilo + istruzioni admin): la stessa
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
         if admin:
@@ -177,9 +182,10 @@ async def init_conversazione(request: Request):
             # NON il prompt clienti della dashboard. Niente registrazione/ticket per lui.
             dv["configurazione"] = prompts.voce_admin()
         else:
-            dv["configurazione"] = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
-                                    + documenti_service.catalogo_prompt(db)
-                                    + inoltri.blocco_prompt(db)).strip()
+            dv["configurazione"] = (profilo.blocco_prompt(db, azienda_id=aid)
+                                    + istruzioni.blocco_prompt(db, azienda_id=aid)
+                                    + documenti_service.catalogo_prompt(db, azienda_id=aid)
+                                    + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
                 dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
         # ElevenLabs sostituisce {{configurazione}} ma NON i {{segnaposto}} contenuti dentro:
