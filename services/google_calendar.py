@@ -225,17 +225,24 @@ def disponibilita(db, giorno: str, durata_min: int = 30, ora_inizio: int = 9, or
 
     inizio = datetime.combine(d, time(ora_inizio, 0), tzinfo=zone)
     fine = datetime.combine(d, time(ora_fine, 0), tzinfo=zone)
+    # Occupato = dagli EVENTI del giorno (events.list: ok con scope calendar.events, niente freeBusy).
     try:
-        r = httpx.post("https://www.googleapis.com/calendar/v3/freeBusy",
-                       headers={"Authorization": f"Bearer {access}"},
-                       json={"timeMin": inizio.isoformat(), "timeMax": fine.isoformat(),
-                             "timeZone": tz, "items": [{"id": cal}]}, timeout=15)
+        r = httpx.get(
+            f"https://www.googleapis.com/calendar/v3/calendars/{urllib.parse.quote(cal)}/events",
+            headers={"Authorization": f"Bearer {access}"},
+            params={"timeMin": inizio.isoformat(), "timeMax": fine.isoformat(),
+                    "singleEvents": "true", "orderBy": "startTime", "maxResults": 50}, timeout=15)
     except Exception as e:
         return {"ok": False, "errore": f"Errore Google: {e}"}
     if r.status_code != 200:
         return {"ok": False, "errore": f"Google {r.status_code}: {r.text[:160]}"}
-    busy = r.json().get("calendars", {}).get(cal, {}).get("busy", [])
-    occupati = [(_parse_iso(b["start"]), _parse_iso(b["end"])) for b in busy]
+    occupati = []
+    for e in r.json().get("items", []):
+        st, en = e.get("start", {}), e.get("end", {})
+        if "dateTime" in st and "dateTime" in en:
+            occupati.append((_parse_iso(st["dateTime"]), _parse_iso(en["dateTime"])))
+        elif "date" in st:  # evento tutto il giorno → giornata occupata
+            return {"ok": True, "giorno": d.isoformat(), "slot_liberi": [], "occupato": True}
 
     durata = timedelta(minutes=int(durata_min or 30))
     liberi, s = [], inizio
