@@ -14,6 +14,7 @@ import Assistente from './pages/Assistente'
 import Admin from './pages/Admin'
 import PromemoriaList from './pages/PromemoriaList'
 import Inoltri from './pages/Inoltri'
+import Calendario from './pages/Calendario'
 import Documenti from './pages/Documenti'
 import DocumentoDetail from './pages/DocumentoDetail'
 import RetrieverTest from './pages/RetrieverTest'
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/admin" element={<Admin />} />
         <Route path="/promemoria" element={<PromemoriaList />} />
         <Route path="/inoltri" element={<Inoltri />} />
+        <Route path="/calendario" element={<Calendario />} />
       </Route>
       <Route path="*" element={<Navigate to="/societa" replace />} />
     </Routes>

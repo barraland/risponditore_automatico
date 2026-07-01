@@ -78,6 +78,22 @@ create table if not exists public.documento_riga (
 );
 create index if not exists ix_documento_riga_documento on public.documento_riga(documento_id);
 
+-- Connessione Google Calendar (OAuth): token SEGRETI, accessibili SOLO dal backend.
+create table if not exists public.google_calendar (
+  id            serial primary key,
+  azienda_id    integer references public.azienda(id),
+  email         varchar(200),
+  calendar_id   varchar(200) default 'primary',
+  access_token  text,
+  refresh_token text,
+  scad          timestamp,
+  connesso_at   timestamp default now()
+);
+-- RLS attiva ma NESSUNA policy per 'authenticated' → la SPA non può leggere i token.
+-- (Il backend accede via DATABASE_URL con ruolo privilegiato, che bypassa la RLS.)
+alter table public.google_calendar enable row level security;
+revoke all on public.google_calendar from authenticated, anon;
+
 -- ---------- Colonne aggiunte nel tempo (no-op se già presenti) ----------
 alter table public.azienda   add column if not exists istruzioni_admin   text;
 alter table public.azienda   add column if not exists regole_commerciali text;

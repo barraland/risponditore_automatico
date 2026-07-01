@@ -18,7 +18,7 @@ from database import (
     TipoAttivita, StatoRelazione, CanaleOrdine, StatoOrdine, OrigineOrdine,
     MessaggioChat, DirezioneMessaggio, ChiamataVoce,
 )
-from routers import webhook, dashboard, voice, horeca, mcp_server, elevenlabs, api_documenti
+from routers import webhook, dashboard, voice, horeca, mcp_server, elevenlabs, api_documenti, google_calendar
 
 # ---------- Logging ----------
 
@@ -59,6 +59,7 @@ app.include_router(voice.router)
 app.include_router(horeca.router)
 app.include_router(elevenlabs.router)
 app.include_router(api_documenti.router)
+app.include_router(google_calendar.router)
 
 # Server MCP per agenti vocali esterni (ElevenLabs): endpoint Streamable HTTP su /mcp.
 # NB: middleware ASGI puri (NON BaseHTTPMiddleware) per non bufferare lo streaming SSE.
@@ -114,7 +115,7 @@ _DASH_PASS = os.getenv("DASHBOARD_PASSWORD", "").strip()
 
 
 class _DashboardAuth:
-    APERTI = ("/elevenlabs", "/mcp", "/whatsapp", "/voice", "/static", "/api")
+    APERTI = ("/elevenlabs", "/mcp", "/whatsapp", "/voice", "/static", "/api", "/google")
 
     def __init__(self, app, user: str, password: str):
         self.app = app

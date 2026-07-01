@@ -510,6 +510,21 @@ class Amministratore(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class GoogleCalendar(Base):
+    """Connessione OAuth 2.0 al Google Calendar (token per creare eventi). Una riga per la demo
+    (single-tenant); i token sono segreti e stanno solo qui nel backend."""
+    __tablename__ = "google_calendar"
+
+    id = Column(Integer, primary_key=True, index=True)
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True)
+    email = Column(String(200))                      # account Google connesso (per mostrarlo in GUI)
+    calendar_id = Column(String(200), default="primary")
+    access_token = Column(Text)
+    refresh_token = Column(Text)                      # long-lived: serve per rinnovare l'access token
+    scad = Column(DateTime)                           # scadenza dell'access token
+    connesso_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Inoltro(Base):
     """Persona a cui l'assistente può INOLTRARE la chiamata (es. responsabile spedizioni).
     `regole` descrive in linguaggio naturale quando inoltrare a questa persona. La rubrica e le
