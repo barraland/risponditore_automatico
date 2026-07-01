@@ -147,6 +147,57 @@ def eventi(db, time_min: str, time_max: str, max_results: int = 100) -> list[dic
     return out
 
 
+TZ_DEFAULT = os.getenv("CALENDAR_TZ", "Europe/Rome")
+
+
+def crea_evento(db, titolo: str, inizio_iso: str, fine_iso: str, invitati: list[str],
+                descrizione: str = "", online: bool = True, tz: str = TZ_DEFAULT) -> dict:
+    """Crea un evento sul calendario connesso e INVIA l'invito ai destinatari. Se online=True crea
+    anche una Google Meet. `inizio_iso`/`fine_iso` = datetime ISO locale (es. 2026-07-01T16:00:00).
+    Ritorna {ok, event_id, link_evento, link_meet, invitati}."""
+    access = access_token_valido(db)
+    if not access:
+        return {"ok": False, "errore": "Google Calendar non connesso."}
+    row = db.query(GoogleCalendar).first()
+    cal = (row.calendar_id if row else "primary") or "primary"
+
+    body: dict = {
+        "summary": titolo or "Meeting",
+        "description": descrizione or "",
+        "start": {"dateTime": inizio_iso, "timeZone": tz},
+        "end": {"dateTime": fine_iso, "timeZone": tz},
+        "attendees": [{"email": e} for e in (invitati or []) if e],
+    }
+    params = {"sendUpdates": "all"}   # invia davvero le email di invito
+    if online:
+        body["conferenceData"] = {"createRequest": {
+            "requestId": secrets.token_hex(16),
+            "conferenceSolutionKey": {"type": "hangoutsMeet"},
+        }}
+        params["conferenceDataVersion"] = 1
+    try:
+        r = httpx.post(
+            f"https://www.googleapis.com/calendar/v3/calendars/{urllib.parse.quote(cal)}/events",
+            headers={"Authorization": f"Bearer {access}"}, params=params, json=body, timeout=20,
+        )
+    except Exception as e:
+        return {"ok": False, "errore": f"Errore Google: {e}"}
+    if r.status_code not in (200, 201):
+        logger.warning("Creazione evento Google %s: %s", r.status_code, r.text[:200])
+        return {"ok": False, "errore": f"Google {r.status_code}: {r.text[:160]}"}
+    ev = r.json()
+    meet = ev.get("hangoutLink") or ""
+    if not meet:
+        for ep in (ev.get("conferenceData", {}).get("entryPoints") or []):
+            if ep.get("entryPointType") == "video":
+                meet = ep.get("uri", "")
+                break
+    logger.info("📅 Evento creato '%s' (%s) invitati=%s meet=%s", titolo, ev.get("id"),
+                len(body["attendees"]), bool(meet))
+    return {"ok": True, "event_id": ev.get("id"), "link_evento": ev.get("htmlLink", ""),
+            "link_meet": meet, "invitati": [a["email"] for a in body["attendees"]]}
+
+
 def access_token_valido(db) -> str | None:
     """Access token valido, rinnovato col refresh token se scaduto. None se non connesso. (Step 2)."""
     row = db.query(GoogleCalendar).first()

@@ -652,5 +652,32 @@ def rifiuta_inoltro(sessione: str = "", telefono: str = "", motivo: str = "") ->
     return {"ok": False, "errore": errore}
 
 
+@mcp.tool()
+@_loggato
+def prenota_meeting(titolo: str, data_ora: str, durata_minuti: int = 30, invitati: str = "",
+                    descrizione: str = "", online: bool = True) -> dict:
+    """Prenota un meeting sul Google Calendar dell'azienda e INVIA l'invito ai destinatari.
+    `titolo` = oggetto del meeting; `data_ora` = inizio in formato ISO locale (es.
+    "2026-07-01T16:00:00"); `durata_minuti` = durata (default 30); `invitati` = email dei
+    partecipanti separate da virgola (metti l'email del cliente e le altre); `online`=True crea una
+    Google Meet. Ritorna il link all'evento e, se online, il link alla call (Meet). Prima di
+    prenotare, conferma a voce col cliente data/ora e la sua email."""
+    _log_tool("prenota_meeting", titolo=titolo)
+    from datetime import datetime, timedelta
+    from services import google_calendar as gc
+    try:
+        inizio = datetime.fromisoformat(data_ora.strip())
+    except ValueError:
+        return {"ok": False, "errore": "data_ora non valida: usa il formato ISO, es. 2026-07-01T16:00:00."}
+    fine = inizio + timedelta(minutes=int(durata_minuti or 30))
+    emails = [e.strip() for e in (invitati or "").replace(";", ",").split(",") if e.strip()]
+    db = SessionLocal()
+    try:
+        return gc.crea_evento(db, titolo, inizio.isoformat(), fine.isoformat(), emails,
+                              descrizione, bool(online))
+    finally:
+        db.close()
+
+
 # Inizializza l'app Streamable HTTP (crea il session_manager, usato nel lifespan dell'app).
 http_app = mcp.streamable_http_app()
