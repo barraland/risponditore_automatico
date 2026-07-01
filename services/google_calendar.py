@@ -113,6 +113,40 @@ def disconnetti(db) -> None:
     db.commit()
 
 
+def eventi(db, time_min: str, time_max: str, max_results: int = 100) -> list[dict]:
+    """Eventi del calendario connesso tra time_min e time_max (RFC3339). Lista vuota se non connesso."""
+    access = access_token_valido(db)
+    if not access:
+        return []
+    row = db.query(GoogleCalendar).first()
+    cal = (row.calendar_id if row else "primary") or "primary"
+    try:
+        r = httpx.get(
+            f"https://www.googleapis.com/calendar/v3/calendars/{urllib.parse.quote(cal)}/events",
+            headers={"Authorization": f"Bearer {access}"},
+            params={"timeMin": time_min, "timeMax": time_max, "singleEvents": "true",
+                    "orderBy": "startTime", "maxResults": max_results}, timeout=15,
+        )
+    except Exception as e:
+        logger.warning("Lettura eventi Google errore: %s", e)
+        return []
+    if r.status_code != 200:
+        logger.warning("Lettura eventi Google %s: %s", r.status_code, r.text[:160])
+        return []
+    out = []
+    for e in r.json().get("items", []):
+        start, end = e.get("start", {}), e.get("end", {})
+        out.append({
+            "id": e.get("id"),
+            "titolo": e.get("summary") or "(senza titolo)",
+            "inizio": start.get("dateTime") or start.get("date"),
+            "fine": end.get("dateTime") or end.get("date"),
+            "allday": ("date" in start and "dateTime" not in start),
+            "dove": e.get("location") or "",
+        })
+    return out
+
+
 def access_token_valido(db) -> str | None:
     """Access token valido, rinnovato col refresh token se scaduto. None se non connesso. (Step 2)."""
     row = db.query(GoogleCalendar).first()

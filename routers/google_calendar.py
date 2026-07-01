@@ -9,7 +9,7 @@
 import os
 import logging
 
-from fastapi import APIRouter, Request, Depends, Header
+from fastapi import APIRouter, Request, Depends, Header, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
 
 from database import SessionLocal
@@ -79,3 +79,11 @@ async def disconnect(authorization: str | None = Header(None), db=Depends(get_db
     await _verify_user(authorization)
     gc.disconnetti(db)
     return {"ok": True}
+
+
+@router.get("/events")
+async def events(da: str = Query(...), a: str = Query(...),
+                 authorization: str | None = Header(None), db=Depends(get_db)):
+    """Eventi tra `da` e `a` (ISO/RFC3339). Usato dalla vista calendario in dashboard."""
+    await _verify_user(authorization)
+    return {"eventi": gc.eventi(db, da, a)}
