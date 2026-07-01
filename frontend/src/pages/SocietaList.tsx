@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { STATI_REL, TIPI, badgeStato, lower, nomeAgente } from '../lib/format'
+import { useTenant } from '../lib/tenant'
 import Modal from '../components/Modal'
 
 export default function SocietaList() {
@@ -11,12 +12,15 @@ export default function SocietaList() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [nuova, setNuova] = useState(false)
+  const { aziendaId } = useTenant()
 
   async function carica() {
+    if (!aziendaId) { setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase
       .from('locali')
       .select('id, insegna, ragione_sociale, tipo, citta, stato_relazione, agenti(nome, cognome), contatti(count), ordini(count)')
+      .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     if (error) setErr(error.message)
     else setRighe(data || [])
@@ -77,6 +81,7 @@ function NuovaSocieta({ onClose, onCreata }: { onClose: () => void; onCreata: (i
   const [f, setF] = useState({ insegna: '', ragione_sociale: '', tipo: 'RISTORANTE', citta: '', stato_relazione: 'PROSPECT' })
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { aziendaId } = useTenant()
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
 
   async function salva() {
@@ -85,6 +90,7 @@ function NuovaSocieta({ onClose, onCreata }: { onClose: () => void; onCreata: (i
     const { data, error } = await supabase.from('locali').insert({
       insegna: f.insegna.trim(), ragione_sociale: f.ragione_sociale.trim() || null,
       tipo: f.tipo, citta: f.citta.trim() || null, stato_relazione: f.stato_relazione,
+      azienda_id: aziendaId,
     }).select('id').single()
     setBusy(false)
     if (error) setErr(error.message)

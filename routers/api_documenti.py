@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto, Ordine
 from services import documenti as documenti_service
 from services import ingestion
+from services import tenant as tenant_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -103,6 +104,7 @@ async def upload_documento(
     background: BackgroundTasks,
     categoria: str = Form("altro"),
     storage_path: str = Form(""),
+    azienda_id: int | None = Form(None),
     file: UploadFile = File(...),
     authorization: str | None = Header(None),
     db: Session = Depends(get_db),
@@ -115,7 +117,8 @@ async def upload_documento(
     await _verify_user(authorization)
     if categoria not in _CATEGORIE_VALIDE:
         categoria = "altro"
-    azienda = db.query(Azienda).first()
+    # Tenant attivo scelto in dashboard; fallback al primo (single-tenant).
+    azienda = tenant_service.risolvi(db, tenant=azienda_id)
 
     content = await file.read()
     try:

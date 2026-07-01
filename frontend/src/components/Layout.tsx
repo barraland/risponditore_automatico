@@ -1,8 +1,31 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { useTenant } from '../lib/tenant'
+
+function TenantSwitcher() {
+  const { isSuperAdmin, aziende, aziendaId, setAziendaId } = useTenant()
+  const attiva = aziende.find(a => a.id === aziendaId)
+  if (!isSuperAdmin) {
+    // Utente-cliente: un solo tenant, mostrato come etichetta statica.
+    if (!attiva) return null
+    return <span className="pw-tenant-tag" title="Il tuo spazio cliente">{attiva.nome}</span>
+  }
+  return (
+    <select
+      className="pw-input pw-btn-sm"
+      style={{ maxWidth: 220 }}
+      value={aziendaId ?? ''}
+      onChange={e => setAziendaId(Number(e.target.value))}
+      title="Cliente attivo (super-admin)"
+    >
+      {aziende.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+    </select>
+  )
+}
 
 export default function Layout() {
   const { session, signOut } = useAuth()
+  const { isSuperAdmin, aziendaId } = useTenant()
   return (
     <>
       <nav className="pw-nav">
@@ -21,6 +44,8 @@ export default function Layout() {
           <NavLink to="/calendario">Calendario</NavLink>
         </div>
         <div className="pw-nav-right">
+          <TenantSwitcher />
+          {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
           <NavLink to="/admin">Admin</NavLink>
           <NavLink to="/assistente">Configurazione assistente</NavLink>
           <span className="pw-muted" style={{ fontSize: 13 }}>{session?.user?.email}</span>
@@ -28,7 +53,8 @@ export default function Layout() {
         </div>
       </nav>
       <main className="pw-container">
-        <Outlet />
+        {/* key sul tenant: cambiando cliente le pagine si rimontano e ricaricano i dati filtrati. */}
+        <Outlet key={aziendaId ?? 'none'} />
       </main>
     </>
   )

@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { badgePriorita, badgeTicket, dataOra, lower, nomeContatto } from '../lib/format'
 import Modal from '../components/Modal'
+import { useTenant } from '../lib/tenant'
 
 export default function TicketList() {
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [stato, setStato] = useState('APERTO')
   const [loading, setLoading] = useState(true)
@@ -12,8 +14,10 @@ export default function TicketList() {
   const [apri, setApri] = useState<number | null>(null)
 
   async function carica() {
+    if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('ticket')
       .select('id, titolo, canale, priorita, stato, created_at, contatti(id, nome, cognome)')
+      .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
     setLoading(false)

@@ -3,17 +3,21 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { nomeAgente } from '../lib/format'
 import Modal from '../components/Modal'
+import { useTenant } from '../lib/tenant'
 
 export default function AgentiList() {
   const nav = useNavigate()
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [nuovo, setNuovo] = useState(false)
 
   async function carica() {
+    if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('agenti')
       .select('id, nome, cognome, zona, telefono, email, percentuale_provvigione, locali(count), ordini(count)')
+      .eq('azienda_id', aziendaId)
       .order('cognome')
     if (error) setErr(error.message); else setRighe(data || []); setLoading(false)
   }
@@ -53,6 +57,7 @@ export default function AgentiList() {
 }
 
 function NuovoAgente({ onClose, onCreato }: { onClose: () => void; onCreato: (id: number) => void }) {
+  const { aziendaId } = useTenant()
   const [f, setF] = useState({ nome: '', cognome: '', zona: '', telefono: '', email: '', percentuale_provvigione: '' })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
@@ -60,6 +65,7 @@ function NuovoAgente({ onClose, onCreato }: { onClose: () => void; onCreato: (id
     setBusy(true); setErr(null)
     const prov = f.percentuale_provvigione.replace(',', '.').trim()
     const { data, error } = await supabase.from('agenti').insert({
+      azienda_id: aziendaId,
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, zona: f.zona.trim() || null,
       telefono: f.telefono.trim() || null, email: f.email.trim() || null,
       percentuale_provvigione: prov ? parseFloat(prov) : null,

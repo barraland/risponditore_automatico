@@ -19,6 +19,7 @@ import Documenti from './pages/Documenti'
 import DocumentoDetail from './pages/DocumentoDetail'
 import RetrieverTest from './pages/RetrieverTest'
 import TicketList from './pages/Ticket'
+import Clienti from './pages/Clienti'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session, loading } = useAuth()
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/documenti/:id" element={<DocumentoDetail />} />
         <Route path="/assistente" element={<Assistente />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/clienti" element={<Clienti />} />
         <Route path="/promemoria" element={<PromemoriaList />} />
         <Route path="/inoltri" element={<Inoltri />} />
         <Route path="/calendario" element={<Calendario />} />

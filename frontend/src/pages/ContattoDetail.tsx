@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { badgePriorita, badgeStato, badgeTicket, dataBreve, dataOra, lower, nomeContatto } from '../lib/format'
+import { useTenant } from '../lib/tenant'
 import Modal from '../components/Modal'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
@@ -16,6 +17,7 @@ export default function ContattoDetail() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [edit, setEdit] = useState(false)
+  const { aziendaId } = useTenant()
 
   async function carica() {
     const { data, error } = await supabase.from('contatti').select(
@@ -27,7 +29,7 @@ export default function ContattoDetail() {
     if (error) setErr(error.message); else setC(data); setLoading(false)
   }
   useEffect(() => {
-    supabase.from('locali').select('id, insegna').order('insegna').then(({ data }) => setLocali(data || []))
+    supabase.from('locali').select('id, insegna').eq('azienda_id', aziendaId).order('insegna').then(({ data }) => setLocali(data || []))
     carica()
   }, [id])
 
@@ -172,10 +174,13 @@ function Promemoria({ contattoId }: { contattoId: number }) {
   const [testo, setTesto] = useState('')
   const [giorni, setGiorni] = useState('')
   const [busy, setBusy] = useState(false)
+  const { aziendaId } = useTenant()
 
   async function carica() {
+    if (!aziendaId) return
     const { data } = await supabase.from('promemoria')
       .select('id, testo, scade_il, created_at').eq('contatto_id', contattoId)
+      .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     setNote(data || [])
   }
@@ -186,7 +191,7 @@ function Promemoria({ contattoId }: { contattoId: number }) {
     setBusy(true)
     const g = parseInt(giorni)
     const scade = g > 0 ? new Date(Date.now() + g * 86400000).toISOString() : null
-    await supabase.from('promemoria').insert({ contatto_id: contattoId, testo: testo.trim(), scade_il: scade })
+    await supabase.from('promemoria').insert({ contatto_id: contattoId, testo: testo.trim(), scade_il: scade, azienda_id: aziendaId })
     setBusy(false); setTesto(''); setGiorni(''); carica()
   }
   async function elimina(id: number) {
