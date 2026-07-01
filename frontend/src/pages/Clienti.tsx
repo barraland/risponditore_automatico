@@ -11,7 +11,7 @@ type Riga = {
 }
 
 export default function Clienti() {
-  const { isSuperAdmin, ready, reload } = useTenant()
+  const { isSuperAdmin, ready, reload, aziende } = useTenant()
   const [righe, setRighe] = useState<Riga[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -41,6 +41,20 @@ export default function Clienti() {
     setNuovo({ nome: '', numeri_voce: '', whatsapp_phone_id: '' })
     await carica()
     await reload() // aggiorna il selettore in alto
+  }
+
+  async function elimina(r: Riga) {
+    if (aziende.length <= 1) { setErr('Non puoi eliminare l\'unico cliente rimasto.'); return }
+    if (!confirm(`Eliminare il cliente "${r.nome}"?\n\nÈ possibile solo se NON ha dati associati (contatti, ordini, documenti…). L'operazione non è reversibile.`)) return
+    const { error } = await supabase.from('azienda').delete().eq('id', r.id)
+    if (error) {
+      // FK violation: il tenant ha ancora dati collegati (protezione anti-cancellazione).
+      setErr(`Impossibile eliminare "${r.nome}": ha dati associati (contatti, ordini, documenti…). Svuota prima i suoi dati. [${error.message}]`)
+      return
+    }
+    setErr(null)
+    await carica()
+    await reload() // se era il tenant attivo, il selettore passa a un altro
   }
 
   async function salvaCampo(r: Riga, campo: 'nome' | 'numeri_voce' | 'whatsapp_phone_id', valore: string) {
@@ -85,7 +99,7 @@ export default function Clienti() {
       {loading ? <div className="pw-spinner">Caricamento…</div> : (
         <table className="pw-table">
           <thead>
-            <tr><th>ID</th><th>Nome</th><th>Numeri voce</th><th>WhatsApp Phone ID</th></tr>
+            <tr><th>ID</th><th>Nome</th><th>Numeri voce</th><th>WhatsApp Phone ID</th><th></th></tr>
           </thead>
           <tbody>
             {righe.map(r => (
@@ -104,6 +118,11 @@ export default function Clienti() {
                 <td>
                   <input className="pw-input pw-btn-sm" defaultValue={r.whatsapp_phone_id || ''}
                     onBlur={e => e.target.value !== (r.whatsapp_phone_id || '') && salvaCampo(r, 'whatsapp_phone_id', e.target.value)} />
+                </td>
+                <td style={{ textAlign: 'right' }}>
+                  <button className="pw-btn pw-btn-ghost pw-btn-sm" style={{ color: 'var(--danger)' }}
+                    disabled={aziende.length <= 1} title={aziende.length <= 1 ? 'Ultimo cliente rimasto' : 'Elimina cliente'}
+                    onClick={() => elimina(r)}>Elimina</button>
                 </td>
               </tr>
             ))}
