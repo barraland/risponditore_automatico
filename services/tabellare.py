@@ -124,15 +124,20 @@ def indicizza_tabella(db: Session, documento_id: int) -> int:
     return n_righe
 
 
-def tabelle(db: Session) -> list[Documento]:
+def tabelle(db: Session, azienda_id: int | None = None) -> list[Documento]:
     ids = [r[0] for r in db.query(DocumentoColonna.documento_id).distinct().all()]
-    return db.query(Documento).filter(Documento.id.in_(ids)).all() if ids else []
+    if not ids:
+        return []
+    q = db.query(Documento).filter(Documento.id.in_(ids))
+    if azienda_id:
+        q = q.filter(Documento.azienda_id == azienda_id)
+    return q.all()
 
 
-def schema_prompt(db: Session) -> str:
-    """Schema + FACET delle tabelle, da passare all'agente. Marca chiaramente le colonne NON sicure
-    per un filtro esatto (campione, non lista esaustiva)."""
-    docs = tabelle(db)
+def schema_prompt(db: Session, azienda_id: int | None = None) -> str:
+    """Schema + FACET delle tabelle del tenant, da passare all'agente. Marca chiaramente le colonne
+    NON sicure per un filtro esatto (campione, non lista esaustiva)."""
+    docs = tabelle(db, azienda_id)
     if not docs:
         return ""
     blocchi = []

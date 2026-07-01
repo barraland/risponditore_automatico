@@ -5,6 +5,7 @@ import {
   CANALI, STATI_ORDINE, STATI_REL, TIPI,
   badgeOrdine, badgeStato, dataBreve, euro, lower, nomeAgente, nomeContatto,
 } from '../lib/format'
+import { useTenant } from '../lib/tenant'
 import Modal from '../components/Modal'
 
 const totale = (o: any) => (o.righe_ordine || []).reduce((s: number, r: any) => s + (r.prezzo_unitario ? (r.quantita || 0) * r.prezzo_unitario : 0), 0)
@@ -17,6 +18,7 @@ export default function SocietaDetail() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [modal, setModal] = useState<null | 'edit' | 'contatto'>(null)
+  const { aziendaId } = useTenant()
 
   async function carica() {
     const { data, error } = await supabase
@@ -27,7 +29,7 @@ export default function SocietaDetail() {
     setLoading(false)
   }
   useEffect(() => {
-    supabase.from('agenti').select('id, nome, cognome').order('cognome').then(({ data }) => setAgenti(data || []))
+    supabase.from('agenti').select('id, nome, cognome').eq('azienda_id', aziendaId).order('cognome').then(({ data }) => setAgenti(data || []))
     carica()
   }, [id])
 
@@ -147,6 +149,7 @@ function NuovoOrdine({ soc, agenti, onCreato }: { soc: any; agenti: any[]; onCre
   const [righeTxt, setRighe] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const { aziendaId } = useTenant()
 
   function parseRighe(t: string) {
     return t.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
@@ -165,6 +168,7 @@ function NuovoOrdine({ soc, agenti, onCreato }: { soc: any; agenti: any[]; onCre
       agente_id: agente ? Number(agente) : null,
       origine: agente && !contatto ? 'AGENTE' : 'CLIENTE',
       canale: 'MANUALE', stato, data: new Date().toISOString(),
+      azienda_id: aziendaId,
     }).select('id').single()
     if (error) { setBusy(false); setErr(error.message); return }
     const rows = righe.map(r => ({ ...r, ordine_id: data!.id }))
@@ -246,6 +250,7 @@ function EditSocieta({ soc, agenti, onClose, onSalvato }: any) {
 function NuovoContatto({ localeId, onClose, onSalvato }: { localeId: number; onClose: () => void; onSalvato: () => void }) {
   const [f, setF] = useState({ nome: '', cognome: '', ruolo: '', telefono: '', email: '', is_primario: false })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
+  const { aziendaId } = useTenant()
   const set = (k: string, v: any) => setF({ ...f, [k]: v })
   async function salva() {
     setBusy(true); setErr(null)
@@ -253,6 +258,7 @@ function NuovoContatto({ localeId, onClose, onSalvato }: { localeId: number; onC
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
       telefono: f.telefono.trim() || null, email: f.email.trim() || null,
       locale_id: localeId, is_primario: f.is_primario, stato: 'PROSPECT',
+      azienda_id: aziendaId,
     })
     setBusy(false); if (error) setErr(error.message); else onSalvato()
   }

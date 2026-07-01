@@ -10,13 +10,16 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, Promemoria, Contatto, Societa, Amministratore
 
 
-def _numeri_admin(db=None) -> set[str]:
-    """Numeri abilitati come amministratore (sole cifre), dalla tabella amministratori."""
+def _numeri_admin(db=None, azienda_id: int | None = None) -> set[str]:
+    """Numeri abilitati come amministratore (sole cifre) NEL TENANT, dalla tabella amministratori."""
     own = db is None
     if own:
         db = SessionLocal()
     try:
-        righe = db.query(Amministratore.telefono).all()
+        q = db.query(Amministratore.telefono)
+        if azienda_id:
+            q = q.filter(Amministratore.azienda_id == azienda_id)
+        righe = q.all()
     except Exception:
         righe = []
     finally:
@@ -25,9 +28,9 @@ def _numeri_admin(db=None) -> set[str]:
     return {re.sub(r"\D", "", (t[0] or "")) for t in righe if t[0]}
 
 
-def is_admin(telefono: str, db=None) -> bool:
+def is_admin(telefono: str, db=None, azienda_id: int | None = None) -> bool:
     d = re.sub(r"\D", "", telefono or "")
-    return bool(d) and d in _numeri_admin(db)
+    return bool(d) and d in _numeri_admin(db, azienda_id)
 
 
 def attivi(db: Session, contatto_id: int) -> list[Promemoria]:
@@ -70,9 +73,10 @@ def crea(db: Session, contatto_id: int, testo: str, giorni_validita: int = 0) ->
     return p
 
 
-def trova_target(db: Session, nome: str, societa: str = "", limite: int = 5) -> list[Contatto]:
-    """Cerca i contatti che corrispondono a nome (e opzionalmente società) per individuare il
-    destinatario di un promemoria lasciato via voce. Ritorna i candidati (0, 1 o più)."""
+def trova_target(db: Session, nome: str, societa: str = "", limite: int = 5,
+                 azienda_id: int | None = None) -> list[Contatto]:
+    """Cerca i contatti (NEL TENANT) che corrispondono a nome (e opzionalmente società) per
+    individuare il destinatario di un promemoria lasciato via voce. Ritorna i candidati (0, 1 o più)."""
     nome = (nome or "").strip()
     if not nome:
         return []
@@ -82,6 +86,8 @@ def trova_target(db: Session, nome: str, societa: str = "", limite: int = 5) -> 
         (Contatto.nome + " " + Contatto.cognome).ilike(like),
         Contatto.ragione_sociale.ilike(like),
     ))
+    if azienda_id:
+        q = q.filter(Contatto.azienda_id == azienda_id)
     soc = (societa or "").strip()
     if soc:
         q = q.outerjoin(Societa, Contatto.societa_id == Societa.id).filter(or_(

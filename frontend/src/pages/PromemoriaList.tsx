@@ -2,16 +2,20 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { dataBreve, nomeContatto } from '../lib/format'
+import { useTenant } from '../lib/tenant'
 
 export default function PromemoriaList() {
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [soloAttivi, setSoloAttivi] = useState(true)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
 
   async function carica() {
+    if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('promemoria')
       .select('id, testo, scade_il, created_at, contatti(id, nome, cognome)')
+      .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
     setLoading(false)

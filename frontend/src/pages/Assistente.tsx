@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useTenant } from '../lib/tenant'
 
 const AREA: React.CSSProperties = { resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }
 
 export default function Assistente() {
+  const { aziendaId } = useTenant()
   const [az, setAz] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -11,9 +13,10 @@ export default function Assistente() {
   const [ok, setOk] = useState(false)
 
   useEffect(() => {
-    supabase.from('azienda').select('*').order('id').limit(1).maybeSingle()
+    if (!aziendaId) { setLoading(false); return }
+    supabase.from('azienda').select('*').eq('id', aziendaId).maybeSingle()
       .then(({ data, error }) => { if (error) setErr(error.message); else setAz(data || {}); setLoading(false) })
-  }, [])
+  }, [aziendaId])
 
   const set = (k: string, v: string) => { setAz({ ...az, [k]: v }); setOk(false) }
 

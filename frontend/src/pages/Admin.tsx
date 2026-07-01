@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useTenant } from '../lib/tenant'
 
 const PRIORITA: [string, string][] = [['inoltra_alta', 'Alta'], ['inoltra_media', 'Media'], ['inoltra_bassa', 'Bassa']]
 
 export default function Admin() {
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [nome, setNome] = useState('')
   const [telefono, setTelefono] = useState('')
@@ -12,8 +14,10 @@ export default function Admin() {
   const [err, setErr] = useState<string | null>(null)
 
   async function carica() {
+    if (!aziendaId) return
     const { data, error } = await supabase.from('amministratori')
       .select('id, nome, telefono, email, inoltra_alta, inoltra_media, inoltra_bassa, created_at')
+      .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
   }
@@ -23,7 +27,7 @@ export default function Admin() {
     if (!telefono.trim()) { setErr('Inserisci un numero di telefono.'); return }
     setBusy(true); setErr(null)
     const { error } = await supabase.from('amministratori')
-      .insert({ nome: nome.trim() || null, telefono: telefono.trim(), email: email.trim() || null })
+      .insert({ nome: nome.trim() || null, telefono: telefono.trim(), email: email.trim() || null, azienda_id: aziendaId })
     setBusy(false)
     if (error) setErr(error.message); else { setNome(''); setTelefono(''); setEmail(''); carica() }
   }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import { useTenant } from '../lib/tenant'
 import { DOC_CATEGORIE, badgeDoc, dataBreve, fileSize, labelCategoria, lower, statoDoc } from '../lib/format'
 import Modal from '../components/Modal'
 
@@ -11,12 +12,14 @@ const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 // Note in testo libero per categoria: il retriever le antepone SEMPRE quando consulta i
 // documenti (es. "prezzi IVA inclusa", come leggere una colonna). Lista compatta, editor in modal.
 function NoteCategorie() {
+  const { aziendaId } = useTenant()
   const [note, setNote] = useState<Record<string, string>>({})
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<{ k: string; label: string } | null>(null)
 
   async function carica() {
-    const { data } = await supabase.from('testi_categoria').select('categoria, testo')
+    if (!aziendaId) return
+    const { data } = await supabase.from('testi_categoria').select('categoria, testo').eq('azienda_id', aziendaId)
     const m: Record<string, string> = {}
     for (const r of data || []) m[r.categoria] = r.testo || ''
     setNote(m)
@@ -62,14 +65,15 @@ function NoteCategorie() {
 function EditNota({ cat, value, onClose, onSaved }: {
   cat: { k: string; label: string }; value: string; onClose: () => void; onSaved: () => void
 }) {
+  const { aziendaId } = useTenant()
   const [testo, setTesto] = useState(value)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   async function salva() {
     setBusy(true); setErr(null)
     const { error } = await supabase.from('testi_categoria').upsert(
-      { categoria: cat.k, testo: testo.trim() || null, aggiornato_at: new Date().toISOString() },
-      { onConflict: 'categoria' })
+      { azienda_id: aziendaId, categoria: cat.k, testo: testo.trim() || null, aggiornato_at: new Date().toISOString() },
+      { onConflict: 'azienda_id,categoria' })
     setBusy(false)
     if (error) setErr(error.message); else onSaved()
   }
@@ -87,6 +91,7 @@ function EditNota({ cat, value, onClose, onSaved }: {
 
 export default function Documenti() {
   const { session } = useAuth()
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -96,8 +101,10 @@ export default function Documenti() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function carica() {
+    if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('documenti')
       .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore, inviabile')
+      .eq('azienda_id', aziendaId)
       .order('caricato_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
     setLoading(false)
@@ -138,6 +145,7 @@ export default function Documenti() {
       const fd = new FormData()
       fd.append('categoria', categoria)
       fd.append('storage_path', path)
+      if (aziendaId) fd.append('azienda_id', String(aziendaId))
       fd.append('file', file)
       const res = await fetch(`${API}/api/documenti`, {
         method: 'POST',

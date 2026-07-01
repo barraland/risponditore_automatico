@@ -36,7 +36,7 @@ def _leggi_file() -> str:
         return ""
 
 
-def leggi(db=None) -> str:
+def leggi(db=None, azienda_id: int | None = None) -> str:
     """Ritorna il testo delle istruzioni (stringa vuota se non impostate).
 
     Legge dalla colonna `azienda.istruzioni_admin`; se la colonna non è mai stata
@@ -46,7 +46,7 @@ def leggi(db=None) -> str:
     if own:
         db = SessionLocal()
     try:
-        az = db.query(Azienda).first()
+        az = (db.get(Azienda, azienda_id) if azienda_id else db.query(Azienda).first())
         if az is not None and az.istruzioni_admin is not None:
             return (az.istruzioni_admin or "").strip()
     except Exception as e:  # pragma: no cover - robustezza
@@ -57,14 +57,14 @@ def leggi(db=None) -> str:
     return _leggi_file()
 
 
-def salva(testo: str, db=None) -> None:
+def salva(testo: str, db=None, azienda_id: int | None = None) -> None:
     """Salva il testo nella colonna `azienda.istruzioni_admin`."""
     testo = (testo or "").strip()
     own = db is None
     if own:
         db = SessionLocal()
     try:
-        az = db.query(Azienda).first()
+        az = (db.get(Azienda, azienda_id) if azienda_id else db.query(Azienda).first())
         if az is not None:
             az.istruzioni_admin = testo
             db.commit()
@@ -82,13 +82,13 @@ def salva(testo: str, db=None) -> None:
         f.write(testo)
 
 
-def leggi_regole(db=None) -> str:
+def leggi_regole(db=None, azienda_id: int | None = None) -> str:
     """Ritorna le regole commerciali/promozioni (stringa vuota se non impostate)."""
     own = db is None
     if own:
         db = SessionLocal()
     try:
-        az = db.query(Azienda).first()
+        az = (db.get(Azienda, azienda_id) if azienda_id else db.query(Azienda).first())
         if az is not None and az.regole_commerciali:
             return az.regole_commerciali.strip()
     except Exception as e:  # pragma: no cover - robustezza
@@ -127,7 +127,7 @@ def _cornice_regole(testo: str) -> str:
     )
 
 
-def blocco_prompt(db=None, canale=None) -> str:
+def blocco_prompt(db=None, canale=None, azienda_id: int | None = None) -> str:
     """Blocco da appendere ai system prompt: prompt admin (per canale) + regole commerciali.
 
     `canale`: "whatsapp" usa il prompt WhatsApp (con fallback al prompt vocale se vuoto);
@@ -138,7 +138,7 @@ def blocco_prompt(db=None, canale=None) -> str:
     if own:
         db = SessionLocal()
     try:
-        az = db.query(Azienda).first()
+        az = (db.get(Azienda, azienda_id) if azienda_id else db.query(Azienda).first())
         istr = None
         if az is not None:
             if canale == "whatsapp" and (az.prompt_whatsapp or "").strip():

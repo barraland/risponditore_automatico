@@ -59,9 +59,18 @@ mcp = FastMCP("risponditore-horeca", stateless_http=True, streamable_http_path="
               transport_security=_security)
 
 
-def _contatto(db, telefono: str) -> Contatto:
-    """Identifica (o crea) il contatto dal numero, come fa il canale WhatsApp."""
-    return whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto")
+def _aid(tenant="") -> int | None:
+    """azienda_id (tenant) dalla dynamic variable {{tenant}}. None → i service usano il default."""
+    t = str(tenant or "").strip()
+    try:
+        return int(t) if t else None
+    except ValueError:
+        return None
+
+
+def _contatto(db, telefono: str, tenant="") -> Contatto:
+    """Identifica (o crea) il contatto dal numero NEL TENANT, come fa il canale WhatsApp."""
+    return whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto", azienda_id=_aid(tenant))
 
 
 class RigaOrdineInput(BaseModel):
@@ -141,7 +150,7 @@ def _leggi_categoria(categoria: str) -> dict:
 
 @mcp.tool()
 @_loggato
-def cerca(domanda: str) -> dict:
+def cerca(domanda: str, tenant: str = "") -> dict:
     """Cerca la risposta a una domanda nella base di conoscenza aziendale. Decide DA SÉ se la risposta
     sta in un DOCUMENTO (PDF: condizioni di vendita, FAQ, descrizioni) o in una TABELLA (CSV/Excel:
     prezzi, disponibilità, formati, anagrafiche) e risponde in modo sintetico. Usalo per qualsiasi
@@ -152,7 +161,7 @@ def cerca(domanda: str) -> dict:
     db = SessionLocal()
     try:
         from services import retriever
-        esito = retriever.cerca(db, domanda)
+        esito = retriever.cerca(db, domanda, azienda_id=_aid(tenant))
         # Per le tabelle ritorniamo le righe ESATTE del CSV (non una parafrasi): leggile come sono.
         return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
                 "fonti": esito.get("fonti", []), "righe": esito.get("righe", [])[:15]}
@@ -162,7 +171,7 @@ def cerca(domanda: str) -> dict:
 
 @mcp.tool()
 @_loggato
-def invia_documento(email: str, documento_id: int, testo: str = "") -> dict:
+def invia_documento(email: str, documento_id: int, testo: str = "", tenant: str = "") -> dict:
     """Invia al cliente, via EMAIL, UNO specifico documento come allegato. `email`=indirizzo del
     destinatario (se non lo conosci, chiedilo al cliente PRIMA, scandito e confermato); `documento_id`
     =l'id del documento da inviare (lo trovi nelle fonti di cerca_documenti); `testo`=corpo del
@@ -171,7 +180,7 @@ def invia_documento(email: str, documento_id: int, testo: str = "") -> dict:
     db = SessionLocal()
     try:
         return documenti_service.invia_documento_email(db, email, documento_id, testo,
-                                                        nome_azienda=profilo.nome_azienda(db))
+                                                        nome_azienda=profilo.nome_azienda(db, _aid(tenant)))
     finally:
         db.close()
 
@@ -215,12 +224,12 @@ def invia_documento(email: str, documento_id: int, testo: str = "") -> dict:
 
 
 def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: str,
-                      ruolo: str, email: str, sede: str, stato: str, titolo: str = "") -> dict:
+                      ruolo: str, email: str, sede: str, stato: str, titolo: str = "", tenant: str = "") -> dict:
     """Crea/aggiorna il contatto identificato da `telefono`, scrivendo solo i campi non vuoti.
     Logica condivisa da salva_contatto (prima registrazione) e aggiorna_contatto (info nuove)."""
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         campi = {"titolo": titolo, "nome": nome, "cognome": cognome, "ragione_sociale": ragione_sociale,
                  "ruolo": ruolo, "email": email, "sede": sede}
         cambiato = False
@@ -247,7 +256,7 @@ def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: s
 @mcp.tool()
 @_loggato
 def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "") -> dict:
+                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "", tenant: str = "") -> dict:
     """Registra in anagrafica il chiamante (identificato da `telefono`): usalo SUBITO alla prima
     registrazione di un prospect non ancora in rubrica, appena hai almeno il nome.
     Passa SOLO i campi che il cliente ha detto esplicitamente; quelli omessi restano invariati.
@@ -257,25 +266,25 @@ def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_soc
     sbagliarlo. Tutti i campi tranne `telefono` sono opzionali. Se emerge la ragione sociale,
     crea/aggancia automaticamente la società del cliente."""
     _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ragione_sociale=ragione_sociale)
-    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo)
+    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo, tenant)
 
 
 @mcp.tool()
 @_loggato
 def aggiorna_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                      ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "") -> dict:
+                      ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "", tenant: str = "") -> dict:
     """Aggiorna i dati ANAGRAFICI DELLA PERSONA (contatto, identificato da `telefono`) quando emergono
     informazioni nuove: email, ruolo, cognome, oppure `titolo` ("Signore"/"Signora") se diventa chiaro
     il genere. Per i dati del LOCALE/azienda (città, indirizzo, P.IVA) usa invece aggiorna_locale.
     Passa SOLO i campi nuovi appena appresi; gli altri restano invariati. NON inventare valori."""
     _log_tool("aggiorna_contatto", telefono=telefono, email=email, ruolo=ruolo, titolo=titolo)
-    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo)
+    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo, tenant)
 
 
 @mcp.tool()
 @_loggato
 def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
-                    ragione_sociale: str = "", piva: str = "", insegna: str = "") -> dict:
+                    ragione_sociale: str = "", piva: str = "", insegna: str = "", tenant: str = "") -> dict:
     """Aggiorna l'anagrafica del LOCALE/azienda del chiamante (il ristorante/bar/hotel a cui è
     associato il contatto identificato da `telefono`): città, indirizzo, ragione sociale, P.IVA,
     insegna. Usalo quando in conversazione emerge un dato del locale prima mancante (es. la città).
@@ -283,13 +292,13 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
     _log_tool("aggiorna_locale", telefono=telefono, citta=citta, indirizzo=indirizzo)
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         societa = crm.societa_di_contatto(db, c)
         if not societa:
             insegna_nuova = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
             if not insegna_nuova:
                 return {"ok": False, "errore": "Nessun locale associato e nessun nome per crearlo."}
-            societa = crm.trova_o_crea_societa(db, insegna=insegna_nuova)
+            societa = crm.trova_o_crea_societa(db, insegna=insegna_nuova, azienda_id=c.azienda_id)
             if not c.societa_id:
                 c.societa_id = societa.id
         campi = {"citta": citta, "indirizzo": indirizzo, "ragione_sociale": ragione_sociale,
@@ -310,7 +319,7 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
 @mcp.tool()
 @_loggato
 def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
-                    conferma: bool = False) -> dict:
+                    conferma: bool = False, tenant: str = "") -> dict:
     """Registra un ordine del chiamante. `conferma`=true lo salva come CONFERMATO, altrimenti
     come bozza (segui le indicazioni dell'amministratore su quando confermare). Se per la stessa
     trattativa esiste già una bozza, la aggiorna invece di duplicarla.
@@ -319,8 +328,8 @@ def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
     _log_tool("registra_ordine", telefono=telefono, n_righe=len(righe), conferma=conferma)
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
-        societa = crm.societa_di_contatto(db, c) or crm.trova_o_crea_societa(db, insegna=c.nome_completo)
+        c = _contatto(db, telefono, tenant)
+        societa = crm.societa_di_contatto(db, c) or crm.trova_o_crea_societa(db, insegna=c.nome_completo, azienda_id=c.azienda_id)
         if not c.societa_id:
             c.societa_id = societa.id
             c.is_primario = True
@@ -341,7 +350,7 @@ def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
 
 @mcp.tool()
 @_loggato
-def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
+def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0, tenant: str = "") -> dict:
     """Aggiorna le NOTE libere di un ordine GIÀ registrato del chiamante (es. orario di consegna
     preferito, richieste particolari, note sugli sconti applicati). Se `ordine_id` è 0/omesso,
     aggiorna l'ULTIMO ordine del cliente (quello appena creato). Le note fornite SOSTITUISCONO le
@@ -349,7 +358,7 @@ def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
     _log_tool("aggiorna_ordine", telefono=telefono, ordine_id=ordine_id)
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         ordine = None
         if ordine_id:
             o = db.get(Ordine, int(ordine_id))
@@ -369,7 +378,7 @@ def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0) -> dict:
 
 @mcp.tool()
 @_loggato
-def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10) -> dict:
+def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10, tenant: str = "") -> dict:
     """Restituisce gli ordini RECENTI del cliente (la sua società), con prodotti e quantità di
     ciascuno. Usalo per: (a) capire cosa ordina di solito e DISAMBIGUARE un prodotto generico
     (es. "la Peroni" → quale formato ha già ordinato; se ne ha ordinati più formati, chiedigli
@@ -380,7 +389,7 @@ def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10) -> dict:
     from datetime import datetime, timedelta
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         societa = crm.societa_di_contatto(db, c)
         q = db.query(Ordine)
         q = q.filter(Ordine.societa_id == societa.id) if societa else q.filter(Ordine.contatto_id == c.id)
@@ -402,13 +411,13 @@ def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10) -> dict:
 
 @mcp.tool()
 @_loggato
-def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
+def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0, tenant: str = "") -> dict:
     """Invia via email al chiamante il riepilogo di un ordine (ordine_id, oppure l'ultimo).
     Se il cliente non ha un'email salvata, lo segnala: chiedila e salvala con salva_contatto."""
     _log_tool("invia_riepilogo_ordine", telefono=telefono, ordine_id=ordine_id)
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         ordine = db.get(Ordine, ordine_id) if ordine_id else None
         if not ordine:
             ordine = (db.query(Ordine).filter(Ordine.contatto_id == c.id)
@@ -419,11 +428,11 @@ def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
         if not email:
             return {"email_mancante": True,
                     "messaggio": "Chiedi l'email al cliente, salvala con salva_contatto e riprova."}
-        oggetto = f"Riepilogo ordine #{ordine.id} - {profilo.nome_azienda(db)}"
+        oggetto = f"Riepilogo ordine #{ordine.id} - {profilo.nome_azienda(db, _aid(tenant))}"
         corpo = (f"Gentile {c.nome or c.nome_completo},\n\n"
                  f"come da accordi telefonici, le confermiamo il suo ordine:\n\n"
                  f"{crm.riepilogo_ordine(ordine)}\n\n"
-                 f"Cordiali saluti,\n{profilo.nome_azienda(db)}")
+                 f"Cordiali saluti,\n{profilo.nome_azienda(db, _aid(tenant))}")
         inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo)
         return ({"inviato": True, "email": email, "ordine_id": ordine.id} if inviata
                 else {"errore": "Invio email non riuscito (verifica configurazione Gmail)."})
@@ -433,7 +442,7 @@ def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0) -> dict:
 
 @mcp.tool()
 @_loggato
-def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato: str = "") -> dict:
+def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato: str = "", tenant: str = "") -> dict:
     """Invia un'email al chiamante. `testo` = corpo del messaggio, OBBLIGATORIO: scrivilo tu, chiaro
     e completo (è quello che leggerà il cliente). `oggetto` opzionale. `categoria_allegato` opzionale:
     se vuoi ALLEGARE dei documenti indica la loro categoria — usa SOLO le categorie elencate in
@@ -443,9 +452,9 @@ def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato:
     _log_tool("invia_mail", telefono=telefono, categoria_allegato=categoria_allegato)
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         return documenti_service.invia_mail_contatto(
-            db, c, testo, oggetto, categoria_allegato, profilo.nome_azienda(db))
+            db, c, testo, oggetto, categoria_allegato, profilo.nome_azienda(db, _aid(tenant)))
     finally:
         db.close()
 
@@ -453,14 +462,14 @@ def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato:
 @mcp.tool()
 @_loggato
 def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str = "",
-                trascrizione: str = "") -> dict:
+                trascrizione: str = "", tenant: str = "") -> dict:
     """Apre (o aggiorna) un ticket di follow-up per il chiamante, per il team commerciale.
     Passa titolo, una descrizione della richiesta, la priorità (alta/media/bassa) e, se la hai,
     la trascrizione/sintesi della conversazione."""
     _log_tool("apri_ticket", telefono=telefono, titolo=titolo, priorita=priorita)
     db = SessionLocal()
     try:
-        c = _contatto(db, telefono)
+        c = _contatto(db, telefono, tenant)
         esistente = whatsapp_agent._ticket_aperto(db, c.id)
         if esistente:
             esistente.titolo = (titolo or esistente.titolo).strip()[:300]
@@ -483,18 +492,18 @@ def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str
 @mcp.tool()
 @_loggato
 def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str = "",
-                      giorni_validita: int = 0) -> dict:
+                      giorni_validita: int = 0, tenant: str = "") -> dict:
     """[SOLO AMMINISTRATORE] Registra un promemoria per un CLIENTE: quando quel cliente chiamerà,
     l'assistente ne terrà conto (es. comunicargli un'offerta). `telefono` = il TUO numero
     (amministratore). `nome_cliente` = nome e/o cognome del destinatario; `societa` aiuta a
     distinguerlo. `testo` = il messaggio/avviso. `giorni_validita` = validità in giorni (0 = senza
     scadenza). Se più clienti corrispondono, ti elenco i candidati per farti scegliere."""
     _log_tool("lascia_promemoria", telefono=telefono, nome_cliente=nome_cliente, societa=societa)
-    if not promemoria.is_admin(telefono):
+    if not promemoria.is_admin(telefono, db, azienda_id=_aid(tenant)):
         return {"ok": False, "errore": "Funzione riservata all'amministratore."}
     db = SessionLocal()
     try:
-        cand = promemoria.trova_target(db, nome_cliente, societa)
+        cand = promemoria.trova_target(db, nome_cliente, societa, azienda_id=_aid(tenant))
         if not cand:
             return {"ok": False, "errore": f"Nessun cliente trovato per «{nome_cliente}»."}
         if len(cand) > 1:
@@ -515,7 +524,7 @@ def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str
 
 @mcp.tool()
 @_loggato
-def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "") -> dict:
+def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "", tenant: str = "") -> dict:
     """INOLTRA la chiamata a una persona della rubrica inoltri (es. responsabile spedizioni).
     `telefono` = numero del chiamante; `motivo` = cosa vuole il cliente; indica il destinatario per
     `nome_destinatario` e/o `ruolo`. Inoltra SOLO se la richiesta rientra nelle regole di inoltro che
@@ -527,7 +536,7 @@ def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ru
     _log_tool("inoltra_chiamata", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
     db = SessionLocal()
     try:
-        cand = inoltri.trova(db, nome_destinatario, ruolo)
+        cand = inoltri.trova(db, nome_destinatario, ruolo, azienda_id=_aid(tenant))
         if not cand:
             return {"ok": False, "errore": "Nessun destinatario di inoltro trovato per questa richiesta."}
         if len(cand) > 1:
@@ -574,7 +583,7 @@ def _qualifica_chiamante(c) -> str:
 @mcp.tool()
 @_loggato
 def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "",
-                   chi_chiama: str = "", frase_apertura: str = "") -> dict:
+                   chi_chiama: str = "", frase_apertura: str = "", tenant: str = "") -> dict:
     """[inoltro assistito] Avvia una chiamata in USCITA: un nostro assistente chiama la persona della
     rubrica inoltri (es. responsabile spedizioni) e le chiede se può ricevere ORA la chiamata.
     `telefono`=numero del chiamante; `motivo`=il problema/richiesta del cliente, descritto bene;
@@ -590,7 +599,7 @@ def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruol
     _log_tool("chiama_persona", telefono=telefono, nome_destinatario=nome_destinatario, ruolo=ruolo)
     db = SessionLocal()
     try:
-        cand = inoltri.trova(db, nome_destinatario, ruolo)
+        cand = inoltri.trova(db, nome_destinatario, ruolo, azienda_id=_aid(tenant))
         if not cand:
             return {"ok": False, "errore": "Nessun destinatario di inoltro trovato per questa richiesta."}
         if len(cand) > 1:
@@ -617,7 +626,7 @@ def chiama_persona(telefono: str, motivo: str, nome_destinatario: str = "", ruol
 
 @mcp.tool()
 @_loggato
-def attendi_esito(telefono: str) -> dict:
+def attendi_esito(telefono: str, tenant: str = "") -> dict:
     """[inoltro assistito] Dimmi com'è andata la chiamata al destinatario. `telefono`=numero del
     chiamante. Stati: `in_corso` (sto ancora provando: rassicura il cliente «ancora un istante» e
     richiamami tra poco), `accettato` (ha detto sì: sto unendo le chiamate, salutalo brevemente),
@@ -655,7 +664,7 @@ def rifiuta_inoltro(sessione: str = "", telefono: str = "", motivo: str = "") ->
 @mcp.tool()
 @_loggato
 def controlla_disponibilita(giorno: str = "", durata_minuti: int = 30, dalle: int = 9,
-                            alle: int = 18) -> dict:
+                            alle: int = 18, tenant: str = "") -> dict:
     """SLOT LIBERI (e occupati) sul Google Calendar dell'azienda. Di DEFAULT (giorno vuoto) ritorna i
     PROSSIMI 7 GIORNI (oggi incluso), un blocco per giorno con `slot_liberi` e `occupati`: usalo per
     avere il quadro della settimana. Se ti serve un SOLO giorno, passa `giorno`='YYYY-MM-DD'.
@@ -678,7 +687,7 @@ def controlla_disponibilita(giorno: str = "", durata_minuti: int = 30, dalle: in
 @mcp.tool()
 @_loggato
 def prenota_meeting(titolo: str, data_ora: str, durata_minuti: int = 30, invitati: str = "",
-                    descrizione: str = "", online: bool = True) -> dict:
+                    descrizione: str = "", online: bool = True, tenant: str = "") -> dict:
     """Prenota un meeting sul Google Calendar dell'azienda e INVIA l'invito ai destinatari.
     `titolo` = oggetto del meeting; `data_ora` = inizio in formato ISO locale (es.
     "2026-07-01T16:00:00"); `durata_minuti` = durata (default 30); `invitati` = email dei

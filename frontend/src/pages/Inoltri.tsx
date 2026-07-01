@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useTenant } from '../lib/tenant'
 
 const VUOTO = { nome: '', cognome: '', ruolo: '', email: '', telefono: '', regole: '' }
 
 export default function Inoltri() {
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [f, setF] = useState({ ...VUOTO })
   const [editId, setEditId] = useState<number | null>(null)
@@ -12,8 +14,9 @@ export default function Inoltri() {
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
 
   async function carica() {
+    if (!aziendaId) return
     const { data, error } = await supabase.from('inoltri')
-      .select('id, nome, cognome, ruolo, email, telefono, regole').order('created_at', { ascending: false })
+      .select('id, nome, cognome, ruolo, email, telefono, regole').eq('azienda_id', aziendaId).order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
   }
   useEffect(() => { carica() }, [])
@@ -34,7 +37,7 @@ export default function Inoltri() {
       email: f.email.trim() || null, telefono: f.telefono.trim(), regole: f.regole.trim() || null,
     }
     const { error } = editId == null
-      ? await supabase.from('inoltri').insert(payload)
+      ? await supabase.from('inoltri').insert({ ...payload, azienda_id: aziendaId })
       : await supabase.from('inoltri').update(payload).eq('id', editId)
     setBusy(false)
     if (error) setErr(error.message); else { setEditId(null); setF({ ...VUOTO }); carica() }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { badgeStato, lower, nomeContatto } from '../lib/format'
+import { useTenant } from '../lib/tenant'
 import Modal from '../components/Modal'
 
 export default function ContattiList() {
@@ -12,15 +13,18 @@ export default function ContattiList() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [nuovo, setNuovo] = useState(false)
+  const { aziendaId } = useTenant()
 
   async function carica() {
+    if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('contatti')
       .select('id, nome, cognome, ruolo, telefono, email, locali(id, insegna, stato_relazione)')
+      .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || []); setLoading(false)
   }
   useEffect(() => {
-    supabase.from('locali').select('id, insegna').order('insegna').then(({ data }) => setLocali(data || []))
+    supabase.from('locali').select('id, insegna').eq('azienda_id', aziendaId).order('insegna').then(({ data }) => setLocali(data || []))
     carica()
   }, [])
 
@@ -72,6 +76,7 @@ export default function ContattiList() {
 function NuovoContatto({ locali, onClose, onCreato }: { locali: any[]; onClose: () => void; onCreato: (id: number) => void }) {
   const [f, setF] = useState({ nome: '', cognome: '', ruolo: '', telefono: '', email: '', locale_id: '', stato: 'PROSPECT' })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
+  const { aziendaId } = useTenant()
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
   async function salva() {
     setBusy(true); setErr(null)
@@ -79,6 +84,7 @@ function NuovoContatto({ locali, onClose, onCreato }: { locali: any[]; onClose: 
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
       telefono: f.telefono.trim() || null, email: f.email.trim() || null,
       locale_id: f.locale_id ? Number(f.locale_id) : null, stato: f.stato,
+      azienda_id: aziendaId,
     }).select('id').single()
     setBusy(false); if (error) setErr(error.message); else onCreato(data!.id)
   }

@@ -2,22 +2,26 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { STATI_ORDINE, badgeOrdine, dataBreve, euro, lower } from '../lib/format'
+import { useTenant } from '../lib/tenant'
 
 const totale = (o: any) => (o.righe_ordine || []).reduce((s: number, r: any) => s + (r.prezzo_unitario ? (r.quantita || 0) * r.prezzo_unitario : 0), 0)
 
 export default function OrdiniList() {
   const nav = useNavigate()
+  const { aziendaId } = useTenant()
   const [righe, setRighe] = useState<any[]>([])
   const [stato, setStato] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!aziendaId) { setLoading(false); return }
     supabase.from('ordini')
       .select('id, data, canale, origine, stato, locali(id, insegna), righe_ordine(quantita, prezzo_unitario)')
+      .eq('azienda_id', aziendaId)
       .order('data', { ascending: false })
       .then(({ data, error }) => { if (error) setErr(error.message); else setRighe(data || []); setLoading(false) })
-  }, [])
+  }, [aziendaId])
 
   const filtrate = stato ? righe.filter(r => r.stato === stato) : righe
 

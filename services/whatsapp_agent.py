@@ -56,27 +56,39 @@ def _chiave_tel(tel: str) -> str:
     return d[-10:] if len(d) >= 10 else d
 
 
-def trova_contatto(db: Session, telefono: str) -> Contatto | None:
-    """Trova il contatto il cui numero corrisponde (match sulle ultime cifre)."""
+def _tenant_id(db: Session, azienda_id: int | None) -> int | None:
+    if azienda_id:
+        return azienda_id
+    from services import tenant as tenant_service
+    az = tenant_service.default(db)
+    return az.id if az else None
+
+
+def trova_contatto(db: Session, telefono: str, azienda_id: int | None = None) -> Contatto | None:
+    """Trova il contatto (NEL TENANT) il cui numero corrisponde (match sulle ultime cifre).
+    Lo scoping per tenant è essenziale: lo stesso numero può esistere per aziende diverse."""
     chiave = _chiave_tel(telefono)
     if not chiave:
         return None
-    for c in db.query(Contatto).filter(Contatto.telefono.isnot(None)).all():
+    aid = _tenant_id(db, azienda_id)
+    for c in db.query(Contatto).filter(Contatto.telefono.isnot(None),
+                                       Contatto.azienda_id == aid).all():
         if _chiave_tel(c.telefono) == chiave:
             return c
     return None
 
 
-def trova_o_crea_contatto(db: Session, telefono: str) -> Contatto:
-    """Ritorna il contatto del numero, creandone uno nuovo (prospect) se sconosciuto."""
-    c = trova_contatto(db, telefono)
+def trova_o_crea_contatto(db: Session, telefono: str, azienda_id: int | None = None) -> Contatto:
+    """Ritorna il contatto del numero nel tenant, creandone uno nuovo (prospect) se sconosciuto."""
+    aid = _tenant_id(db, azienda_id)
+    c = trova_contatto(db, telefono, azienda_id=aid)
     if c:
         return c
-    c = Contatto(telefono=telefono, stato=ContattoStato.PROSPECT)
+    c = Contatto(telefono=telefono, stato=ContattoStato.PROSPECT, azienda_id=aid)
     db.add(c)
     db.commit()
     db.refresh(c)
-    logger.info("Nuovo lead creato dal numero %s (id %s)", telefono, c.id)
+    logger.info("Nuovo lead creato dal numero %s (id %s, tenant %s)", telefono, c.id, aid)
     return c
 
 
