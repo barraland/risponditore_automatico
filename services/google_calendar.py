@@ -198,6 +198,55 @@ def crea_evento(db, titolo: str, inizio_iso: str, fine_iso: str, invitati: list[
             "link_meet": meet, "invitati": [a["email"] for a in body["attendees"]]}
 
 
+def _parse_iso(s: str):
+    from datetime import datetime
+    return datetime.fromisoformat((s or "").replace("Z", "+00:00"))
+
+
+def disponibilita(db, giorno: str, durata_min: int = 30, ora_inizio: int = 9, ora_fine: int = 18,
+                  tz: str = TZ_DEFAULT, max_slot: int = 6) -> dict:
+    """Slot liberi in un giorno (freeBusy), nell'orario lavorativo [ora_inizio, ora_fine].
+    `giorno` = 'YYYY-MM-DD'. Ritorna {ok, giorno, slot_liberi:[...], occupato:bool}."""
+    from datetime import datetime, timedelta, time, date
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(tz)
+    except Exception:
+        zone = None
+    access = access_token_valido(db)
+    if not access:
+        return {"ok": False, "errore": "Google Calendar non connesso."}
+    row = db.query(GoogleCalendar).first()
+    cal = (row.calendar_id if row else "primary") or "primary"
+    try:
+        d = date.fromisoformat(giorno.strip()[:10])
+    except ValueError:
+        return {"ok": False, "errore": "giorno non valido: usa YYYY-MM-DD."}
+
+    inizio = datetime.combine(d, time(ora_inizio, 0), tzinfo=zone)
+    fine = datetime.combine(d, time(ora_fine, 0), tzinfo=zone)
+    try:
+        r = httpx.post("https://www.googleapis.com/calendar/v3/freeBusy",
+                       headers={"Authorization": f"Bearer {access}"},
+                       json={"timeMin": inizio.isoformat(), "timeMax": fine.isoformat(),
+                             "timeZone": tz, "items": [{"id": cal}]}, timeout=15)
+    except Exception as e:
+        return {"ok": False, "errore": f"Errore Google: {e}"}
+    if r.status_code != 200:
+        return {"ok": False, "errore": f"Google {r.status_code}: {r.text[:160]}"}
+    busy = r.json().get("calendars", {}).get(cal, {}).get("busy", [])
+    occupati = [(_parse_iso(b["start"]), _parse_iso(b["end"])) for b in busy]
+
+    durata = timedelta(minutes=int(durata_min or 30))
+    liberi, s = [], inizio
+    while s + durata <= fine and len(liberi) < max_slot:
+        e = s + durata
+        if not any(s < be and e > bs for bs, be in occupati):
+            liberi.append(f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}")
+        s += durata
+    return {"ok": True, "giorno": d.isoformat(), "slot_liberi": liberi, "occupato": not liberi}
+
+
 def access_token_valido(db) -> str | None:
     """Access token valido, rinnovato col refresh token se scaduto. None se non connesso. (Step 2)."""
     row = db.query(GoogleCalendar).first()
