@@ -170,19 +170,20 @@ def genera_riassunto(doc: Documento) -> str:
 
 # ---------- ricerca ----------
 
-def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None) -> list[dict]:
-    """Top-K chunk per similarità con la domanda. Su Postgres la distanza la calcola pgvector;
-    altrove (dev/SQLite, o se pgvector non è disponibile) si ripiega sul coseno in Python."""
+def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None,
+          azienda_id: int | None = None) -> list[dict]:
+    """Top-K chunk per similarità con la domanda, RISTRETTI ai documenti del tenant. Su Postgres la
+    distanza la calcola pgvector; altrove si ripiega sul coseno in Python."""
     domanda = (domanda or "").strip()
     if not domanda:
         return []
     qemb = embed_uno(domanda)
     if _is_postgres(db):
         try:
-            return _cerca_pg(db, qemb, k, categoria)
+            return _cerca_pg(db, qemb, k, categoria, azienda_id)
         except Exception as e:
             logger.warning("Ricerca pgvector fallita, uso fallback Python: %s", e)
-    return _cerca_python(db, qemb, k, categoria)
+    return _cerca_python(db, qemb, k, categoria, azienda_id)
 
 
 def _riga(documento_id, documento, categoria, page_start, page_end, testo, score, inviabile=True) -> dict:
@@ -194,8 +195,11 @@ def _riga(documento_id, documento, categoria, page_start, page_end, testo, score
     }
 
 
-def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None) -> list[dict]:
+def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None,
+             azienda_id: int | None = None) -> list[dict]:
     filtro = " and c.categoria = :cat" if categoria else ""
+    if azienda_id:
+        filtro += " and d.azienda_id = :aid"
     sql = text(
         "select c.documento_id, c.categoria, c.page_start, c.page_end, c.testo, d.nome_file, d.inviabile, "
         "1 - (c.embedding_vec <=> cast(:q as vector)) as score "
@@ -206,15 +210,22 @@ def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None) -> 
     params = {"q": _vec_literal(qemb), "k": k}
     if categoria:
         params["cat"] = categoria
+    if azienda_id:
+        params["aid"] = azienda_id
     rows = db.execute(sql, params).mappings().all()
     return [_riga(r["documento_id"], r["nome_file"], r["categoria"], r["page_start"], r["page_end"],
                   r["testo"], r["score"], r["inviabile"]) for r in rows]
 
 
-def _cerca_python(db: Session, qemb: list[float], k: int, categoria: str | None) -> list[dict]:
+def _cerca_python(db: Session, qemb: list[float], k: int, categoria: str | None,
+                  azienda_id: int | None = None) -> list[dict]:
     q = db.query(DocumentoChunk).filter(DocumentoChunk.embedding.isnot(None))
     if categoria:
         q = q.filter(DocumentoChunk.categoria == categoria)
+    if azienda_id:
+        from database import Documento
+        q = q.filter(DocumentoChunk.documento_id.in_(
+            db.query(Documento.id).filter(Documento.azienda_id == azienda_id)))
     scored = []
     for c in q.all():
         try:

@@ -43,7 +43,10 @@ def _inoltra_ticket_admin(ticket_id: int) -> None:
         campo = _CAMPO_PRIORITA.get(t.priorita.value)
         if not campo:
             return
-        admins = db.query(Amministratore).filter(getattr(Amministratore, campo).is_(True)).all()
+        q = db.query(Amministratore).filter(getattr(Amministratore, campo).is_(True))
+        if t.azienda_id:
+            q = q.filter(Amministratore.azienda_id == t.azienda_id)
+        admins = q.all()
         dest = [(a.email or "").strip() for a in admins if (a.email or "").strip()]
         if not dest:
             return
@@ -104,10 +107,15 @@ def formatta_storia(turni) -> str:
 
 
 def apri_ticket(db: Session, contatto_id, titolo: str, priorita=None,
-                descrizione: str = "", storia: str = "", canale: str = "") -> Ticket | None:
+                descrizione: str = "", storia: str = "", canale: str = "",
+                azienda_id: int | None = None) -> Ticket | None:
     """Crea un ticket aperto. Non solleva."""
     try:
+        if not azienda_id and contatto_id:
+            c = db.get(Contatto, contatto_id)
+            azienda_id = c.azienda_id if c else None
         t = Ticket(
+            azienda_id=azienda_id,
             contatto_id=contatto_id,
             canale=canale or None,
             titolo=(titolo or "Segnalazione").strip()[:300],

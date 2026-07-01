@@ -19,12 +19,13 @@ from services import email as email_service
 CATEGORIE_DOC = ["listino", "schede_prodotto", "contratti", "faq", "altro"]
 
 
-def catalogo_prompt(db) -> str:
+def catalogo_prompt(db, azienda_id: int | None = None) -> str:
     """Blocco da iniettare nel prompt: elenco dei documenti DISPONIBILI per categoria, con un
     breve summary. Serve all'assistente per sapere cosa può allegare/citare e cosa no."""
-    docs = (db.query(Documento)
-            .filter(Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW]))
-            .order_by(Documento.categoria, Documento.caricato_at.desc()).all())
+    q = db.query(Documento).filter(Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW]))
+    if azienda_id:
+        q = q.filter(Documento.azienda_id == azienda_id)
+    docs = q.order_by(Documento.categoria, Documento.caricato_at.desc()).all()
     if not docs:
         return ""
     per_cat: dict[str, list] = {}
@@ -61,9 +62,12 @@ def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_a
     allegati, nomi, da_pulire, allegato_mancante = [], [], [], False
     cat = (categoria_allegato or "").strip()
     if cat:
-        docs = (db.query(Documento)
-                .filter(Documento.categoria == cat,
-                        Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW])).all())
+        _q = db.query(Documento).filter(
+            Documento.categoria == cat,
+            Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW]))
+        if getattr(contatto, "azienda_id", None):
+            _q = _q.filter(Documento.azienda_id == contatto.azienda_id)
+        docs = _q.all()
         for d in docs:
             p, tmp = _percorso_allegato(d)   # disco o Supabase Storage (a prova di restart)
             if p:

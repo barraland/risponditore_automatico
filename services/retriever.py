@@ -223,7 +223,7 @@ def _fonte_label(doc: Documento, sez: Sezione) -> str:
 
 
 def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None, k: int = 6,
-                        trace=None) -> dict:
+                        trace=None, azienda_id: int | None = None) -> dict:
     """Retriever SEMANTICO: embedda la domanda, prende i top-K chunk per similarità coseno e fa
     rispondere l'LLM solo su quelli (con citazioni). Ritorna:
       {risposta, chunk: [{score, documento, categoria, pagine, estratto}], fonti: [...], traccia}.
@@ -243,7 +243,7 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
         return _out(risposta="Scrivi una domanda.", errore="empty")
 
     try:
-        risultati = vettore.cerca(db, domanda, k=k, categoria=categoria)
+        risultati = vettore.cerca(db, domanda, k=k, categoria=categoria, azienda_id=azienda_id)
     except Exception as e:
         logger.error("Ricerca vettoriale fallita: %s", e)
         return _out(risposta="Errore nella ricerca.", errore=str(e))
@@ -390,9 +390,12 @@ ROUTER_SCHEMA = {
 }
 
 
-def _indice_documenti(db: Session) -> str:
-    """Indice compatto dei documenti (PDF) per il router: nome, categoria e riassunto/titoli."""
-    docs = db.query(Documento).filter(Documento.nome_file.ilike("%.pdf")).all()
+def _indice_documenti(db: Session, azienda_id: int | None = None) -> str:
+    """Indice compatto dei documenti (PDF) del tenant per il router: nome, categoria e riassunto."""
+    q = db.query(Documento).filter(Documento.nome_file.ilike("%.pdf"))
+    if azienda_id:
+        q = q.filter(Documento.azienda_id == azienda_id)
+    docs = q.all()
     righe = []
     for d in docs:
         if not d.sezioni:
@@ -402,10 +405,11 @@ def _indice_documenti(db: Session) -> str:
     return "\n".join(righe)
 
 
-def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None) -> dict:
-    """Retriever AGNOSTICO: un router-planner decide se la risposta sta in una TABELLA (CSV/Excel) o
-    nei DOCUMENTI (PDF) e instrada di conseguenza. Una sola chiamata di routing + una di risposta.
-    Ritorna {risposta, fonte, fonti, chunk, righe, query, errore, traccia}."""
+def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
+          azienda_id: int | None = None) -> dict:
+    """Retriever AGNOSTICO (ristretto ai documenti del tenant): un router-planner decide se la
+    risposta sta in una TABELLA (CSV/Excel) o nei DOCUMENTI (PDF) e instrada. Una sola chiamata di
+    routing + una di risposta. Ritorna {risposta, fonte, fonti, chunk, righe, query, errore, traccia}."""
     from services import tabellare
     if trace is None:
         trace = []
@@ -418,8 +422,8 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None) -
     domanda = (domanda or "").strip()
     if not domanda:
         return _out(risposta="Scrivi una domanda.", errore="empty")
-    schema = tabellare.schema_prompt(db)
-    indice = _indice_documenti(db)
+    schema = tabellare.schema_prompt(db, azienda_id)
+    indice = _indice_documenti(db, azienda_id)
     if not schema and not indice:
         return _out(risposta="Non ci sono ancora documenti o dati consultabili.", errore="no_sources")
     try:
@@ -457,7 +461,7 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None) -
         return _out(risposta=tabellare.formatta_righe(righe), fonte="tabella", righe=righe[:30],
                     fonti=fonti, query=piano, errore=None)
     if fonte == "documenti":
-        ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace)
+        ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace, azienda_id=azienda_id)
         return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
                     chunk=ris.get("chunk", []), query=piano, errore=ris.get("errore"))
     return _out(risposta="Non disponibile nei documenti né nei dati a disposizione.",

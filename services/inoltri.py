@@ -6,15 +6,24 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import Inoltro
+from services import tenant as tenant_service
 
 
-def tutti(db: Session) -> list[Inoltro]:
-    return db.query(Inoltro).order_by(Inoltro.created_at.desc()).all()
+def _aid(db: Session, azienda_id: int | None) -> int | None:
+    if azienda_id:
+        return azienda_id
+    az = tenant_service.default(db)
+    return az.id if az else None
 
 
-def blocco_prompt(db: Session) -> str:
+def tutti(db: Session, azienda_id: int | None = None) -> list[Inoltro]:
+    return (db.query(Inoltro).filter(Inoltro.azienda_id == _aid(db, azienda_id))
+            .order_by(Inoltro.created_at.desc()).all())
+
+
+def blocco_prompt(db: Session, azienda_id: int | None = None) -> str:
     """Blocco da iniettare nel prompt: chi sono i destinatari di inoltro e QUANDO inoltrare."""
-    lst = tutti(db)
+    lst = tutti(db, azienda_id)
     if not lst:
         return ""
     righe = []
@@ -30,9 +39,9 @@ def blocco_prompt(db: Session) -> str:
     )
 
 
-def trova(db: Session, nome: str = "", ruolo: str = "") -> list[Inoltro]:
-    """Cerca il destinatario di inoltro per nome o ruolo (per il tool inoltra_chiamata)."""
-    q = db.query(Inoltro)
+def trova(db: Session, nome: str = "", ruolo: str = "", azienda_id: int | None = None) -> list[Inoltro]:
+    """Cerca il destinatario di inoltro per nome o ruolo (per il tool inoltra_chiamata), nel tenant."""
+    q = db.query(Inoltro).filter(Inoltro.azienda_id == _aid(db, azienda_id))
     nome = (nome or "").strip()
     ruolo = (ruolo or "").strip()
     if nome:
