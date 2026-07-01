@@ -254,6 +254,65 @@ def disponibilita(db, giorno: str, durata_min: int = 30, ora_inizio: int = 9, or
     return {"ok": True, "giorno": d.isoformat(), "slot_liberi": liberi, "occupato": not liberi}
 
 
+def disponibilita_settimana(db, giorni: int = 7, durata_min: int = 30, ora_inizio: int = 9,
+                            ora_fine: int = 18, tz: str = TZ_DEFAULT) -> dict:
+    """Liberi + occupati per i prossimi `giorni` giorni (oggi incluso), orario [ora_inizio, ora_fine].
+    Una sola chiamata a Google. Ritorna {ok, giorni:[{giorno, slot_liberi, occupati}]}."""
+    from datetime import datetime, timedelta, time
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(tz)
+    except Exception:
+        zone = None
+    access = access_token_valido(db)
+    if not access:
+        return {"ok": False, "errore": "Google Calendar non connesso."}
+    row = db.query(GoogleCalendar).first()
+    cal = (row.calendar_id if row else "primary") or "primary"
+
+    oggi = datetime.now(zone).date()
+    finestra_ini = datetime.combine(oggi, time(0, 0), tzinfo=zone)
+    finestra_fin = datetime.combine(oggi + timedelta(days=giorni), time(0, 0), tzinfo=zone)
+    try:
+        r = httpx.get(
+            f"https://www.googleapis.com/calendar/v3/calendars/{urllib.parse.quote(cal)}/events",
+            headers={"Authorization": f"Bearer {access}"},
+            params={"timeMin": finestra_ini.isoformat(), "timeMax": finestra_fin.isoformat(),
+                    "singleEvents": "true", "orderBy": "startTime", "maxResults": 250}, timeout=20)
+    except Exception as e:
+        return {"ok": False, "errore": f"Errore Google: {e}"}
+    if r.status_code != 200:
+        return {"ok": False, "errore": f"Google {r.status_code}: {r.text[:160]}"}
+
+    timed, allday_days = [], set()
+    for e in r.json().get("items", []):
+        st, en = e.get("start", {}), e.get("end", {})
+        if "dateTime" in st and "dateTime" in en:
+            timed.append((_parse_iso(st["dateTime"]), _parse_iso(en["dateTime"])))
+        elif "date" in st:  # evento tutto il giorno
+            allday_days.add(st["date"])
+
+    durata = timedelta(minutes=int(durata_min or 30))
+    out = []
+    for i in range(giorni):
+        d = oggi + timedelta(days=i)
+        inizio = datetime.combine(d, time(ora_inizio, 0), tzinfo=zone)
+        fine = datetime.combine(d, time(ora_fine, 0), tzinfo=zone)
+        if d.isoformat() in allday_days:
+            out.append({"giorno": d.isoformat(), "slot_liberi": [], "occupati": ["tutto il giorno"]})
+            continue
+        occ = [(max(bs, inizio), min(be, fine)) for bs, be in timed if bs < fine and be > inizio]
+        occupati = [f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in sorted(occ)]
+        liberi, s = [], inizio
+        while s + durata <= fine:
+            e = s + durata
+            if not any(s < be and e > bs for bs, be in occ):
+                liberi.append(f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}")
+            s += durata
+        out.append({"giorno": d.isoformat(), "slot_liberi": liberi, "occupati": occupati})
+    return {"ok": True, "giorni": out}
+
+
 def access_token_valido(db) -> str | None:
     """Access token valido, rinnovato col refresh token se scaduto. None se non connesso. (Step 2)."""
     row = db.query(GoogleCalendar).first()

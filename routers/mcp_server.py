@@ -654,18 +654,23 @@ def rifiuta_inoltro(sessione: str = "", telefono: str = "", motivo: str = "") ->
 
 @mcp.tool()
 @_loggato
-def controlla_disponibilita(giorno: str, durata_minuti: int = 30, dalle: int = 9, alle: int = 18) -> dict:
-    """Restituisce gli SLOT LIBERI sul Google Calendar dell'azienda in un giorno. `giorno` =
-    'YYYY-MM-DD' (costruiscilo dalla data odierna che hai nel contesto); `durata_minuti` = durata del
-    meeting (default 30); `dalle`/`alle` = finestra oraria da controllare (default 9-18): se il
-    cliente preferisce il pomeriggio usa dalle=14, la mattina alle=13, ecc. Proponi al cliente SOLO
-    gli slot restituiti da qui e poi prenota con prenota_meeting."""
-    _log_tool("controlla_disponibilita", titolo=giorno)
+def controlla_disponibilita(giorno: str = "", durata_minuti: int = 30, dalle: int = 9,
+                            alle: int = 18) -> dict:
+    """SLOT LIBERI (e occupati) sul Google Calendar dell'azienda. Di DEFAULT (giorno vuoto) ritorna i
+    PROSSIMI 7 GIORNI (oggi incluso), un blocco per giorno con `slot_liberi` e `occupati`: usalo per
+    avere il quadro della settimana. Se ti serve un SOLO giorno, passa `giorno`='YYYY-MM-DD'.
+    `durata_minuti` = durata del meeting (default 30); `dalle`/`alle` = finestra oraria (default 9-18):
+    pomeriggio → dalle=14, mattina → alle=13. Proponi al cliente SOLO gli orari presenti in
+    `slot_liberi`, poi prenota con prenota_meeting."""
+    _log_tool("controlla_disponibilita", titolo=giorno or "settimana")
     from services import google_calendar as gc
     db = SessionLocal()
     try:
-        return gc.disponibilita(db, giorno, int(durata_minuti or 30),
-                                ora_inizio=int(dalle or 9), ora_fine=int(alle or 18))
+        if (giorno or "").strip():
+            return gc.disponibilita(db, giorno, int(durata_minuti or 30),
+                                    ora_inizio=int(dalle or 9), ora_fine=int(alle or 18))
+        return gc.disponibilita_settimana(db, giorni=7, durata_min=int(durata_minuti or 30),
+                                          ora_inizio=int(dalle or 9), ora_fine=int(alle or 18))
     finally:
         db.close()
 
