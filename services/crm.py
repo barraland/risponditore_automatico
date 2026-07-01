@@ -14,8 +14,17 @@ from database import (
     Societa, Agente, Ordine, RigaOrdine, Contatto,
     StatoRelazione, TipoAttivita, CanaleOrdine, StatoOrdine, OrigineOrdine,
 )
+from services import tenant as tenant_service
 
 logger = logging.getLogger(__name__)
+
+
+def _aid(db: Session, azienda_id: int | None) -> int | None:
+    """Tenant effettivo: quello passato o, in transizione, il tenant di default (unica azienda)."""
+    if azienda_id:
+        return azienda_id
+    az = tenant_service.default(db)
+    return az.id if az else None
 
 
 # ---------- Società ----------
@@ -25,12 +34,13 @@ def _norm(s: str | None) -> str:
 
 
 def trova_societa(db: Session, insegna: str | None = None,
-                  ragione_sociale: str | None = None) -> Societa | None:
-    """Cerca una società per insegna o ragione sociale (case-insensitive, match esatto)."""
+                  ragione_sociale: str | None = None, azienda_id: int | None = None) -> Societa | None:
+    """Cerca una società per insegna o ragione sociale (case-insensitive, match esatto), nel tenant."""
     chiavi = {_norm(insegna), _norm(ragione_sociale)} - {""}
     if not chiavi:
         return None
-    for soc in db.query(Societa).all():
+    aid = _aid(db, azienda_id)
+    for soc in db.query(Societa).filter(Societa.azienda_id == aid).all():
         if _norm(soc.insegna) in chiavi or _norm(soc.ragione_sociale) in chiavi:
             return soc
     return None
@@ -39,13 +49,16 @@ def trova_societa(db: Session, insegna: str | None = None,
 def trova_o_crea_societa(db: Session, insegna: str | None = None,
                          ragione_sociale: str | None = None,
                          citta: str | None = None,
-                         tipo: TipoAttivita = TipoAttivita.RISTORANTE) -> Societa:
-    """Ritorna la società corrispondente o ne crea una nuova (prospect)."""
-    soc = trova_societa(db, insegna, ragione_sociale)
+                         tipo: TipoAttivita = TipoAttivita.RISTORANTE,
+                         azienda_id: int | None = None) -> Societa:
+    """Ritorna la società corrispondente (nel tenant) o ne crea una nuova (prospect)."""
+    aid = _aid(db, azienda_id)
+    soc = trova_societa(db, insegna, ragione_sociale, azienda_id=aid)
     if soc:
         return soc
     nome = (insegna or ragione_sociale or "Nuova società").strip()
     soc = Societa(
+        azienda_id=aid,
         insegna=nome, ragione_sociale=(ragione_sociale or "").strip() or None,
         citta=(citta or "").strip() or None, tipo=tipo,
         stato_relazione=StatoRelazione.PROSPECT,
@@ -53,7 +66,7 @@ def trova_o_crea_societa(db: Session, insegna: str | None = None,
     db.add(soc)
     db.commit()
     db.refresh(soc)
-    logger.info("Nuova società creata: %s (id %s)", soc.nome, soc.id)
+    logger.info("Nuova società creata: %s (id %s, tenant %s)", soc.nome, soc.id, aid)
     return soc
 
 
@@ -66,7 +79,7 @@ def societa_di_contatto(db: Session, contatto: Contatto) -> Societa | None:
     if not nome:
         return None
     soc = trova_o_crea_societa(db, insegna=nome, ragione_sociale=contatto.ragione_sociale,
-                               citta=contatto.sede)
+                               citta=contatto.sede, azienda_id=contatto.azienda_id)
     contatto.societa_id = soc.id
     if not soc.contatti:
         contatto.is_primario = True
@@ -92,11 +105,15 @@ def crea_ordine(db: Session, societa_id: int, righe: list[dict],
                 canale: CanaleOrdine = CanaleOrdine.MANUALE,
                 stato: StatoOrdine = StatoOrdine.BOZZA,
                 note: str | None = None,
-                descrizione_agente: str | None = None) -> Ordine | None:
+                descrizione_agente: str | None = None,
+                azienda_id: int | None = None) -> Ordine | None:
     """Crea un ordine con le sue righe. `righe` = lista di dict
     {descrizione, quantita, unita, prezzo_unitario}. Non solleva."""
     try:
+        soc = db.get(Societa, societa_id)
+        aid = azienda_id or (soc.azienda_id if soc else None) or _aid(db, None)
         ordine = Ordine(
+            azienda_id=aid,
             societa_id=societa_id, contatto_id=contatto_id, agente_id=agente_id,
             origine=origine, canale=canale, stato=stato,
             note=(note or "").strip() or None,

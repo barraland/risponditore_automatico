@@ -29,12 +29,15 @@ INFO_QUALIFICAZIONE_DEFAULT = (
 )
 
 
-def get_azienda(db: Session) -> Azienda | None:
+def get_azienda(db: Session, azienda_id: int | None = None) -> Azienda | None:
+    """Il tenant richiesto (per id) o, in transizione, l'unica/prima azienda."""
+    if azienda_id:
+        return db.get(Azienda, azienda_id)
     return db.query(Azienda).first()
 
 
-def nome_azienda(db: Session) -> str:
-    az = get_azienda(db)
+def nome_azienda(db: Session, azienda_id: int | None = None) -> str:
+    az = get_azienda(db, azienda_id)
     return (az.nome if az else None) or "la nostra azienda"
 
 
@@ -45,13 +48,13 @@ def _sezione(titolo: str, corpo: str) -> str:
     return f"\n\n=== {titolo} ===\n{corpo}"
 
 
-def blocco_prompt(db: Session) -> str:
+def blocco_prompt(db: Session, azienda_id: int | None = None) -> str:
     """Blocco di conoscenza/condotta da inserire nel system prompt del risponditore.
 
     Contiene cosa offre l'azienda, come qualificare il lead e come assegnare la priorità.
     Stringa vuota se l'azienda non ha ancora configurato nulla.
     """
-    az = get_azienda(db)
+    az = get_azienda(db, azienda_id)
     if not az:
         return ""
 
