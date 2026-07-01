@@ -120,11 +120,16 @@ class Azienda(Base):
     # Numeri abilitati come amministratore (possono lasciare promemoria via voce). Editabile da dashboard.
     admin_telefoni = Column(Text, nullable=True)         # separati da virgola/spazio/a-capo
 
+    # --- Multi-tenant: come si risolve QUESTO tenant dai canali ---
+    numeri_voce = Column(Text, nullable=True)            # numeri Twilio in ingresso (E.164, csv) → tenant voce
+    whatsapp_phone_id = Column(String(60), nullable=True, index=True)  # phone_number_id Meta → tenant WhatsApp
+
 
 class Contatto(Base):
     """Cliente o potenziale cliente (prospect). Entità centrale: la home ne mostra la lista.
     L'anagrafica viene compilata a mano o dal risponditore durante una chiamata/chat."""
     __tablename__ = "contatti"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     titolo = Column(String(20))                # appellativo: "Signore" / "Signora" (opzionale)
@@ -205,6 +210,7 @@ class Ticket(Base):
     """Segnalazione / scheda di follow-up aperta dall'assistente (voce/WhatsApp) o a mano.
     Per ogni lead gestito si apre un ticket con titolo riassuntivo, priorità e trascrizione."""
     __tablename__ = "ticket"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=True)
@@ -244,6 +250,7 @@ class Agente(Base):
     """Agente di commercio: gestisce un portafoglio di Locali e può inserire ordini
     per loro conto. L'ordine può essere attribuito a un agente per la provvigione."""
     __tablename__ = "agenti"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(100))
@@ -271,6 +278,7 @@ class Societa(Base):
 
     Tabella fisica "locali" (invariata) per non migrare i DB esistenti."""
     __tablename__ = "locali"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     insegna = Column(String(200), nullable=False)       # nome (es. "Trattoria da Gino")
@@ -307,6 +315,7 @@ class Ordine(Base):
     sono il 'chi/come'. Così ordini della stessa società da agente o da cliente diretto
     convergono sulla stessa scheda."""
     __tablename__ = "ordini"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     societa_id = Column("locale_id", Integer, ForeignKey("locali.id"), nullable=False, index=True)
@@ -484,6 +493,7 @@ class Promemoria(Base):
     chiama (o scrive), il testo viene iniettato nel contesto dell'assistente, che ne tiene conto
     (es. comunicargli un'offerta). Può avere una scadenza. Si gestisce da dashboard o via voce."""
     __tablename__ = "promemoria"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False, index=True)
@@ -498,6 +508,7 @@ class Amministratore(Base):
     """Numero abilitato come amministratore: chi chiama da qui può lasciare promemoria per i
     clienti via voce. Censiti dalla dashboard (come i contatti)."""
     __tablename__ = "amministratori"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(150))
@@ -530,6 +541,7 @@ class Inoltro(Base):
     `regole` descrive in linguaggio naturale quando inoltrare a questa persona. La rubrica e le
     regole vengono iniettate nel prompt; il trasferimento vero lo fa la telefonia (ElevenLabs)."""
     __tablename__ = "inoltri"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(100))
