@@ -466,7 +466,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         cons = out.get("consulta_documenti") or {}
         domanda_doc = (cons.get("domanda") or "").strip()
         if cons.get("serve") and domanda_doc:
-            esito = retriever.rispondi(db, domanda_doc)
+            esito = retriever.cerca(db, domanda_doc)   # agnostico: documenti PDF + tabelle CSV
             risposta_doc = esito.get("risposta", "")
             traccia.append({"fase": "Consultazione documenti (retriever)", "modello": retriever.MODEL,
                             "input": domanda_doc, "output": risposta_doc[:6000]})
