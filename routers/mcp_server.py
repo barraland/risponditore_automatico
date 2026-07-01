@@ -654,16 +654,18 @@ def rifiuta_inoltro(sessione: str = "", telefono: str = "", motivo: str = "") ->
 
 @mcp.tool()
 @_loggato
-def controlla_disponibilita(giorno: str, durata_minuti: int = 30) -> dict:
-    """Restituisce gli SLOT LIBERI sul Google Calendar dell'azienda in un giorno (orario lavorativo
-    9-18). `giorno` = 'YYYY-MM-DD' (costruiscilo dalla data odierna che hai nel contesto);
-    `durata_minuti` = durata del meeting (default 30). Proponi al cliente uno di questi slot e poi
-    prenota con prenota_meeting."""
+def controlla_disponibilita(giorno: str, durata_minuti: int = 30, dalle: int = 9, alle: int = 18) -> dict:
+    """Restituisce gli SLOT LIBERI sul Google Calendar dell'azienda in un giorno. `giorno` =
+    'YYYY-MM-DD' (costruiscilo dalla data odierna che hai nel contesto); `durata_minuti` = durata del
+    meeting (default 30); `dalle`/`alle` = finestra oraria da controllare (default 9-18): se il
+    cliente preferisce il pomeriggio usa dalle=14, la mattina alle=13, ecc. Proponi al cliente SOLO
+    gli slot restituiti da qui e poi prenota con prenota_meeting."""
     _log_tool("controlla_disponibilita", titolo=giorno)
     from services import google_calendar as gc
     db = SessionLocal()
     try:
-        return gc.disponibilita(db, giorno, int(durata_minuti or 30))
+        return gc.disponibilita(db, giorno, int(durata_minuti or 30),
+                                ora_inizio=int(dalle or 9), ora_fine=int(alle or 18))
     finally:
         db.close()
 
