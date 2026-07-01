@@ -47,6 +47,9 @@ def _saluta_per_nome(apertura: str, nome_completo: str) -> str:
     nome = (nome_completo or "").strip().split()[0] if (nome_completo or "").strip() else ""
     if not nome:
         return apertura
+    # Se il nome è già presente all'inizio (l'agente inbound l'ha già messo), NON duplicarlo.
+    if nome.lower() in apertura[:40].lower():
+        return apertura
     m = re.match(rf"^\s*{_SALUTI}\b[\s,!.]*", apertura, re.I)
     if m:
         resto = apertura[m.end():].lstrip()
