@@ -172,14 +172,18 @@ def genera_riassunto(doc: Documento) -> str:
 # ---------- ricerca ----------
 
 def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None,
-          azienda_id: int | None = None) -> list[dict]:
+          azienda_id: int | None = None, qemb=None) -> list[dict]:
     """Top-K chunk per similarità con la domanda, RISTRETTI ai documenti del tenant. Su Postgres la
-    distanza la calcola pgvector; altrove si ripiega sul coseno in Python."""
+    distanza la calcola pgvector; altrove si ripiega sul coseno in Python.
+    `qemb`: embedding già calcolato (es. in parallelo al router); se assente lo calcola qui."""
     domanda = (domanda or "").strip()
     if not domanda:
         return []
-    qemb = embed_uno(domanda)
-    perf.mark(f"embedding domanda ottenuto (OpenAI {EMBED_MODEL}, dim={len(qemb)})")
+    if qemb is None:
+        qemb = embed_uno(domanda)
+        perf.mark(f"embedding domanda ottenuto in-linea (OpenAI {EMBED_MODEL}, dim={len(qemb)})")
+    else:
+        perf.mark(f"embedding domanda riutilizzato dal parallelo (dim={len(qemb)})")
     if _is_postgres(db):
         try:
             rows = _cerca_pg(db, qemb, k, categoria, azienda_id)

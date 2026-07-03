@@ -20,6 +20,7 @@ Documenti) la usa per provarlo. Non è collegato al risponditore WhatsApp/voce.
 import json
 import logging
 import os
+from contextvars import copy_context
 
 from openai import OpenAI
 from sqlalchemy.orm import Session
@@ -34,6 +35,9 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 MODEL = os.getenv("RETRIEVER_MODEL", "gpt-5-mini")
 EFFORT = os.getenv("RETRIEVER_EFFORT", "low")
+# Il ROUTER è una classificazione: niente reasoning -> molto più veloce. Configurabili a parte.
+ROUTER_MODEL = os.getenv("RETRIEVER_ROUTER_MODEL", MODEL)
+ROUTER_EFFORT = os.getenv("RETRIEVER_ROUTER_EFFORT", "none")
 
 MAX_SEZIONI = 8               # tetto di sezioni recuperabili per domanda
 MAX_SECTION_CHARS = 120000    # cap di sicurezza sul contenuto passato per sezione
@@ -224,10 +228,11 @@ def _fonte_label(doc: Documento, sez: Sezione) -> str:
 
 
 def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None, k: int = 6,
-                        trace=None, azienda_id: int | None = None) -> dict:
+                        trace=None, azienda_id: int | None = None, qemb=None) -> dict:
     """Retriever SEMANTICO: embedda la domanda, prende i top-K chunk per similarità coseno e fa
     rispondere l'LLM solo su quelli (con citazioni). Ritorna:
       {risposta, chunk: [{score, documento, categoria, pagine, estratto}], fonti: [...], traccia}.
+    `qemb`: embedding della domanda già calcolato (es. in parallelo al router); se assente lo calcola.
     """
     from services import vettore
     if trace is None:
@@ -244,7 +249,7 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
         return _out(risposta="Scrivi una domanda.", errore="empty")
 
     try:
-        risultati = vettore.cerca(db, domanda, k=k, categoria=categoria, azienda_id=azienda_id)
+        risultati = vettore.cerca(db, domanda, k=k, categoria=categoria, azienda_id=azienda_id, qemb=qemb)
     except Exception as e:
         perf.mark(f"✗ retrieve vettoriale ERRORE: {e}")
         logger.error("Ricerca vettoriale fallita: %s", e)
@@ -440,20 +445,38 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
     except RuntimeError as e:
         return _out(risposta="Servizio non disponibile.", errore=str(e))
 
+    # Embedding della domanda IN PARALLELO al router: sono indipendenti. Se poi la fonte è "tabella"
+    # l'avremo calcolato invano (poco male); se è "documenti" ne abbiamo già il risultato pronto.
+    import concurrent.futures
+    from services import vettore
+    ctx = copy_context()
+
+    def _embed_parallelo():
+        try:
+            return vettore.embed_uno(domanda)
+        except Exception as e:
+            logger.warning("Embedding parallelo fallito: %s", e)
+            return None
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    emb_future = pool.submit(ctx.run, _embed_parallelo)
+    perf.mark("→ embedding domanda avviato in PARALLELO al router")
+
     user = (f"DOMANDA:\n{domanda}\n\nINDICE DOCUMENTI:\n{indice or '(nessuno)'}"
             f"\n\nSCHEMI TABELLE:\n{schema or '(nessuna)'}")
-    perf.mark(f"→ chiamata LLM router (model={MODEL}, effort={EFFORT}, prompt={len(user)} char)")
+    perf.mark(f"→ chiamata LLM router (model={ROUTER_MODEL}, effort={ROUTER_EFFORT}, prompt={len(user)} char)")
     try:
         resp = client.chat.completions.create(
-            model=MODEL,
+            model=ROUTER_MODEL,
             messages=[{"role": "system", "content": f"{ROUTER_SYSTEM}\n\n{contesto_temporale()}"},
                       {"role": "user", "content": user}],
             response_format={"type": "json_schema",
                              "json_schema": {"name": "route", "strict": True, "schema": ROUTER_SCHEMA}},
-            reasoning_effort=EFFORT, max_completion_tokens=2000,
+            reasoning_effort=ROUTER_EFFORT, max_completion_tokens=2000,
         )
         piano = json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:
+        pool.shutdown(wait=False)
         perf.mark(f"✗ LLM router ERRORE: {e}")
         logger.error("Router retriever fallito: %s", e)
         return _out(risposta="Errore nell'analisi della domanda.", errore=str(e))
@@ -463,6 +486,7 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
     did = int(piano.get("documento_id") or 0)
     perf.mark(f"← LLM router: PIANO pronto (fonte={fonte}, doc={did}, filtri={len(piano.get('filtri', []))})")
     if fonte == "tabella" and did:
+        pool.shutdown(wait=False)  # embedding parallelo scartato: la risposta sta nella tabella
         righe = tabellare.interroga(db, did, piano.get("filtri", []), piano.get("order_by") or None,
                                     bool(piano.get("ascending", True)), int(piano.get("limit") or 20))
         perf.mark(f"retrieve TABELLARE fatto ({len(righe)} righe)")
@@ -475,10 +499,15 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
         return _out(risposta=tabellare.formatta_righe(righe), fonte="tabella", righe=righe[:30],
                     fonti=fonti, query=piano, errore=None)
     if fonte == "documenti":
-        ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace, azienda_id=azienda_id)
+        qemb = emb_future.result()  # già pronto (calcolato durante il router): attesa ~0
+        pool.shutdown(wait=False)
+        perf.mark("embedding (parallelo) recuperato" + ("" if qemb else " — FALLITO, ricalcolo in-linea"))
+        ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace,
+                                  azienda_id=azienda_id, qemb=qemb)
         perf.mark("✓ FINE (fonte=documenti)")
         return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
                     chunk=ris.get("chunk", []), query=piano, errore=ris.get("errore"))
+    pool.shutdown(wait=False)
     perf.mark("✓ FINE (fonte=nessuna)")
     return _out(risposta="Non disponibile nei documenti né nei dati a disposizione.",
                 fonte="nessuna", query=piano, errore=None)

@@ -220,7 +220,10 @@ async def retriever_test(
     categoria = (payload.get("categoria") or "").strip() or None
     if categoria and categoria not in _CATEGORIE_VALIDE:
         categoria = None
-    esito = retriever.cerca(db, domanda, categoria=categoria)
+    # Tenant scelto in dashboard (super-admin) o del cliente; fallback al primo se assente.
+    azienda = tenant_service.risolvi(db, tenant=payload.get("azienda_id"))
+    esito = retriever.cerca(db, domanda, categoria=categoria,
+                            azienda_id=azienda.id if azienda else None)
     return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
             "chunk": esito.get("chunk", []), "fonti": esito.get("fonti", []),
             "righe": esito.get("righe", []), "query": esito.get("query"), "errore": esito.get("errore")}

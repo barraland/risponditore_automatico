@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { useTenant } from '../lib/tenant'
 import { DOC_CATEGORIE, labelCategoria } from '../lib/format'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
@@ -11,6 +12,7 @@ const FONTE_LABEL: Record<string, string> = { tabella: '📊 Tabella (CSV/Excel)
 
 export default function RetrieverTest() {
   const { session } = useAuth()
+  const { aziendaId } = useTenant()
   const [domanda, setDomanda] = useState('')
   const [categoria, setCategoria] = useState('')
   const [busy, setBusy] = useState(false)
@@ -30,7 +32,7 @@ export default function RetrieverTest() {
       const res = await fetch(`${API}/api/retriever/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ domanda: domanda.trim(), categoria: categoria || undefined }),
+        body: JSON.stringify({ domanda: domanda.trim(), categoria: categoria || undefined, azienda_id: aziendaId }),
       })
       const data = await res.json()
       if (!res.ok) { setErr(data?.detail || 'Errore'); return }
