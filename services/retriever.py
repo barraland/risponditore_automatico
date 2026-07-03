@@ -35,9 +35,11 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 MODEL = os.getenv("RETRIEVER_MODEL", "gpt-5-mini")
 EFFORT = os.getenv("RETRIEVER_EFFORT", "low")
-# Il ROUTER è una classificazione: niente reasoning -> molto più veloce. Configurabili a parte.
-ROUTER_MODEL = os.getenv("RETRIEVER_ROUTER_MODEL", MODEL)
-ROUTER_EFFORT = os.getenv("RETRIEVER_ROUTER_EFFORT", "none")
+# Il ROUTER è una classificazione: un modello NON-reasoning veloce (gpt-4.1-mini) è più che
+# sufficiente ed evita la latenza del "ragionamento". RETRIEVER_ROUTER_EFFORT resta vuoto perché i
+# modelli gpt-4.1 NON accettano reasoning_effort; valorizzalo solo se torni a un modello gpt-5/o*.
+ROUTER_MODEL = os.getenv("RETRIEVER_ROUTER_MODEL", "gpt-4.1-mini")
+ROUTER_EFFORT = os.getenv("RETRIEVER_ROUTER_EFFORT", "")
 
 MAX_SEZIONI = 8               # tetto di sezioni recuperabili per domanda
 MAX_SECTION_CHARS = 120000    # cap di sicurezza sul contenuto passato per sezione
@@ -464,16 +466,19 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
 
     user = (f"DOMANDA:\n{domanda}\n\nINDICE DOCUMENTI:\n{indice or '(nessuno)'}"
             f"\n\nSCHEMI TABELLE:\n{schema or '(nessuna)'}")
-    perf.mark(f"→ chiamata LLM router (model={ROUTER_MODEL}, effort={ROUTER_EFFORT}, prompt={len(user)} char)")
+    perf.mark(f"→ chiamata LLM router (model={ROUTER_MODEL}, effort={ROUTER_EFFORT or 'n/a'}, prompt={len(user)} char)")
+    router_kwargs = dict(
+        model=ROUTER_MODEL,
+        messages=[{"role": "system", "content": f"{ROUTER_SYSTEM}\n\n{contesto_temporale()}"},
+                  {"role": "user", "content": user}],
+        response_format={"type": "json_schema",
+                         "json_schema": {"name": "route", "strict": True, "schema": ROUTER_SCHEMA}},
+        max_completion_tokens=2000,
+    )
+    if ROUTER_EFFORT:  # solo per i modelli reasoning (gpt-5/o*); i gpt-4.1 lo rifiutano
+        router_kwargs["reasoning_effort"] = ROUTER_EFFORT
     try:
-        resp = client.chat.completions.create(
-            model=ROUTER_MODEL,
-            messages=[{"role": "system", "content": f"{ROUTER_SYSTEM}\n\n{contesto_temporale()}"},
-                      {"role": "user", "content": user}],
-            response_format={"type": "json_schema",
-                             "json_schema": {"name": "route", "strict": True, "schema": ROUTER_SCHEMA}},
-            reasoning_effort=ROUTER_EFFORT, max_completion_tokens=2000,
-        )
+        resp = client.chat.completions.create(**router_kwargs)
         piano = json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:
         pool.shutdown(wait=False)
