@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
+import CampoAzienda from '../components/CampoAzienda'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
@@ -161,12 +162,12 @@ export default function Prompt() {
       <div className="pw-between" style={{ flexWrap: 'wrap', gap: 8 }}>
         <div>
           <div className="pw-eyebrow">Risponditore</div>
-          <h1 style={{ fontSize: 28, marginTop: 6 }}>Prompt (moduli)</h1>
+          <h1 style={{ fontSize: 28, marginTop: 6 }}>Assistente</h1>
           <div className="pw-muted" style={{ marginTop: 6, fontSize: 14, maxWidth: 660 }}>
-            Il prompt è spezzato in moduli. Ogni modulo si applica ai canali <strong>flaggati</strong>
-            {' '}(Voce / WhatsApp / Mail) e usa un <strong>testo base</strong> condiviso; puoi dare a un
-            canale un testo diverso dalle <em>Varianti</em>. La conoscenza dell'azienda resta in
-            {' '}<em>Configurazione assistente</em>.
+            Saluti e criteri del lead qui sotto; poi il <strong>comportamento</strong> in moduli.
+            Ogni modulo si applica ai canali <strong>flaggati</strong> (Voce / WhatsApp / Mail / Admin)
+            e usa un <strong>testo base</strong>; puoi dare a un canale un testo diverso dalle
+            {' '}<em>Varianti</em>. Il catalogo e le promozioni stanno in <em>Documenti</em>.
           </div>
         </div>
         <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setShowPreview(v => !v)}>
@@ -175,6 +176,17 @@ export default function Prompt() {
       </div>
 
       {err && <div className="pw-error">{err}</div>}
+
+      <CampoAzienda campo="saluto" titolo="Primo saluto (cliente riconosciuto)" rows={2}
+        hint="Il primo messaggio all'apertura quando il chiamante è riconosciuto. Segnaposto: {nome} {cognome} {azienda}. Vuoto = saluto predefinito."
+        placeholder="Es. Buongiorno {cognome}, sono Margherita di {azienda}, come posso aiutarla?" />
+      <CampoAzienda campo="saluto_sconosciuto" titolo="Primo saluto (chiamante sconosciuto)" rows={2}
+        hint="Primo messaggio quando il numero non è riconosciuto. Qui {nome} è vuoto: non usarlo."
+        placeholder="Es. Buongiorno, sono Margherita di {azienda}, come posso aiutarla?" />
+      <CampoAzienda campo="info_qualificazione" titolo="Come qualificare il lead" rows={5}
+        hint="Informazioni minime da raccogliere durante la conversazione (nome, società, ruolo, contatti, esigenza…)." />
+      <CampoAzienda campo="criteri_priorita" titolo="Come prioritizzare i lead" rows={4}
+        hint="Cosa rende un lead alta / media / bassa priorità (usato per la priorità del ticket)." />
 
       {showPreview && (
         <div className="pw-card">

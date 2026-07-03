@@ -47,8 +47,7 @@ export default function Layout() {
           <TenantSwitcher />
           {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
           <NavLink to="/admin">Admin</NavLink>
-          <NavLink to="/assistente">Configurazione assistente</NavLink>
-          <NavLink to="/prompt">Prompt voce</NavLink>
+          <NavLink to="/prompt">Assistente</NavLink>
           <span className="pw-muted" style={{ fontSize: 13 }}>{session?.user?.email}</span>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => signOut()}>Esci</button>
         </div>

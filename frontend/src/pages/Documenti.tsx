@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
+import CampoAzienda from '../components/CampoAzienda'
 import { DOC_CATEGORIE, badgeDoc, dataBreve, fileSize, labelCategoria, lower, statoDoc } from '../lib/format'
 import Modal from '../components/Modal'
 
@@ -41,7 +42,7 @@ function NoteCategorie() {
         <div className="pw-card-body pw-stack" style={{ gap: 0 }}>
           <div className="pw-muted" style={{ fontSize: 13, marginBottom: 8 }}>
             Precisazioni corte legate ai file (es. “prezzi IVA inclusa”, come leggere una colonna).
-            Per sconti e offerte usa <Link to="/assistente">Regole commerciali</Link>.
+            Per sconti e offerte usa <strong>Regole commerciali</strong> qui sotto.
           </div>
           {DOC_CATEGORIE.map(([k, label]) => (
             <div key={k} className="pw-between" style={{ borderTop: '1px solid var(--border)', padding: '10px 0' }}>
@@ -86,54 +87,6 @@ function EditNota({ cat, value, onClose, onSaved }: {
         autoFocus value={testo} onChange={e => setTesto(e.target.value)} />
       {err && <div className="pw-error">{err}</div>}
     </Modal>
-  )
-}
-
-// Regole commerciali / promozioni del cliente: applicate dall'assistente su prezzi e ordini.
-// Stanno qui perché sono relative al materiale/catalogo che il cliente carica.
-function RegoleCommerciali() {
-  const { aziendaId } = useTenant()
-  const [testo, setTesto] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [ok, setOk] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-
-  async function carica() {
-    if (!aziendaId) return
-    const { data } = await supabase.from('azienda').select('regole_commerciali').eq('id', aziendaId).maybeSingle()
-    setTesto((data?.regole_commerciali as string) || '')
-  }
-  useEffect(() => { carica() }, [aziendaId])
-
-  async function salva() {
-    if (!aziendaId) return
-    setBusy(true); setErr(null); setOk(false)
-    const { error } = await supabase.from('azienda')
-      .update({ regole_commerciali: testo.trim() || null }).eq('id', aziendaId)
-    setBusy(false)
-    if (error) setErr(error.message); else setOk(true)
-  }
-
-  return (
-    <div className="pw-card">
-      <div className="pw-card-head pw-between" style={{ alignItems: 'center' }}>
-        <h3>Regole commerciali e promozioni</h3>
-        <div className="pw-row" style={{ gap: 8, alignItems: 'center' }}>
-          {ok && <span className="pw-badge ok">salvato ✓</span>}
-          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={salva}>{busy ? 'Salvo…' : 'Salva'}</button>
-        </div>
-      </div>
-      <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
-        <div className="pw-muted" style={{ fontSize: 13 }}>
-          Prezzi, sconti e offerte che l'assistente applica sempre — rispondendo sui prezzi e
-          registrando ordini. Es: «compri 10 casse di birra, 5 in omaggio»; «3x2 sui pelati fino al
-          14/08/2026»; «sconto 10% sopra i 500€». Per calcoli ambigui chiede conferma.
-        </div>
-        <textarea className="pw-input" rows={6} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
-          value={testo} onChange={e => { setTesto(e.target.value); setOk(false) }} />
-        {err && <div className="pw-error">{err}</div>}
-      </div>
-    </div>
   )
 }
 
@@ -267,7 +220,12 @@ export default function Documenti() {
       </div>
 
       <NoteCategorie />
-      <RegoleCommerciali />
+      <CampoAzienda campo="descrizione_servizi" titolo="Cosa offriamo"
+        hint="Prodotti/servizi, dove operate, tempi di consegna, ordine minimo… Info sul catalogo che l'assistente usa per rispondere."
+        rows={6} />
+      <CampoAzienda campo="regole_commerciali" titolo="Regole commerciali e promozioni"
+        hint="Prezzi, sconti e offerte che l'assistente applica sempre — sui prezzi e negli ordini. Es: «compri 10 casse, 5 in omaggio»; «3x2 sui pelati fino al 14/08/2026»; «sconto 10% sopra i 500€». Per calcoli ambigui chiede conferma."
+        rows={6} />
 
       {err && <div className="pw-error">{err}</div>}
 

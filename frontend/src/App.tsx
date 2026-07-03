@@ -10,7 +10,6 @@ import AgentiList from './pages/AgentiList'
 import AgenteDetail from './pages/AgenteDetail'
 import ContattiList from './pages/ContattiList'
 import ContattoDetail from './pages/ContattoDetail'
-import Assistente from './pages/Assistente'
 import Admin from './pages/Admin'
 import PromemoriaList from './pages/PromemoriaList'
 import Inoltri from './pages/Inoltri'
@@ -47,7 +46,6 @@ export default function App() {
         <Route path="/documenti" element={<Documenti />} />
         <Route path="/documenti/test" element={<RetrieverTest />} />
         <Route path="/documenti/:id" element={<DocumentoDetail />} />
-        <Route path="/assistente" element={<Assistente />} />
         <Route path="/prompt" element={<Prompt />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/clienti" element={<Clienti />} />
