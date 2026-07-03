@@ -222,8 +222,10 @@ async def retriever_test(
         categoria = None
     # Tenant scelto in dashboard (super-admin) o del cliente; fallback al primo se assente.
     azienda = tenant_service.risolvi(db, tenant=payload.get("azienda_id"))
+    # Default: come in produzione (voce) -> niente 2ª LLM, si vedono i chunk. Ticka per confrontare.
+    sintetizza = bool(payload.get("sintetizza", False))
     esito = retriever.cerca(db, domanda, categoria=categoria,
-                            azienda_id=azienda.id if azienda else None)
+                            azienda_id=azienda.id if azienda else None, sintetizza=sintetizza)
     return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
             "chunk": esito.get("chunk", []), "fonti": esito.get("fonti", []),
             "righe": esito.get("righe", []), "query": esito.get("query"), "errore": esito.get("errore")}

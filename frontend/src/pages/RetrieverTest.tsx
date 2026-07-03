@@ -15,6 +15,7 @@ export default function RetrieverTest() {
   const { aziendaId } = useTenant()
   const [domanda, setDomanda] = useState('')
   const [categoria, setCategoria] = useState('')
+  const [sintetizza, setSintetizza] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [risposta, setRisposta] = useState('')
@@ -32,7 +33,7 @@ export default function RetrieverTest() {
       const res = await fetch(`${API}/api/retriever/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ domanda: domanda.trim(), categoria: categoria || undefined, azienda_id: aziendaId }),
+        body: JSON.stringify({ domanda: domanda.trim(), categoria: categoria || undefined, azienda_id: aziendaId, sintetizza }),
       })
       const data = await res.json()
       if (!res.ok) { setErr(data?.detail || 'Errore'); return }
@@ -74,6 +75,11 @@ export default function RetrieverTest() {
                 {DOC_CATEGORIE.map(([val, lab]) => <option key={val} value={val}>{lab}</option>)}
               </select>
             </div>
+            <label className="pw-row" style={{ gap: 8, alignItems: 'center', cursor: 'pointer', paddingBottom: 8 }}
+              title="Di default vedi ciò che riceve l'agente vocale (i chunk grezzi). Attiva per far scrivere la risposta a un 2° LLM, solo per confronto.">
+              <input type="checkbox" checked={sintetizza} onChange={e => setSintetizza(e.target.checked)} />
+              <span style={{ fontSize: 13 }}>Sintesi LLM finale (solo confronto)</span>
+            </label>
             <button className="pw-btn pw-btn-primary" disabled={busy} onClick={chiedi}>
               {busy ? 'Cerco…' : 'Chiedi'}
             </button>

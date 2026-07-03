@@ -151,17 +151,22 @@ def _leggi_categoria(categoria: str) -> dict:
 @mcp.tool()
 @_loggato
 def cerca(domanda: str, tenant: str = "") -> dict:
-    """Cerca la risposta a una domanda nella base di conoscenza aziendale. Decide DA SÉ se la risposta
-    sta in un DOCUMENTO (PDF: condizioni di vendita, FAQ, descrizioni) o in una TABELLA (CSV/Excel:
-    prezzi, disponibilità, formati, anagrafiche) e risponde in modo sintetico. Usalo per qualsiasi
-    domanda su prodotti, prezzi, condizioni, schede, FAQ, dati. Ritorna `risposta`, `fonte`
+    """Cerca nella base di conoscenza aziendale gli ELEMENTI utili a rispondere. Decide DA SÉ se la
+    fonte è un DOCUMENTO (PDF: condizioni di vendita, FAQ, descrizioni) o una TABELLA (CSV/Excel:
+    prezzi, disponibilità, formati, anagrafiche). Usalo per qualsiasi domanda su prodotti, prezzi,
+    condizioni, schede, FAQ, dati.
+    IMPORTANTE: `risposta` NON è una risposta già pronta: sono gli ESTRATTI pertinenti (con la fonte)
+    per i documenti, o le RIGHE esatte per le tabelle. Leggili e formula TU la risposta al cliente, in
+    modo sintetico e naturale, usando solo queste informazioni. Ritorna anche `fonte`
     (tabella/documenti/nessuna) e `fonti`: se una fonte ha `documento_id` con `inviabile`=true e il
     cliente vuole riceverla, mandala con invia_documento usando quel documento_id."""
     _log_tool("cerca")
     db = SessionLocal()
     try:
         from services import retriever
-        esito = retriever.cerca(db, domanda, azienda_id=_aid(tenant))
+        # sintetizza=False: niente 2ª LLM nel retriever. Ritorna i chunk grezzi; l'elaborazione la
+        # fa l'agente vocale nel proprio turno (che avviene comunque) -> un round-trip LLM in meno.
+        esito = retriever.cerca(db, domanda, azienda_id=_aid(tenant), sintetizza=False)
         # Per le tabelle ritorniamo le righe ESATTE del CSV (non una parafrasi): leggile come sono.
         return {"risposta": esito.get("risposta", ""), "fonte": esito.get("fonte"),
                 "fonti": esito.get("fonti", []), "righe": esito.get("righe", [])[:15]}

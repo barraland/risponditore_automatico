@@ -230,11 +230,14 @@ def _fonte_label(doc: Documento, sez: Sezione) -> str:
 
 
 def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None, k: int = 6,
-                        trace=None, azienda_id: int | None = None, qemb=None) -> dict:
+                        trace=None, azienda_id: int | None = None, qemb=None,
+                        sintetizza: bool = True) -> dict:
     """Retriever SEMANTICO: embedda la domanda, prende i top-K chunk per similarità coseno e fa
     rispondere l'LLM solo su quelli (con citazioni). Ritorna:
       {risposta, chunk: [{score, documento, categoria, pagine, estratto}], fonti: [...], traccia}.
     `qemb`: embedding della domanda già calcolato (es. in parallelo al router); se assente lo calcola.
+    `sintetizza`: se False NON chiama la 2ª LLM (componi): `risposta` diventa i chunk grezzi con la
+    fonte, che il chiamante (es. l'agente vocale) elaborerà nel proprio turno — un round-trip in meno.
     """
     from services import vettore
     if trace is None:
@@ -274,15 +277,21 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
                           "inviabile": r.get("inviabile", True)})
     contesto = "\n\n---\n\n".join(parti)
 
-    perf.mark(f"→ chiamata LLM risposta (contesto {len(contesto)} char)")
-    try:
-        client = _client()
-        risposta = componi(client, domanda, contesto, trace=trace)
-    except Exception as e:
-        perf.mark(f"✗ LLM risposta ERRORE: {e}")
-        logger.error("Risposta retriever (vett.) fallita: %s", e)
-        risposta = "Errore nella generazione della risposta."
-    perf.mark("← LLM risposta pronta")
+    if sintetizza:
+        perf.mark(f"→ chiamata LLM risposta (contesto {len(contesto)} char)")
+        try:
+            client = _client()
+            risposta = componi(client, domanda, contesto, trace=trace)
+        except Exception as e:
+            perf.mark(f"✗ LLM risposta ERRORE: {e}")
+            logger.error("Risposta retriever (vett.) fallita: %s", e)
+            risposta = "Errore nella generazione della risposta."
+        perf.mark("← LLM risposta pronta")
+    else:
+        # Niente 2ª LLM: ritorna gli estratti grezzi (con fonte). Li elabora il chiamante.
+        risposta = contesto
+        _rec(trace, "Risposta (chunk grezzi, no LLM)", domanda, risposta)
+        perf.mark(f"sintesi LLM SALTATA — ritorno {len(risultati)} chunk grezzi ({len(contesto)} char)")
 
     chunk = [{"score": r["score"], "documento_id": r["documento_id"], "documento": r["documento"],
               "categoria": r["categoria"], "pagine": r.get("pagine"), "inviabile": r.get("inviabile", True),
@@ -419,10 +428,12 @@ def _indice_documenti(db: Session, azienda_id: int | None = None) -> str:
 
 
 def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
-          azienda_id: int | None = None) -> dict:
+          azienda_id: int | None = None, sintetizza: bool = True) -> dict:
     """Retriever AGNOSTICO (ristretto ai documenti del tenant): un router-planner decide se la
     risposta sta in una TABELLA (CSV/Excel) o nei DOCUMENTI (PDF) e instrada. Una sola chiamata di
-    routing + una di risposta. Ritorna {risposta, fonte, fonti, chunk, righe, query, errore, traccia}."""
+    routing + una di risposta. Ritorna {risposta, fonte, fonti, chunk, righe, query, errore, traccia}.
+    `sintetizza`: se False, sul ramo documenti NON chiama la 2ª LLM e ritorna i chunk grezzi (con
+    fonte) in `risposta` — l'agente chiamante li elabora nel suo turno (un round-trip in meno)."""
     from services import tabellare
     if trace is None:
         trace = []
@@ -508,7 +519,7 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
         pool.shutdown(wait=False)
         perf.mark("embedding (parallelo) recuperato" + ("" if qemb else " — FALLITO, ricalcolo in-linea"))
         ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace,
-                                  azienda_id=azienda_id, qemb=qemb)
+                                  azienda_id=azienda_id, qemb=qemb, sintetizza=sintetizza)
         perf.mark("✓ FINE (fonte=documenti)")
         return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
                     chunk=ris.get("chunk", []), query=piano, errore=ris.get("errore"))
