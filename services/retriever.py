@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from database import Documento, Sezione, TestoCategoria
 from services.contesto import contesto_temporale
 from services import istruzioni
+from services import perf
 
 logger = logging.getLogger(__name__)
 
@@ -245,8 +246,10 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
     try:
         risultati = vettore.cerca(db, domanda, k=k, categoria=categoria, azienda_id=azienda_id)
     except Exception as e:
+        perf.mark(f"✗ retrieve vettoriale ERRORE: {e}")
         logger.error("Ricerca vettoriale fallita: %s", e)
         return _out(risposta="Errore nella ricerca.", errore=str(e))
+    perf.mark(f"retrieve VETTORIALE fatto ({len(risultati)} chunk)")
 
     if not risultati:
         return _out(risposta="Non ho trovato nulla di pertinente nei documenti indicizzati.",
@@ -264,12 +267,15 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
                           "inviabile": r.get("inviabile", True)})
     contesto = "\n\n---\n\n".join(parti)
 
+    perf.mark(f"→ chiamata LLM risposta (contesto {len(contesto)} char)")
     try:
         client = _client()
         risposta = componi(client, domanda, contesto, trace=trace)
     except Exception as e:
+        perf.mark(f"✗ LLM risposta ERRORE: {e}")
         logger.error("Risposta retriever (vett.) fallita: %s", e)
         risposta = "Errore nella generazione della risposta."
+    perf.mark("← LLM risposta pronta")
 
     chunk = [{"score": r["score"], "documento_id": r["documento_id"], "documento": r["documento"],
               "categoria": r["categoria"], "pagine": r.get("pagine"), "inviabile": r.get("inviabile", True),
@@ -420,10 +426,13 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
         return kw
 
     domanda = (domanda or "").strip()
+    perf.start(f"cerca (tenant={azienda_id}) q={domanda[:60]!r}")  # ⏱️ richiesta arrivata
     if not domanda:
         return _out(risposta="Scrivi una domanda.", errore="empty")
     schema = tabellare.schema_prompt(db, azienda_id)
+    perf.mark(f"schema tabelle costruito ({len(schema)} char)")
     indice = _indice_documenti(db, azienda_id)
+    perf.mark(f"indice documenti costruito ({len(indice)} char)")
     if not schema and not indice:
         return _out(risposta="Non ci sono ancora documenti o dati consultabili.", errore="no_sources")
     try:
@@ -433,6 +442,7 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
 
     user = (f"DOMANDA:\n{domanda}\n\nINDICE DOCUMENTI:\n{indice or '(nessuno)'}"
             f"\n\nSCHEMI TABELLE:\n{schema or '(nessuna)'}")
+    perf.mark(f"→ chiamata LLM router (model={MODEL}, effort={EFFORT}, prompt={len(user)} char)")
     try:
         resp = client.chat.completions.create(
             model=MODEL,
@@ -444,26 +454,32 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
         )
         piano = json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:
+        perf.mark(f"✗ LLM router ERRORE: {e}")
         logger.error("Router retriever fallito: %s", e)
         return _out(risposta="Errore nell'analisi della domanda.", errore=str(e))
     _rec(trace, "Router", user, json.dumps(piano, ensure_ascii=False))
 
     fonte = piano.get("fonte")
     did = int(piano.get("documento_id") or 0)
+    perf.mark(f"← LLM router: PIANO pronto (fonte={fonte}, doc={did}, filtri={len(piano.get('filtri', []))})")
     if fonte == "tabella" and did:
         righe = tabellare.interroga(db, did, piano.get("filtri", []), piano.get("order_by") or None,
                                     bool(piano.get("ascending", True)), int(piano.get("limit") or 20))
+        perf.mark(f"retrieve TABELLARE fatto ({len(righe)} righe)")
         # Esponi la fonte (il file CSV) con documento_id + inviabile: così l'agente può inviarlo
         # con invia_documento. NIENTE LLM sui dati: valori esatti (rendering deterministico).
         doc = db.get(Documento, did)
         fonti = ([{"documento_id": did, "documento": doc.nome_file, "categoria": doc.categoria,
                    "pagine": None, "inviabile": bool(doc.inviabile)}] if doc else [])
+        perf.mark("✓ FINE (fonte=tabella)")
         return _out(risposta=tabellare.formatta_righe(righe), fonte="tabella", righe=righe[:30],
                     fonti=fonti, query=piano, errore=None)
     if fonte == "documenti":
         ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace, azienda_id=azienda_id)
+        perf.mark("✓ FINE (fonte=documenti)")
         return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
                     chunk=ris.get("chunk", []), query=piano, errore=ris.get("errore"))
+    perf.mark("✓ FINE (fonte=nessuna)")
     return _out(risposta="Non disponibile nei documenti né nei dati a disposizione.",
                 fonte="nessuna", query=piano, errore=None)
 

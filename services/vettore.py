@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import Documento, Sezione, DocumentoChunk
+from services import perf
 
 
 def _is_postgres(db: Session) -> bool:
@@ -178,12 +179,18 @@ def cerca(db: Session, domanda: str, k: int = 6, categoria: str | None = None,
     if not domanda:
         return []
     qemb = embed_uno(domanda)
+    perf.mark(f"embedding domanda ottenuto (OpenAI {EMBED_MODEL}, dim={len(qemb)})")
     if _is_postgres(db):
         try:
-            return _cerca_pg(db, qemb, k, categoria, azienda_id)
+            rows = _cerca_pg(db, qemb, k, categoria, azienda_id)
+            perf.mark(f"query pgvector su Supabase fatta ({len(rows)} chunk)")
+            return rows
         except Exception as e:
+            perf.mark(f"pgvector fallita, fallback Python: {e}")
             logger.warning("Ricerca pgvector fallita, uso fallback Python: %s", e)
-    return _cerca_python(db, qemb, k, categoria, azienda_id)
+    rows = _cerca_python(db, qemb, k, categoria, azienda_id)
+    perf.mark(f"ricerca coseno in Python fatta ({len(rows)} chunk)")
+    return rows
 
 
 def _riga(documento_id, documento, categoria, page_start, page_end, testo, score, inviabile=True) -> dict:
