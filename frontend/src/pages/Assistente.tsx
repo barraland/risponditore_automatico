@@ -25,7 +25,6 @@ export default function Assistente() {
     setBusy(true); setErr(null); setOk(false)
     const { error } = await supabase.from('azienda').update({
       nome: (az.nome || '').trim() || az.nome,
-      telefono: (az.telefono || '').trim() || null,
       descrizione_servizi: (az.descrizione_servizi || '').trim() || null,
       info_qualificazione: (az.info_qualificazione || '').trim() || null,
       criteri_priorita: (az.criteri_priorita || '').trim() || null,
@@ -59,9 +58,8 @@ export default function Assistente() {
       </div>
 
       <div className="pw-card"><div className="pw-card-head"><h3>Azienda</h3></div>
-        <div className="pw-card-body pw-row" style={{ gap: 12 }}>
-          <div className="pw-field" style={{ flex: 2 }}><label>Nome</label><input className="pw-input" value={az.nome || ''} onChange={e => set('nome', e.target.value)} /></div>
-          <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={az.telefono || ''} onChange={e => set('telefono', e.target.value)} /></div>
+        <div className="pw-card-body">
+          <div className="pw-field"><label>Nome</label><input className="pw-input" value={az.nome || ''} onChange={e => set('nome', e.target.value)} /></div>
         </div>
       </div>
 
