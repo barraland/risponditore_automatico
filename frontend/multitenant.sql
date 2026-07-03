@@ -168,3 +168,6 @@ drop index if exists public.ix_testi_categoria_categoria;
 alter table public.testi_categoria drop constraint if exists testi_categoria_categoria_key;
 create unique index if not exists ux_testi_categoria_az_cat
   on public.testi_categoria(azienda_id, categoria);
+
+-- Pulizia: azienda.telefono era un campo morto (mai letto da prompt/init/tool). Rimosso.
+alter table public.azienda drop column if exists telefono;

@@ -403,7 +403,6 @@ async def salva_assistente(request: Request, db: Session = Depends(get_db)):
     azienda = _azienda(db)
     if azienda:
         azienda.nome = (form.get("AZIENDA_NOME") or azienda.nome or "").strip() or azienda.nome
-        azienda.telefono = (form.get("AZIENDA_TELEFONO") or "").strip() or None
         azienda.descrizione_servizi = (form.get("descrizione_servizi") or "").strip() or None
         azienda.criteri_priorita = (form.get("criteri_priorita") or "").strip() or None
         azienda.info_qualificazione = (form.get("info_qualificazione") or "").strip() or None

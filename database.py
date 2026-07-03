@@ -96,7 +96,6 @@ class Azienda(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(200), nullable=False)
-    telefono = Column(String(30))
     indirizzo = Column(String(300))
 
     # Testo libero: cosa offre l'azienda (prodotti/servizi, cosa fa e non fa, dove, come,

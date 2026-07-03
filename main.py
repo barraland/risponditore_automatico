@@ -190,7 +190,6 @@ def seed_data():
         if not db.query(Azienda).first():
             db.add(Azienda(
                 nome=os.getenv("AZIENDA_NOME", "Distribuzione HORECA S.r.l."),
-                telefono=os.getenv("AZIENDA_TELEFONO", "+39 02 1234567"),
                 descrizione_servizi=(
                     "Esempio (da personalizzare in Impostazioni): distribuiamo alimentari e bevande a "
                     "ristoranti, pizzerie, bar e hotel in Lombardia e Piemonte. Consegna in 24-48h, "
