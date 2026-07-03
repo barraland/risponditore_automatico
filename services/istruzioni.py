@@ -163,3 +163,21 @@ def blocco_prompt(db=None, canale=None, azienda_id: int | None = None) -> str:
     if regole:
         blocco += _cornice_regole(regole)
     return blocco
+
+
+def blocco_regole(db=None, azienda_id: int | None = None) -> str:
+    """Solo le regole commerciali (cornice). Utile quando il prompt di condotta arriva dai moduli
+    (services/prompt_moduli) e non più dal blob istruzioni_admin, ma le regole vanno comunque incluse."""
+    own = db is None
+    if own:
+        db = SessionLocal()
+    try:
+        az = (db.get(Azienda, azienda_id) if azienda_id else db.query(Azienda).first())
+        regole = (az.regole_commerciali.strip() if (az is not None and az.regole_commerciali) else "")
+    except Exception as e:  # pragma: no cover - robustezza
+        logger.warning("Lettura regole commerciali fallita: %s", e)
+        regole = ""
+    finally:
+        if own:
+            db.close()
+    return _cornice_regole(regole) if regole else ""

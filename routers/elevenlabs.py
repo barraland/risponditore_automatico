@@ -184,9 +184,10 @@ async def init_conversazione(request: Request):
             dv["configurazione"] = prompts.voce_admin()
         else:
             # Prompt vocale MODULARE: i moduli (identità, velocità, ordini, meeting…) sostituiscono
-            # il vecchio blob istruzioni_admin. La conoscenza del tenant resta in profilo.blocco_prompt.
+            # il vecchio blob istruzioni_admin. Conoscenza tenant (profilo) e regole commerciali restano.
             dv["configurazione"] = (profilo.blocco_prompt(db, azienda_id=aid)
-                                    + prompt_moduli.componi(db, aid)
+                                    + prompt_moduli.componi(db, aid, canale="voce")
+                                    + istruzioni.blocco_regole(db, azienda_id=aid)
                                     + documenti_service.catalogo_prompt(db, azienda_id=aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente

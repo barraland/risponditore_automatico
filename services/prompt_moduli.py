@@ -13,6 +13,7 @@ La CONOSCENZA del tenant (cosa offriamo, come qualificare, priorità) NON sta qu
 arrivare da `services/profilo.blocco_prompt` (campi dedicati dell'azienda), per non duplicarla.
 """
 
+import json
 import logging
 
 from sqlalchemy.orm import Session
@@ -21,11 +22,23 @@ from database import PromptModulo
 
 logger = logging.getLogger(__name__)
 
+CANALI = ["voce", "whatsapp", "mail"]   # mail: predisposto (nessun agente conversazionale ancora)
+
+
+def _loads(valore, default):
+    if not valore:
+        return default
+    try:
+        return json.loads(valore)
+    except (ValueError, TypeError):
+        return default
+
 
 # Ordine crescente = posizione nel prompt. 10,20,30… per lasciare spazio a inserimenti futuri.
 DEFAULT_MODULI = [
     {
         "chiave": "identita_tono", "ordine": 10, "titolo": "Identità e tono",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "Sei l'assistente telefonico di un distributore food&beverage per l'HORECA. "
             "Parla SEMPRE in italiano, frasi brevi e cordiali, dai del lei. Dopo il saluto, "
@@ -36,6 +49,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "velocita_anti_silenzio", "ordine": 20, "titolo": "Velocità / mai silenzi",
+        "canali": ["voce"],
         "testo": (
             "REGOLA #1 — VELOCITÀ (più importante di tutto):\n"
             "Rispondi al cliente SEMPRE entro 1 secondo, qualunque cosa succeda. Non restare MAI in "
@@ -51,6 +65,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "parametri_strumenti", "ordine": 30, "titolo": "Parametri obbligatori strumenti",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "STRUMENTI — PARAMETRI OBBLIGATORI:\n"
             "- Per OGNI strumento, passa SEMPRE anche tenant={{tenant}} (identifica l'azienda a cui "
@@ -61,6 +76,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "gestione_email", "ordine": 40, "titolo": "Email: riuso e dettatura",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "EMAIL DEL CLIENTE — usala se ce l'hai già:\n"
             "Se conosci GIÀ l'email del cliente (è nel riepilogo, o l'hai appena salvata), NON "
@@ -78,6 +94,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "identificazione_cliente", "ordine": 50, "titolo": "Chi sta chiamando (nuovo/noto)",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "CHI STA CHIAMANDO\n"
             "Cliente riconosciuto: {{cliente_conosciuto}}\n"
@@ -106,6 +123,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "base_conoscenza", "ordine": 60, "titolo": "Base di conoscenza (cerca)",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "BASE DI CONOSCENZA (prodotti, prezzi, condizioni, schede, FAQ, dati)\n"
             "- Per QUALSIASI domanda su prodotti, prezzi, disponibilità, formati, condizioni di "
@@ -129,6 +147,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "ordini", "ordine": 70, "titolo": "Ordini (sempre bozza)",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "ORDINI (SEMPRE come BOZZA — non li confermi MAI tu)\n"
             "1) CAPIRE COSA VUOLE: se nomina un prodotto generico con più formati (es. «la Peroni»), "
@@ -153,6 +172,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "invii_email", "ordine": 80, "titolo": "Invii al cliente via email",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "INVIO AL CLIENTE VIA EMAIL\n"
             "- Per mandare un DOCUMENTO SPECIFICO (es. listino o scheda trovati con cerca): usa "
@@ -167,6 +187,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "meeting", "ordine": 90, "titolo": "Fissare un meeting (Calendar)",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "FISSARE UN MEETING (Google Calendar)\n"
             "Usa questo quando serve fissare un incontro/call col cliente (di solito perché la "
@@ -192,6 +213,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "inoltro_chiamata", "ordine": 100, "titolo": "Inoltro chiamata",
+        "canali": ["voce"],
         "testo": (
             "INOLTRO CHIAMATA (passare il cliente a una persona della rubrica)\n"
             "Se la richiesta rientra nelle regole della sezione «INOLTRO CHIAMATA» del contesto:\n"
@@ -216,6 +238,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "ticket_followup", "ordine": 110, "titolo": "Ticket di follow-up",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "TICKET DI FOLLOW-UP (apri SEMPRE un ticket per il lead)\n"
             "Verso la fine, chiama apri_ticket UNA SOLA volta: titolo riassuntivo, descrizione della "
@@ -247,9 +270,12 @@ def effettivi(db: Session, azienda_id: int | None) -> list[dict]:
             "ordine": (r.ordine if r and r.ordine is not None else d["ordine"]),
             "attivo": (bool(r.attivo) if r and r.attivo is not None else True),
             "testo": (r.testo if r and r.testo is not None else d["testo"]),
+            "canali": (_loads(r.canali, None) if r and r.canali is not None else list(d["canali"])),
+            "testi": (_loads(r.testi_canale, {}) if r else {}),
             "default": True,
             "personalizzato": bool(r and any(getattr(r, c) is not None
-                                             for c in ("titolo", "ordine", "attivo", "testo"))),
+                                             for c in ("titolo", "ordine", "attivo", "testo",
+                                                       "canali", "testi_canale"))),
         })
     # Moduli aggiuntivi del tenant (chiave non presente tra i default).
     for chiave, r in overrides.items():
@@ -259,24 +285,31 @@ def effettivi(db: Session, azienda_id: int | None) -> list[dict]:
             "chiave": chiave, "titolo": r.titolo or chiave,
             "ordine": (r.ordine if r.ordine is not None else 900),
             "attivo": (bool(r.attivo) if r.attivo is not None else True),
-            "testo": (r.testo or ""), "default": False, "personalizzato": True,
+            "testo": (r.testo or ""), "canali": _loads(r.canali, ["voce"]),
+            "testi": _loads(r.testi_canale, {}), "default": False, "personalizzato": True,
         })
     out.sort(key=lambda m: (m["ordine"], m["chiave"]))
     return out
 
 
-def componi(db: Session, azienda_id: int | None) -> str:
-    """Prompt vocale assemblato: moduli attivi, in ordine, separati da riga vuota. Stringa con
-    doppio a-capo iniziale se non vuota (per innestarsi nel resto della configurazione)."""
-    mods = [m for m in effettivi(db, azienda_id) if m["attivo"] and (m["testo"] or "").strip()]
-    if not mods:
-        return ""
-    return "\n\n" + "\n\n".join(m["testo"].strip() for m in mods)
+def componi(db: Session, azienda_id: int | None, canale: str = "voce") -> str:
+    """Prompt assemblato per UN canale (voce/whatsapp/mail): moduli attivi che si applicano a quel
+    canale, in ordine. Per ciascuno usa la variante di canale se presente, altrimenti il testo base.
+    Stringa con doppio a-capo iniziale se non vuota (per innestarsi nel resto della configurazione)."""
+    parti = []
+    for m in effettivi(db, azienda_id):
+        if not m["attivo"] or canale not in (m["canali"] or []):
+            continue
+        testo = (m["testi"].get(canale) or m["testo"] or "").strip()
+        if testo:
+            parti.append(testo)
+    return ("\n\n" + "\n\n".join(parti)) if parti else ""
 
 
 def salva(db: Session, azienda_id: int, chiave: str, titolo=None, ordine=None,
-          attivo=None, testo=None) -> None:
-    """Crea/aggiorna l'override di un modulo per il tenant. I campi None restano invariati."""
+          attivo=None, testo=None, canali=None, testi_canale=None) -> None:
+    """Crea/aggiorna l'override di un modulo per il tenant. I campi None restano invariati.
+    `canali`: lista di canali; `testi_canale`: dict {canale: testo} (varianti). Salvati come JSON."""
     r = db.query(PromptModulo).filter_by(azienda_id=azienda_id, chiave=chiave).first()
     if not r:
         r = PromptModulo(azienda_id=azienda_id, chiave=chiave)
@@ -289,6 +322,12 @@ def salva(db: Session, azienda_id: int, chiave: str, titolo=None, ordine=None,
         r.attivo = bool(attivo)
     if testo is not None:
         r.testo = testo
+    if canali is not None:
+        r.canali = json.dumps([c for c in canali if c in CANALI])
+    if testi_canale is not None:
+        # tieni solo varianti non vuote per canali validi
+        pulite = {c: t for c, t in testi_canale.items() if c in CANALI and (t or "").strip()}
+        r.testi_canale = json.dumps(pulite) if pulite else None
     db.commit()
 
 

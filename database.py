@@ -141,7 +141,9 @@ class PromptModulo(Base):
     titolo = Column(String(120), nullable=True)
     ordine = Column(Integer, nullable=True)
     attivo = Column(Boolean, nullable=True)   # None = eredita (attivo)
-    testo = Column(Text, nullable=True)        # None = usa il testo di default
+    testo = Column(Text, nullable=True)        # None = usa il testo di default (base, valido per tutti i canali)
+    canali = Column(Text, nullable=True)       # JSON list ["voce","whatsapp","mail"]: dove si applica. None = eredita
+    testi_canale = Column(Text, nullable=True) # JSON {canale: testo}: varianti per-canale (override del testo base)
     aggiornato_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("azienda_id", "chiave", name="ux_prompt_modulo_az_chiave"),)

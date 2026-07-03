@@ -33,24 +33,27 @@ def _aid(db: Session, payload: dict) -> int | None:
 @router.post("/moduli")
 async def lista_moduli(payload: dict = Body(default={}), authorization: str | None = Header(None),
                        db: Session = Depends(get_db)):
-    """Moduli effettivi del tenant (default + override) + anteprima del prompt assemblato."""
+    """Moduli effettivi del tenant (default + override) + anteprima per canale del prompt assemblato."""
     await _verify_user(authorization)
     aid = _aid(db, payload)
-    return {"azienda_id": aid, "moduli": prompt_moduli.effettivi(db, aid),
-            "anteprima": prompt_moduli.componi(db, aid).strip()}
+    canale = (payload.get("canale") or "voce").strip()
+    return {"azienda_id": aid, "canali": prompt_moduli.CANALI,
+            "moduli": prompt_moduli.effettivi(db, aid),
+            "canale": canale, "anteprima": prompt_moduli.componi(db, aid, canale=canale).strip()}
 
 
 @router.post("/modulo")
 async def salva_modulo(payload: dict = Body(...), authorization: str | None = Header(None),
                        db: Session = Depends(get_db)):
-    """Salva l'override di un modulo (testo/attivo/ordine/titolo) per il tenant."""
+    """Salva l'override di un modulo (testo/attivo/ordine/titolo/canali/varianti) per il tenant."""
     await _verify_user(authorization)
     aid = _aid(db, payload)
     chiave = (payload.get("chiave") or "").strip()
     if not aid or not chiave:
         return {"ok": False, "errore": "azienda_id e chiave obbligatori"}
     prompt_moduli.salva(db, aid, chiave, titolo=payload.get("titolo"), ordine=payload.get("ordine"),
-                        attivo=payload.get("attivo"), testo=payload.get("testo"))
+                        attivo=payload.get("attivo"), testo=payload.get("testo"),
+                        canali=payload.get("canali"), testi_canale=payload.get("testi_canale"))
     return {"ok": True}
 
 

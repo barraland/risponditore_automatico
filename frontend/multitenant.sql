@@ -195,3 +195,7 @@ drop policy if exists tenant_all on public.prompt_modulo;
 create policy tenant_all on public.prompt_modulo for all to authenticated
   using (public.can_see_tenant(azienda_id))
   with check (public.can_see_tenant(azienda_id));
+
+-- Prompt modulare multicanale: applicabilità per canale + varianti di testo per canale.
+alter table public.prompt_modulo add column if not exists canali       text;  -- JSON list dei canali
+alter table public.prompt_modulo add column if not exists testi_canale text;  -- JSON {canale: testo}

@@ -30,6 +30,7 @@ from database import CanaleOrdine, OrigineOrdine, StatoOrdine, Ordine
 from services import ticket as ticket_service
 from services import istruzioni
 from services import profilo
+from services import prompt_moduli
 from services import retriever
 from services import crm
 from services import email as email_service
@@ -446,11 +447,14 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     storia = _storia_recente(db, contatto.id)
     storia_testo = _storia_testo(storia)
 
+    # Prompt WhatsApp MODULARE: i moduli flaggati "whatsapp" (con eventuale variante di canale)
+    # sostituiscono il blob prompt_whatsapp; conoscenza tenant (profilo) e regole restano.
     system = (
         SYSTEM
         + f"\n\n{contesto_temporale()}"
         + profilo.blocco_prompt(db)
-        + istruzioni.blocco_prompt(db, canale="whatsapp")
+        + prompt_moduli.componi(db, None, canale="whatsapp")
+        + istruzioni.blocco_regole(db)
     )
     ticket_esistente = _ticket_aperto(db, contatto.id)
     user = (
