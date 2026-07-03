@@ -89,6 +89,54 @@ function EditNota({ cat, value, onClose, onSaved }: {
   )
 }
 
+// Regole commerciali / promozioni del cliente: applicate dall'assistente su prezzi e ordini.
+// Stanno qui perché sono relative al materiale/catalogo che il cliente carica.
+function RegoleCommerciali() {
+  const { aziendaId } = useTenant()
+  const [testo, setTesto] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [ok, setOk] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function carica() {
+    if (!aziendaId) return
+    const { data } = await supabase.from('azienda').select('regole_commerciali').eq('id', aziendaId).maybeSingle()
+    setTesto((data?.regole_commerciali as string) || '')
+  }
+  useEffect(() => { carica() }, [aziendaId])
+
+  async function salva() {
+    if (!aziendaId) return
+    setBusy(true); setErr(null); setOk(false)
+    const { error } = await supabase.from('azienda')
+      .update({ regole_commerciali: testo.trim() || null }).eq('id', aziendaId)
+    setBusy(false)
+    if (error) setErr(error.message); else setOk(true)
+  }
+
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head pw-between" style={{ alignItems: 'center' }}>
+        <h3>Regole commerciali e promozioni</h3>
+        <div className="pw-row" style={{ gap: 8, alignItems: 'center' }}>
+          {ok && <span className="pw-badge ok">salvato ✓</span>}
+          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={salva}>{busy ? 'Salvo…' : 'Salva'}</button>
+        </div>
+      </div>
+      <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
+        <div className="pw-muted" style={{ fontSize: 13 }}>
+          Prezzi, sconti e offerte che l'assistente applica sempre — rispondendo sui prezzi e
+          registrando ordini. Es: «compri 10 casse di birra, 5 in omaggio»; «3x2 sui pelati fino al
+          14/08/2026»; «sconto 10% sopra i 500€». Per calcoli ambigui chiede conferma.
+        </div>
+        <textarea className="pw-input" rows={6} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+          value={testo} onChange={e => { setTesto(e.target.value); setOk(false) }} />
+        {err && <div className="pw-error">{err}</div>}
+      </div>
+    </div>
+  )
+}
+
 export default function Documenti() {
   const { session } = useAuth()
   const { aziendaId } = useTenant()
@@ -219,6 +267,7 @@ export default function Documenti() {
       </div>
 
       <NoteCategorie />
+      <RegoleCommerciali />
 
       {err && <div className="pw-error">{err}</div>}
 

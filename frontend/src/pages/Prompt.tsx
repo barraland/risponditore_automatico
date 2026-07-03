@@ -4,7 +4,7 @@ import { useTenant } from '../lib/tenant'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
-const CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp'], ['mail', 'Mail']]
+const CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp'], ['mail', 'Mail'], ['admin', 'Admin']]
 
 type Modulo = {
   chiave: string; titolo: string; ordine: number; attivo: boolean; testo: string

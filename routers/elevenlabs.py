@@ -179,9 +179,10 @@ async def init_conversazione(request: Request):
         # "Configurazione assistente" della dashboard (profilo + istruzioni admin): la stessa
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
         if admin:
-            # Chiama l'amministratore: prompt di sistema DEDICATO (in prompts/voce_admin.txt),
-            # NON il prompt clienti della dashboard. Niente registrazione/ticket per lui.
-            dv["configurazione"] = prompts.voce_admin()
+            # Chiama l'amministratore: base dedicata (prompts/voce_admin.txt) + i moduli flaggati
+            # "admin" (es. gestione promemoria), così anche il flusso admin è editabile e per-tenant.
+            dv["configurazione"] = (prompts.voce_admin()
+                                    + prompt_moduli.componi(db, aid, canale="admin")).strip()
         else:
             # Prompt vocale MODULARE: i moduli (identità, velocità, ordini, meeting…) sostituiscono
             # il vecchio blob istruzioni_admin. Conoscenza tenant (profilo) e regole commerciali restano.

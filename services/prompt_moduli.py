@@ -22,7 +22,9 @@ from database import PromptModulo
 
 logger = logging.getLogger(__name__)
 
-CANALI = ["voce", "whatsapp", "mail"]   # mail: predisposto (nessun agente conversazionale ancora)
+# voce/whatsapp/mail = agente col CLIENTE; admin = quando chiama l'amministratore (voce_admin).
+# mail: predisposto (nessun agente conversazionale ancora).
+CANALI = ["voce", "whatsapp", "mail", "admin"]
 
 
 def _loads(valore, default):
@@ -246,6 +248,23 @@ DEFAULT_MODULI = [
             "«ci pensa», non ordina o chiede solo info. Dopo, di' al cliente che un collega lo "
             "ricontatterà se necessario. Vale anche per reclami, problemi di consegna o richieste da "
             "far seguire a un collega."
+        ),
+    },
+    {
+        "chiave": "gestione_promemoria", "ordine": 200, "titolo": "Gestione promemoria (admin)",
+        "canali": ["admin"],
+        "testo": (
+            "GESTIONE PROMEMORIA (stai parlando con l'AMMINISTRATORE)\n"
+            "Il tuo compito è aiutarlo a LASCIARE un promemoria per un cliente: quando quel cliente "
+            "chiamerà, l'assistente ne terrà conto (es. comunicargli un'offerta). Quando l'admin ti "
+            "chiede di avvisare un cliente di qualcosa (es. «se chiama Claudio dell'Hotel Barceló, "
+            "digli dello sconto sulle birre valido 15 giorni»):\n"
+            "- Chiama lascia_promemoria con: nome_cliente (e societa se serve a distinguerlo), testo "
+            "dell'avviso, giorni_validita (0 = senza scadenza). Passa SEMPRE anche "
+            "telefono={{telefono_chiamante}} e tenant={{tenant}}.\n"
+            "- Se più clienti corrispondono, lo strumento ti elenca i candidati: chiedi all'admin "
+            "quale (nome/società) e riprova.\n"
+            "- Conferma a voce quando l'hai registrato (a chi, cosa, entro quando)."
         ),
     },
 ]
