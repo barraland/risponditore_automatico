@@ -171,3 +171,27 @@ create unique index if not exists ux_testi_categoria_az_cat
 
 -- Pulizia: azienda.telefono era un campo morto (mai letto da prompt/init/tool). Rimosso.
 alter table public.azienda drop column if exists telefono;
+
+-- ============================================================
+-- Prompt vocale MODULARE: override per-tenant dei moduli (i default vivono nel backend).
+-- create_all crea comunque la tabella; qui la creiamo esplicitamente + RLS (niente accesso
+-- via PostgREST fuori dal proprio tenant). L'assemblaggio backend usa SQLAlchemy (bypassa RLS).
+-- ============================================================
+create table if not exists public.prompt_modulo (
+  id            serial primary key,
+  azienda_id    integer references public.azienda(id) on delete cascade,
+  chiave        varchar(60) not null,
+  titolo        varchar(120),
+  ordine        integer,
+  attivo        boolean,
+  testo         text,
+  aggiornato_at timestamptz default now()
+);
+create unique index if not exists ux_prompt_modulo_az_chiave on public.prompt_modulo(azienda_id, chiave);
+create index if not exists ix_prompt_modulo_azienda on public.prompt_modulo(azienda_id);
+
+alter table public.prompt_modulo enable row level security;
+drop policy if exists tenant_all on public.prompt_modulo;
+create policy tenant_all on public.prompt_modulo for all to authenticated
+  using (public.can_see_tenant(azienda_id))
+  with check (public.can_see_tenant(azienda_id));

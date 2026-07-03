@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, DateTime,
-    ForeignKey, Enum, Text, Boolean,
+    ForeignKey, Enum, Text, Boolean, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -122,6 +122,29 @@ class Azienda(Base):
     # --- Multi-tenant: come si risolve QUESTO tenant dai canali ---
     numeri_voce = Column(Text, nullable=True)            # numeri Twilio in ingresso (E.164, csv) → tenant voce
     whatsapp_phone_id = Column(String(60), nullable=True, index=True)  # phone_number_id Meta → tenant WhatsApp
+
+
+class PromptModulo(Base):
+    """Override per-tenant di un MODULO del prompt vocale.
+
+    Il prompt di Margherita è spezzato in moduli (identità, velocità, ordini, meeting…): i testi
+    DEFAULT vivono nel codice (services/prompt_moduli.DEFAULT_MODULI) e valgono per tutti i tenant.
+    Qui salviamo solo le DIFFERENZE di un tenant: disattivare un modulo (`attivo`=false), cambiarne il
+    testo (`testo`), l'ordine o il titolo. Una riga con una `chiave` non presente tra i default è un
+    modulo aggiuntivo, solo per quel tenant. Campi None = «eredita il default».
+    """
+    __tablename__ = "prompt_modulo"
+
+    id = Column(Integer, primary_key=True, index=True)
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
+    chiave = Column(String(60), nullable=False, index=True)
+    titolo = Column(String(120), nullable=True)
+    ordine = Column(Integer, nullable=True)
+    attivo = Column(Boolean, nullable=True)   # None = eredita (attivo)
+    testo = Column(Text, nullable=True)        # None = usa il testo di default
+    aggiornato_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("azienda_id", "chiave", name="ux_prompt_modulo_az_chiave"),)
 
 
 class Contatto(Base):

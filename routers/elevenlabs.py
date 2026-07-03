@@ -23,6 +23,7 @@ from database import SessionLocal, Ordine, ChiamataVoce
 from services import whatsapp_agent
 from services import profilo
 from services import istruzioni
+from services import prompt_moduli
 from services import documenti as documenti_service
 from services import promemoria
 from services import prompts
@@ -182,8 +183,10 @@ async def init_conversazione(request: Request):
             # NON il prompt clienti della dashboard. Niente registrazione/ticket per lui.
             dv["configurazione"] = prompts.voce_admin()
         else:
+            # Prompt vocale MODULARE: i moduli (identità, velocità, ordini, meeting…) sostituiscono
+            # il vecchio blob istruzioni_admin. La conoscenza del tenant resta in profilo.blocco_prompt.
             dv["configurazione"] = (profilo.blocco_prompt(db, azienda_id=aid)
-                                    + istruzioni.blocco_prompt(db, azienda_id=aid)
+                                    + prompt_moduli.componi(db, aid)
                                     + documenti_service.catalogo_prompt(db, azienda_id=aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
