@@ -130,8 +130,8 @@ export default function Documenti() {
     <div className="pw-stack">
       <div className="pw-between">
         <div>
-          <div className="pw-eyebrow">Base di conoscenza</div>
-          <h1 style={{ fontSize: 28, marginTop: 6 }}>Documenti</h1>
+          <div className="pw-eyebrow">Assistente</div>
+          <h1 style={{ fontSize: 28, marginTop: 6 }}>Base di Conoscenza</h1>
           <div className="pw-muted" style={{ marginTop: 6, fontSize: 14 }}>
             Listini, schede, condizioni: una volta indicizzati, l'assistente li consulta su voce e WhatsApp.
           </div>

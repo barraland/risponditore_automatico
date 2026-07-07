@@ -78,7 +78,7 @@ export default function Layout() {
           {mostra('mostra_agenti') && <NavLink to="/agenti">Agenti</NavLink>}
           {mostra('mostra_ordini') && <NavLink to="/ordini">Ordini</NavLink>}
           <NavLink to="/ticket">Ticket</NavLink>
-          <NavLink to="/documenti">Documenti</NavLink>
+          <NavLink to="/documenti">Base di Conoscenza</NavLink>
           <NavLink to="/promemoria">Promemoria</NavLink>
           <NavLink to="/inoltri">Inoltri</NavLink>
           {mostra('mostra_calendario') && <NavLink to="/calendario">Calendario</NavLink>}
