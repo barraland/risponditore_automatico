@@ -5,7 +5,6 @@ import { useTenant } from '../lib/tenant'
 type Riga = {
   id: number
   nome: string
-  telefono: string | null
   numeri_voce: string | null
   whatsapp_phone_id: string | null
 }
@@ -21,7 +20,7 @@ export default function Clienti() {
     setLoading(true)
     const { data, error } = await supabase
       .from('azienda')
-      .select('id, nome, telefono, numeri_voce, whatsapp_phone_id')
+      .select('id, nome, numeri_voce, whatsapp_phone_id')
       .order('id')
     if (error) setErr(error.message)
     else setRighe((data || []) as Riga[])
