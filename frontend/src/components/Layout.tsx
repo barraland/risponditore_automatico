@@ -71,10 +71,10 @@ export default function Layout() {
           <img src="/pipework-mark.svg" alt="Pipework" /> Pipework
         </a>
         <div className="pw-nav-links">
-          <NavLink to="/societa">Società</NavLink>
-          {mostra('mostra_ordini') && <NavLink to="/ordini">Ordini</NavLink>}
-          {mostra('mostra_agenti') && <NavLink to="/agenti">Agenti</NavLink>}
           <NavLink to="/contatti">Contatti</NavLink>
+          <NavLink to="/societa">Società</NavLink>
+          {mostra('mostra_agenti') && <NavLink to="/agenti">Agenti</NavLink>}
+          {mostra('mostra_ordini') && <NavLink to="/ordini">Ordini</NavLink>}
           <NavLink to="/ticket">Ticket</NavLink>
           <NavLink to="/documenti">Documenti</NavLink>
           <NavLink to="/promemoria">Promemoria</NavLink>
