@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
+import GoogleConnect from '../components/GoogleConnect'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 const GIORNI = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
@@ -22,7 +23,6 @@ export default function Calendario() {
   const tq = aziendaId ? `?azienda_id=${aziendaId}` : ''
   const [stato, setStato] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState<string | null>(null)
   const [week, setWeek] = useState(0)
   const [eventi, setEventi] = useState<any[]>([])
   const [loadingEv, setLoadingEv] = useState(false)
@@ -30,12 +30,12 @@ export default function Calendario() {
   const auth = { Authorization: `Bearer ${session?.access_token}` }
 
   async function caricaStato() {
-    if (!API) { setErr('VITE_API_BASE non configurato.'); setLoading(false); return }
+    if (!API) { setLoading(false); return }
     try {
       const res = await fetch(`${API}/google/status${tq}`, { headers: auth })
       const data = await res.json()
-      if (!res.ok) setErr(data?.detail || 'Errore'); else setStato(data)
-    } catch (e: any) { setErr(e?.message || 'Errore di rete') } finally { setLoading(false) }
+      if (res.ok) setStato(data)
+    } catch { /* la card GoogleConnect mostra gli errori */ } finally { setLoading(false) }
   }
   useEffect(() => { caricaStato() }, [aziendaId])
 
@@ -50,13 +50,6 @@ export default function Calendario() {
   }
   useEffect(() => { if (stato?.connesso) caricaEventi() }, [stato?.connesso, week])
 
-  function connetti() { window.location.href = `${API}/google/connect${tq}` }
-  async function disconnetti() {
-    if (!confirm('Scollegare Google (Calendar + invio email) per questo cliente?')) return
-    await fetch(`${API}/google/disconnect${tq}`, { method: 'POST', headers: auth })
-    setStato({ connesso: false }); setEventi([])
-  }
-
   const connesso = stato?.connesso
   const giorni = Array.from({ length: 7 }, (_, i) => addDays(lunedi(week), i))
   const oggiKey = isoDay(new Date())
@@ -66,36 +59,20 @@ export default function Calendario() {
     <div className="pw-stack" style={{ maxWidth: 1000 }}>
       <div>
         <div className="pw-eyebrow">Integrazioni</div>
-        <h1 style={{ fontSize: 28, marginTop: 6 }}>Google (Calendar + Email)</h1>
+        <h1 style={{ fontSize: 28, marginTop: 6 }}>Calendario</h1>
         <div className="pw-muted" style={{ fontSize: 14, marginTop: 6 }}>
-          Collega l'account Google del cliente: l'assistente prenota meeting sul suo calendario e
-          invia le email <strong>dalla sua casella</strong> (non più da un indirizzo unico di sistema).
+          Vista settimanale del Google Calendar collegato. La connessione (e l'invio email) si gestisce
+          qui sotto o dalla pagina <strong>Assistente</strong>.
         </div>
       </div>
 
-      <div className="pw-card">
-        <div className="pw-card-body">
-          {loading ? <div className="pw-spinner">Caricamento…</div>
-            : err ? <div className="pw-error">{err}</div>
-            : connesso ? (
-              <div className="pw-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <div><div style={{ fontWeight: 600, color: 'var(--fg)' }}>Connesso ✓</div>
-                  <div className="pw-muted" style={{ fontSize: 13 }}>{stato.email || '—'} · {stato.calendar_id || 'primary'}</div>
-                  <div className="pw-muted" style={{ fontSize: 13, marginTop: 2 }}>
-                    Invio email: {stato.email_attiva
-                      ? <span style={{ color: 'var(--accent, #6366f1)' }}>attivo da questa casella</span>
-                      : <span>non concesso — <button className="pw-btn pw-btn-ghost pw-btn-sm" style={{ padding: '0 4px' }} onClick={connetti}>riconnetti</button> per abilitarlo</span>}
-                  </div></div>
-                <button className="pw-btn pw-btn-ghost" onClick={disconnetti}>Disconnetti</button>
-              </div>
-            ) : (
-              <div className="pw-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <div className="pw-muted">Nessun calendario collegato.</div>
-                <button className="pw-btn pw-btn-primary" onClick={connetti}>Connetti a Google Calendar</button>
-              </div>
-            )}
-        </div>
-      </div>
+      <GoogleConnect />
+
+      {!connesso && !loading && (
+        <div className="pw-card"><div className="pw-card-body pw-muted">
+          Collega Google qui sopra per vedere il calendario della settimana.
+        </div></div>
+      )}
 
       {connesso && (
         <div className="pw-card">
