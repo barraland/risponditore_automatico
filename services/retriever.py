@@ -265,24 +265,13 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
         return _out(risposta="Non ho trovato nulla di pertinente nei documenti indicizzati.",
                     errore="no_match")
 
-    # Note interpretative per-file (scritte dall'admin): il retriever le legge insieme agli estratti.
-    ids = {r["documento_id"] for r in risultati}
-    note_file = {}
-    if ids:
-        for did, nt in db.query(Documento.id, Documento.note).filter(Documento.id.in_(ids)).all():
-            if (nt or "").strip():
-                note_file[did] = nt.strip()
-
-    # Contesto per lo stadio risposta + tracce/fonti per la UI.
+    # Contesto per lo stadio risposta + tracce/fonti per la UI. (Le note per-file vengono aggiunte
+    # in coda alla risposta finale da `cerca`, così non si perdono anche senza sintesi.)
     parti, fonti, viste = [], [], set()
     for r in risultati:
         etichetta = r["documento"] + (f", pp. {r['pagine']}" if r.get("pagine") else "")
-        intestazione = f"FONTE: {etichetta}"
-        nuovo = r["documento_id"] not in viste
-        if nuovo and r["documento_id"] in note_file:  # la nota una sola volta per file
-            intestazione += f"\n[NOTA DEL FILE: {note_file[r['documento_id']]}]"
-        parti.append(f"{intestazione}\n{r['testo']}")
-        if nuovo:
+        parti.append(f"FONTE: {etichetta}\n{r['testo']}")
+        if r["documento_id"] not in viste:
             viste.add(r["documento_id"])
             fonti.append({"documento_id": r["documento_id"], "documento": r["documento"],
                           "categoria": r["categoria"], "pagine": r.get("pagine"),
@@ -388,6 +377,23 @@ def rispondi_tabellare(db: Session, domanda: str, trace=None) -> dict:
 
 
 # ---------- Retriever AGNOSTICO: un router decide tabella vs documenti ----------
+
+def _blocco_note_documenti(db: Session, fonti: list) -> str:
+    """Note interpretative per-file (scritte dall'admin) dei documenti/tabelle CITATI, da APPENDERE
+    in coda alla risposta: così arrivano all'agente anche quando il retriever gira SENZA sintesi
+    (nessuna 2ª LLM). Stringa vuota se nessuna fonte ha una nota."""
+    ids = [f.get("documento_id") for f in (fonti or []) if f.get("documento_id")]
+    if not ids:
+        return ""
+    righe = []
+    for nome, nt in db.query(Documento.nome_file, Documento.note).filter(Documento.id.in_(ids)).all():
+        if (nt or "").strip():
+            righe.append(f"- {nome}: {nt.strip()}")
+    if not righe:
+        return ""
+    return ("\n\nNOTE SUI DOCUMENTI (indicazioni dell'amministratore su come leggerli/rispondere — "
+            "tienile presenti nella risposta):\n" + "\n".join(righe))
+
 
 ROUTER_SYSTEM = """Sei il ROUTER di un servizio di retrieval. Decidi DOVE sta la risposta a una domanda:
 - "tabella": dati strutturati (CSV/Excel: prezzi, disponibilità, formati, anagrafiche, record precisi).
@@ -528,7 +534,8 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
         fonti = ([{"documento_id": did, "documento": doc.nome_file, "categoria": doc.categoria,
                    "pagine": None, "inviabile": bool(doc.inviabile)}] if doc else [])
         perf.mark("✓ FINE (fonte=tabella)")
-        return _out(risposta=tabellare.formatta_righe(righe), fonte="tabella", righe=righe[:30],
+        risposta_tab = tabellare.formatta_righe(righe) + _blocco_note_documenti(db, fonti)
+        return _out(risposta=risposta_tab, fonte="tabella", righe=righe[:30],
                     fonti=fonti, query=piano, errore=None)
     if fonte == "documenti":
         qemb = emb_future.result()  # già pronto (calcolato durante il router): attesa ~0
@@ -537,7 +544,9 @@ def cerca(db: Session, domanda: str, categoria: str | None = None, trace=None,
         ris = rispondi_vettoriale(db, domanda, categoria=categoria, trace=trace,
                                   azienda_id=azienda_id, qemb=qemb, sintetizza=sintetizza)
         perf.mark("✓ FINE (fonte=documenti)")
-        return _out(risposta=ris.get("risposta", ""), fonte="documenti", fonti=ris.get("fonti", []),
+        # Note per-file APPESE alla risposta: garantite anche senza sintesi.
+        risposta_doc = (ris.get("risposta", "") or "") + _blocco_note_documenti(db, ris.get("fonti", []))
+        return _out(risposta=risposta_doc, fonte="documenti", fonti=ris.get("fonti", []),
                     chunk=ris.get("chunk", []), query=piano, errore=ris.get("errore"))
     pool.shutdown(wait=False)
     perf.mark("✓ FINE (fonte=nessuna)")
