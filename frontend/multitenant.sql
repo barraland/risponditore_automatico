@@ -202,3 +202,8 @@ alter table public.prompt_modulo add column if not exists testi_canale text;  --
 
 -- Contatti: campo note (testo libero) per contesto specifico del business (es. veterinario).
 alter table public.contatti add column if not exists note text;
+
+-- Personalizzazione GUI per-tenant: nascondi voci di menù non pertinenti (None/True = mostra, False = nascondi).
+alter table public.azienda add column if not exists mostra_ordini     boolean;
+alter table public.azienda add column if not exists mostra_agenti     boolean;
+alter table public.azienda add column if not exists mostra_calendario boolean;

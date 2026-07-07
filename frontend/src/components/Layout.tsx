@@ -1,12 +1,14 @@
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
+import { supabase } from '../lib/supabase'
+import Modal from './Modal'
 
 function TenantSwitcher() {
   const { isSuperAdmin, aziende, aziendaId, setAziendaId } = useTenant()
   const attiva = aziende.find(a => a.id === aziendaId)
   if (!isSuperAdmin) {
-    // Utente-cliente: un solo tenant, mostrato come etichetta statica.
     if (!attiva) return null
     return <span className="pw-tenant-tag" title="Il tuo spazio cliente">{attiva.nome}</span>
   }
@@ -23,9 +25,45 @@ function TenantSwitcher() {
   )
 }
 
+// Pannello ⚙️: mostra/nascondi voci di menù per il cliente attivo (salva su azienda).
+function GuiConfig({ onClose }: { onClose: () => void }) {
+  const { aziendaId, aziende, reload } = useTenant()
+  const attiva = aziende.find(a => a.id === aziendaId)
+  const [err, setErr] = useState<string | null>(null)
+  const VOCI: [string, string][] = [
+    ['mostra_ordini', 'Ordini'], ['mostra_agenti', 'Agenti'], ['mostra_calendario', 'Calendario'],
+  ]
+  async function toggle(campo: string, mostra: boolean) {
+    if (!aziendaId) return
+    // salviamo false per nascondere; null quando è mostrato (default)
+    const { error } = await supabase.from('azienda').update({ [campo]: mostra ? null : false }).eq('id', aziendaId)
+    if (error) setErr(error.message); else { setErr(null); await reload() }
+  }
+  return (
+    <Modal title={`Personalizza dashboard — ${attiva?.nome ?? ''}`} onClose={onClose}>
+      <div className="pw-muted" style={{ fontSize: 13 }}>
+        Nascondi le voci di menù non pertinenti a questo cliente. Non elimina dati: nasconde solo i pulsanti.
+      </div>
+      {VOCI.map(([campo, label]) => {
+        const mostra = (attiva as any)?.[campo] !== false
+        return (
+          <label key={campo} className="pw-between" style={{ cursor: 'pointer', padding: '6px 0' }}>
+            <span>{label}</span>
+            <input type="checkbox" checked={mostra} onChange={e => toggle(campo, e.target.checked)} />
+          </label>
+        )
+      })}
+      {err && <div className="pw-error">{err}</div>}
+    </Modal>
+  )
+}
+
 export default function Layout() {
   const { session, signOut } = useAuth()
-  const { isSuperAdmin, aziendaId } = useTenant()
+  const { isSuperAdmin, aziendaId, aziende } = useTenant()
+  const [config, setConfig] = useState(false)
+  const attiva = aziende.find(a => a.id === aziendaId)
+  const mostra = (campo: string) => (attiva as any)?.[campo] !== false  // default: visibile
   return (
     <>
       <nav className="pw-nav">
@@ -34,17 +72,19 @@ export default function Layout() {
         </a>
         <div className="pw-nav-links">
           <NavLink to="/societa">Società</NavLink>
-          <NavLink to="/ordini">Ordini</NavLink>
-          <NavLink to="/agenti">Agenti</NavLink>
+          {mostra('mostra_ordini') && <NavLink to="/ordini">Ordini</NavLink>}
+          {mostra('mostra_agenti') && <NavLink to="/agenti">Agenti</NavLink>}
           <NavLink to="/contatti">Contatti</NavLink>
           <NavLink to="/ticket">Ticket</NavLink>
           <NavLink to="/documenti">Documenti</NavLink>
           <NavLink to="/promemoria">Promemoria</NavLink>
           <NavLink to="/inoltri">Inoltri</NavLink>
-          <NavLink to="/calendario">Calendario</NavLink>
+          {mostra('mostra_calendario') && <NavLink to="/calendario">Calendario</NavLink>}
         </div>
         <div className="pw-nav-right">
           <TenantSwitcher />
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
+            onClick={() => setConfig(true)} style={{ fontSize: 16, lineHeight: 1 }}>⚙️</button>
           {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
           <NavLink to="/admin">Admin</NavLink>
           <NavLink to="/prompt">Assistente</NavLink>
@@ -53,9 +93,9 @@ export default function Layout() {
         </div>
       </nav>
       <main className="pw-container">
-        {/* key sul tenant: cambiando cliente le pagine si rimontano e ricaricano i dati filtrati. */}
         <Outlet key={aziendaId ?? 'none'} />
       </main>
+      {config && <GuiConfig onClose={() => setConfig(false)} />}
     </>
   )
 }

@@ -123,6 +123,11 @@ class Azienda(Base):
     numeri_voce = Column(Text, nullable=True)            # numeri Twilio in ingresso (E.164, csv) → tenant voce
     whatsapp_phone_id = Column(String(60), nullable=True, index=True)  # phone_number_id Meta → tenant WhatsApp
 
+    # --- Personalizzazione GUI per-tenant (None/True = mostra la voce di menù; False = nascondila) ---
+    mostra_ordini = Column(Boolean, nullable=True)
+    mostra_agenti = Column(Boolean, nullable=True)
+    mostra_calendario = Column(Boolean, nullable=True)
+
 
 class PromptModulo(Base):
     """Override per-tenant di un MODULO del prompt vocale.

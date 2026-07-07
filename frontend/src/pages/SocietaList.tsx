@@ -37,7 +37,7 @@ export default function SocietaList() {
     <div className="pw-stack">
       <div className="pw-between">
         <div>
-          <div className="pw-eyebrow">CRM HORECA</div>
+          <div className="pw-eyebrow">CRM</div>
           <h1 style={{ fontSize: 28, marginTop: 6 }}>Società</h1>
         </div>
         <div className="pw-row">

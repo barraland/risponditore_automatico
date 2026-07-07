@@ -36,7 +36,7 @@ export default function ContattiList() {
   return (
     <div className="pw-stack">
       <div className="pw-between">
-        <div><div className="pw-eyebrow">CRM HORECA</div><h1 style={{ fontSize: 28, marginTop: 6 }}>Contatti</h1></div>
+        <div><div className="pw-eyebrow">CRM</div><h1 style={{ fontSize: 28, marginTop: 6 }}>Contatti</h1></div>
         <div className="pw-row">
           <input className="pw-input" style={{ maxWidth: 260 }} placeholder="Cerca…" value={q} onChange={e => setQ(e.target.value)} />
           <button className="pw-btn pw-btn-primary" onClick={() => setNuovo(true)}>+ Nuovo contatto</button>

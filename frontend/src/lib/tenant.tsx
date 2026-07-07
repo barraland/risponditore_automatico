@@ -3,7 +3,12 @@ import type { ReactNode } from 'react'
 import { supabase } from './supabase'
 import { useAuth } from './auth'
 
-export type Azienda = { id: number; nome: string }
+export type Azienda = {
+  id: number; nome: string
+  mostra_ordini?: boolean | null
+  mostra_agenti?: boolean | null
+  mostra_calendario?: boolean | null
+}
 
 type TenantCtx = {
   ready: boolean
@@ -32,7 +37,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       .from('super_admin').select('user_id').eq('user_id', session.user.id).maybeSingle()
     setSuper(!!sa)
     // Elenco tenant visibili — RLS: super-admin li vede tutti, il cliente solo il suo.
-    const { data: az } = await supabase.from('azienda').select('id, nome').order('id')
+    const { data: az } = await supabase.from('azienda')
+      .select('id, nome, mostra_ordini, mostra_agenti, mostra_calendario').order('id')
     const lista = (az || []) as Azienda[]
     setAziende(lista)
     // Tenant attivo: ultimo scelto (se ancora visibile), altrimenti il primo.

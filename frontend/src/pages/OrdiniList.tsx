@@ -28,7 +28,7 @@ export default function OrdiniList() {
   return (
     <div className="pw-stack">
       <div className="pw-between">
-        <div><div className="pw-eyebrow">CRM HORECA</div><h1 style={{ fontSize: 28, marginTop: 6 }}>Ordini</h1></div>
+        <div><div className="pw-eyebrow">CRM</div><h1 style={{ fontSize: 28, marginTop: 6 }}>Ordini</h1></div>
         <select className="pw-select" style={{ maxWidth: 200 }} value={stato} onChange={e => setStato(e.target.value)}>
           <option value="">Tutti gli stati</option>{STATI_ORDINE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
