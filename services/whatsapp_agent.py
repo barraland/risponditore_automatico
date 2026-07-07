@@ -432,6 +432,29 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         + documenti_service.catalogo_prompt(db)
         + promemoria.blocco_prompt(db, contatto.id)
     )
+    # Valorizza i segnaposto dinamici dei moduli ({{cliente_conosciuto}}, {{riassunto_cliente}},
+    # {{telefono_chiamante}}, {{tenant}}…) come fanno voce ed ElevenLabs — altrimenti restano grezzi.
+    from routers import elevenlabs  # _riassunto: stessa logica dell'init ElevenLabs (import pigro)
+    _soc = crm.societa_di_contatto(db, contatto)
+    _ultimo = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
+               .order_by(Ordine.data.desc()).first())
+    _known = bool(contatto.nome or contatto.cognome or contatto.ragione_sociale)
+    _riass = (elevenlabs._riassunto(contatto, _soc, _ultimo) if _known
+              else "Contatto non riconosciuto: è un nuovo contatto da registrare.")
+    _dv = {
+        "cliente_conosciuto": "sì" if _known else "no",
+        "riassunto_cliente": _riass,
+        "telefono_chiamante": (contatto.telefono or telefono or ""),
+        "tenant": "",  # WhatsApp single-tenant; il tool riceve il tenant dal codice
+        "nome": contatto.nome or "", "cognome": contatto.cognome or "",
+        "titolo": contatto.titolo or "", "nome_cliente": (contatto.nome_completo if _known else ""),
+        "societa": (_soc.nome if _soc else (contatto.ragione_sociale or "")),
+        "ruolo": contatto.ruolo or "", "email_cliente": contatto.email or "",
+        "azienda": profilo.nome_azienda(db), "saluto": "", "configurazione": "",
+    }
+    for _k, _v in _dv.items():
+        system = system.replace("{{" + _k + "}}", _v or "")
+
     ticket_esistente = _ticket_aperto(db, contatto.id)
     user = (
         f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
