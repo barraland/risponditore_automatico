@@ -451,7 +451,8 @@ def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0, tenant: str = "") 
                  f"come da accordi telefonici, le confermiamo il suo ordine:\n\n"
                  f"{crm.riepilogo_ordine(ordine)}\n\n"
                  f"Cordiali saluti,\n{profilo.nome_azienda(db, _aid(tenant))}")
-        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo)
+        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
+                                            azienda_id=(c.azienda_id or _aid(tenant)))
         return ({"inviato": True, "email": email, "ordine_id": ordine.id} if inviata
                 else {"errore": "Invio email non riuscito (verifica configurazione Gmail)."})
     finally:

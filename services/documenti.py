@@ -82,7 +82,8 @@ def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_a
     oggetto = (oggetto or "").strip() or (nome_azienda or "Informazioni")
     try:
         inviata = email_service.invia_email(destinatario=email, oggetto=oggetto,
-                                            corpo=testo.strip(), allegati=allegati or None)
+                                            corpo=testo.strip(), allegati=allegati or None,
+                                            azienda_id=getattr(contatto, "azienda_id", None))
     finally:
         for tmp in da_pulire:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -153,7 +154,8 @@ def invia_documento_email(db, email: str, documento_id: int, testo: str = "", og
     oggetto = (oggetto or "").strip() or (nome_azienda or "Documento")
     try:
         inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
-                                            allegati=[percorso])
+                                            allegati=[percorso],
+                                            azienda_id=getattr(doc, "azienda_id", None))
     finally:
         if da_pulire:
             shutil.rmtree(da_pulire, ignore_errors=True)
@@ -280,7 +282,8 @@ def invia_documenti_email(db, contatto, categoria: str, nome_azienda: str) -> di
              f"in allegato i documenti richiesti: {', '.join(nomi)}.\n\n"
              f"Cordiali saluti,\n{nome_azienda}")
     inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
-                                        allegati=[p for _, p in allegati])
+                                        allegati=[p for _, p in allegati],
+                                        azienda_id=getattr(contatto, "azienda_id", None))
     if not inviata:
         return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
     return {"inviato": True, "email": email, "documenti": nomi}

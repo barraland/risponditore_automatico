@@ -210,3 +210,6 @@ alter table public.azienda add column if not exists mostra_calendario boolean;
 
 -- Documenti: nota interpretativa PER FILE (scritta dall'admin, letta dal retriever).
 alter table public.documenti add column if not exists note text;
+
+-- Google: scope concessi (per sapere se la connessione include gmail.send = invio email per-tenant).
+alter table public.google_calendar add column if not exists scopes text;

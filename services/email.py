@@ -32,8 +32,27 @@ def _subtype(percorso: str) -> tuple[str, str]:
     return "application", "octet-stream"
 
 
-def invia_email(destinatario: str, oggetto: str, corpo: str, allegati: list[str] | None = None) -> bool:
-    """Invia un'email. Ritorna True se inviata, False altrimenti (non solleva)."""
+def invia_email(destinatario: str, oggetto: str, corpo: str, allegati: list[str] | None = None,
+                azienda_id: int | None = None) -> bool:
+    """Invia un'email. Ritorna True se inviata, False altrimenti (non solleva).
+
+    Se `azienda_id` ha una connessione Google con scope gmail.send, invia DALLA casella del tenant
+    (Gmail API); altrimenti (o in caso di errore) ripiega sull'account SMTP di sistema del .env.
+    """
+    if azienda_id:
+        try:
+            from services import google_calendar as gc
+            from database import SessionLocal
+            db = SessionLocal()
+            try:
+                if gc.puo_email(db, azienda_id) and gc.invia_email_gmail(
+                        db, azienda_id, destinatario, oggetto, corpo, allegati):
+                    return True
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning("Invio via Gmail del tenant fallito, ripiego su SMTP: %s", e)
+
     if not GMAIL_FROM or not GMAIL_APP_PASSWORD:
         logger.warning("Gmail non configurato: GMAIL_FROM o GMAIL_APP_PASSWORD mancante")
         return False

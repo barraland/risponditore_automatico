@@ -562,6 +562,7 @@ class GoogleCalendar(Base):
     calendar_id = Column(String(200), default="primary")
     access_token = Column(Text)
     refresh_token = Column(Text)                      # long-lived: serve per rinnovare l'access token
+    scopes = Column(Text)                             # scope concessi (per sapere se c'è gmail.send)
     scad = Column(DateTime)                           # scadenza dell'access token
     connesso_at = Column(DateTime, default=datetime.utcnow)
 

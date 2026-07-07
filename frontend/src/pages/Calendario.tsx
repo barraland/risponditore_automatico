@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
+import { useTenant } from '../lib/tenant'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 const GIORNI = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
@@ -17,6 +18,8 @@ const fmtGiorno = (d: Date) => d.toLocaleDateString('it-IT', { day: '2-digit', m
 
 export default function Calendario() {
   const { session } = useAuth()
+  const { aziendaId } = useTenant()
+  const tq = aziendaId ? `?azienda_id=${aziendaId}` : ''
   const [stato, setStato] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -29,12 +32,12 @@ export default function Calendario() {
   async function caricaStato() {
     if (!API) { setErr('VITE_API_BASE non configurato.'); setLoading(false); return }
     try {
-      const res = await fetch(`${API}/google/status`, { headers: auth })
+      const res = await fetch(`${API}/google/status${tq}`, { headers: auth })
       const data = await res.json()
       if (!res.ok) setErr(data?.detail || 'Errore'); else setStato(data)
     } catch (e: any) { setErr(e?.message || 'Errore di rete') } finally { setLoading(false) }
   }
-  useEffect(() => { caricaStato() }, [])
+  useEffect(() => { caricaStato() }, [aziendaId])
 
   async function caricaEventi() {
     const da = lunedi(week), a = addDays(da, 7)
@@ -47,10 +50,10 @@ export default function Calendario() {
   }
   useEffect(() => { if (stato?.connesso) caricaEventi() }, [stato?.connesso, week])
 
-  function connetti() { window.location.href = `${API}/google/connect` }
+  function connetti() { window.location.href = `${API}/google/connect${tq}` }
   async function disconnetti() {
-    if (!confirm('Scollegare Google Calendar?')) return
-    await fetch(`${API}/google/disconnect`, { method: 'POST', headers: auth })
+    if (!confirm('Scollegare Google (Calendar + invio email) per questo cliente?')) return
+    await fetch(`${API}/google/disconnect${tq}`, { method: 'POST', headers: auth })
     setStato({ connesso: false }); setEventi([])
   }
 
@@ -63,9 +66,10 @@ export default function Calendario() {
     <div className="pw-stack" style={{ maxWidth: 1000 }}>
       <div>
         <div className="pw-eyebrow">Integrazioni</div>
-        <h1 style={{ fontSize: 28, marginTop: 6 }}>Google Calendar</h1>
+        <h1 style={{ fontSize: 28, marginTop: 6 }}>Google (Calendar + Email)</h1>
         <div className="pw-muted" style={{ fontSize: 14, marginTop: 6 }}>
-          Calendario collegato in sola lettura. Presto l'assistente potrà prenotare qui i meeting.
+          Collega l'account Google del cliente: l'assistente prenota meeting sul suo calendario e
+          invia le email <strong>dalla sua casella</strong> (non più da un indirizzo unico di sistema).
         </div>
       </div>
 
@@ -76,7 +80,12 @@ export default function Calendario() {
             : connesso ? (
               <div className="pw-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                 <div><div style={{ fontWeight: 600, color: 'var(--fg)' }}>Connesso ✓</div>
-                  <div className="pw-muted" style={{ fontSize: 13 }}>{stato.email || '—'} · {stato.calendar_id || 'primary'}</div></div>
+                  <div className="pw-muted" style={{ fontSize: 13 }}>{stato.email || '—'} · {stato.calendar_id || 'primary'}</div>
+                  <div className="pw-muted" style={{ fontSize: 13, marginTop: 2 }}>
+                    Invio email: {stato.email_attiva
+                      ? <span style={{ color: 'var(--accent, #6366f1)' }}>attivo da questa casella</span>
+                      : <span>non concesso — <button className="pw-btn pw-btn-ghost pw-btn-sm" style={{ padding: '0 4px' }} onClick={connetti}>riconnetti</button> per abilitarlo</span>}
+                  </div></div>
                 <button className="pw-btn pw-btn-ghost" onClick={disconnetti}>Disconnetti</button>
               </div>
             ) : (

@@ -20,14 +20,25 @@ logger = logging.getLogger(__name__)
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
-SCOPES = "openid email https://www.googleapis.com/auth/calendar.events"
+# Una sola connessione Google per tenant copre Calendar + invio email (gmail.send).
+SCOPES = ("openid email https://www.googleapis.com/auth/calendar.events "
+          "https://www.googleapis.com/auth/gmail.send")
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 
-# state anti-CSRF, in memoria (single worker, demo)
-_states: dict[str, datetime] = {}
+# state anti-CSRF → azienda_id del tenant che sta connettendo (in memoria, single worker, demo)
+_states: dict[str, tuple[datetime, int | None]] = {}
+
+
+def _row(db, azienda_id: int | None = None):
+    """Riga di connessione del tenant (per azienda_id); senza azienda_id, la prima (single-tenant)."""
+    q = db.query(GoogleCalendar)
+    if azienda_id:
+        q = q.filter(GoogleCalendar.azienda_id == azienda_id)
+    return q.first()
 
 
 def configurato() -> bool:
@@ -38,12 +49,12 @@ def _redirect_uri(host: str) -> str:
     return f"https://{host}/google/callback"
 
 
-def url_consenso(host: str) -> str:
-    """URL della schermata di consenso Google (con access_type=offline per avere il refresh token)."""
+def url_consenso(host: str, azienda_id: int | None = None) -> str:
+    """URL della schermata di consenso Google (access_type=offline per il refresh token). Lo `state`
+    memorizza il tenant che sta connettendo, così il callback salva la riga per l'azienda giusta."""
     state = secrets.token_urlsafe(24)
-    _states[state] = datetime.utcnow()
-    # pulizia state vecchi
-    for s, t in list(_states.items()):
+    _states[state] = (datetime.utcnow(), azienda_id)
+    for s, (t, _a) in list(_states.items()):  # pulizia state vecchi
         if (datetime.utcnow() - t).total_seconds() > 600:
             _states.pop(s, None)
     q = urllib.parse.urlencode({
@@ -54,14 +65,16 @@ def url_consenso(host: str) -> str:
     return f"{AUTH_URL}?{q}"
 
 
-def valida_state(state: str) -> bool:
-    ok = state in _states
-    _states.pop(state, None)
-    return ok
+def consuma_state(state: str) -> tuple[bool, int | None]:
+    """Valida (e consuma) lo state; ritorna (valido, azienda_id)."""
+    dato = _states.pop(state, None)
+    if dato is None:
+        return False, None
+    return True, dato[1]
 
 
-def scambia_e_salva(code: str, host: str) -> str:
-    """Scambia il code con i token, recupera l'email e salva tutto. Ritorna l'email connessa."""
+def scambia_e_salva(code: str, host: str, azienda_id: int | None = None) -> str:
+    """Scambia il code con i token, recupera l'email e salva tutto per il tenant. Ritorna l'email."""
     r = httpx.post(TOKEN_URL, data={
         "code": code, "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
         "redirect_uri": _redirect_uri(host), "grant_type": "authorization_code",
@@ -70,6 +83,7 @@ def scambia_e_salva(code: str, host: str) -> str:
     tok = r.json()
     access = tok["access_token"]
     refresh = tok.get("refresh_token")
+    scopes = tok.get("scope", "")
     expires = int(tok.get("expires_in", 3600))
 
     email = ""
@@ -82,35 +96,39 @@ def scambia_e_salva(code: str, host: str) -> str:
 
     db = SessionLocal()
     try:
-        row = db.query(GoogleCalendar).first()
+        row = _row(db, azienda_id)
         if not row:
-            row = GoogleCalendar()
+            row = GoogleCalendar(azienda_id=azienda_id)
             db.add(row)
         row.email = email
         row.calendar_id = "primary"
         row.access_token = access
+        row.scopes = scopes
         if refresh:  # arriva solo al primo consenso; non sovrascrivere con vuoto
             row.refresh_token = refresh
         row.scad = datetime.utcnow() + timedelta(seconds=expires - 60)
         row.connesso_at = datetime.utcnow()
         db.commit()
-        logger.info("📅 Google Calendar connesso: %s", email or "(email n/d)")
+        logger.info("📅 Google connesso (tenant=%s): %s | scopes=%s", azienda_id, email or "n/d", scopes)
         return email
     finally:
         db.close()
 
 
-def stato(db) -> dict:
-    row = db.query(GoogleCalendar).first()
+def stato(db, azienda_id: int | None = None) -> dict:
+    row = _row(db, azienda_id)
     if not row or not row.refresh_token:
         return {"connesso": False}
     return {"connesso": True, "email": row.email, "calendar_id": row.calendar_id,
+            "email_attiva": "gmail.send" in (row.scopes or ""),
             "connesso_at": row.connesso_at.isoformat() if row.connesso_at else None}
 
 
-def disconnetti(db) -> None:
-    db.query(GoogleCalendar).delete()
-    db.commit()
+def disconnetti(db, azienda_id: int | None = None) -> None:
+    row = _row(db, azienda_id)
+    if row:
+        db.delete(row)
+        db.commit()
 
 
 def eventi(db, time_min: str, time_max: str, max_results: int = 100) -> list[dict]:
@@ -313,9 +331,9 @@ def disponibilita_settimana(db, giorni: int = 7, durata_min: int = 30, ora_inizi
     return {"ok": True, "giorni": out}
 
 
-def access_token_valido(db) -> str | None:
-    """Access token valido, rinnovato col refresh token se scaduto. None se non connesso. (Step 2)."""
-    row = db.query(GoogleCalendar).first()
+def access_token_valido(db, azienda_id: int | None = None) -> str | None:
+    """Access token valido, rinnovato col refresh token se scaduto. None se non connesso."""
+    row = _row(db, azienda_id)
     if not row or not row.refresh_token:
         return None
     if row.scad and row.scad > datetime.utcnow() and row.access_token:
@@ -336,3 +354,51 @@ def access_token_valido(db) -> str | None:
     except Exception as e:
         logger.warning("Refresh token Google errore: %s", e)
         return None
+
+
+# ---------- Invio email via Gmail API (dalla casella connessa del tenant) ----------
+
+def puo_email(db, azienda_id: int | None = None) -> bool:
+    """True se il tenant ha una connessione Google con lo scope gmail.send (può inviare email)."""
+    row = _row(db, azienda_id)
+    return bool(row and row.refresh_token and "gmail.send" in (row.scopes or ""))
+
+
+def invia_email_gmail(db, azienda_id: int | None, destinatario: str, oggetto: str,
+                      corpo: str, allegati: list[str] | None = None) -> bool:
+    """Invia un'email via Gmail API DALLA casella Google connessa del tenant. False se non possibile."""
+    import base64
+    import os
+    from email.message import EmailMessage
+    from services import email as email_svc   # lazy: riusa _subtype (no import circolare)
+
+    token = access_token_valido(db, azienda_id)
+    row = _row(db, azienda_id)
+    if not token or not row:
+        return False
+    msg = EmailMessage()
+    msg["To"] = destinatario
+    if row.email:
+        msg["From"] = row.email
+    msg["Subject"] = oggetto or ""
+    msg.set_content(corpo or "")
+    for path in (allegati or []):
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            maintype, subtype = email_svc._subtype(path)
+            msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=os.path.basename(path))
+        except Exception as e:
+            logger.warning("Allegato %s saltato: %s", path, e)
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    try:
+        r = httpx.post(GMAIL_SEND_URL, headers={"Authorization": f"Bearer {token}"},
+                       json={"raw": raw}, timeout=20)
+    except Exception as e:
+        logger.warning("Gmail API send errore di rete: %s", e)
+        return False
+    if r.status_code == 200:
+        logger.info("📧 Email via Gmail API da %s a %s", row.email, destinatario)
+        return True
+    logger.warning("Gmail API send fallito (%s): %s", r.status_code, r.text[:200])
+    return False

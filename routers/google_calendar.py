@@ -40,44 +40,45 @@ def _spa_base() -> str:
 
 
 @router.get("/connect")
-async def connect(request: Request):
+async def connect(request: Request, azienda_id: int = Query(0)):
     if not gc.configurato():
         return HTMLResponse("Google OAuth non configurato (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).",
                             status_code=500)
     host = request.headers.get("host", request.url.hostname)
-    return RedirectResponse(gc.url_consenso(host))
+    return RedirectResponse(gc.url_consenso(host, azienda_id or None))
 
 
 @router.get("/callback")
 async def callback(request: Request, code: str = "", state: str = "", error: str = ""):
     if error:
         return HTMLResponse(f"Connessione annullata: {error}")
-    if not gc.valida_state(state):
+    ok, azienda_id = gc.consuma_state(state)
+    if not ok:
         return HTMLResponse("Sessione di connessione scaduta o non valida: riprova dalla dashboard.",
                             status_code=400)
     host = request.headers.get("host", request.url.hostname)
     try:
-        email = gc.scambia_e_salva(code, host)
+        email = gc.scambia_e_salva(code, host, azienda_id)
     except Exception as e:
         logger.error("Callback Google fallito: %s", e)
         return HTMLResponse(f"Errore nella connessione a Google: {e}", status_code=500)
     base = _spa_base()
     if base:
         return RedirectResponse(f"{base}/calendario?connected=1")
-    return HTMLResponse(f"<h3>Google Calendar connesso come {email or 'account Google'}. "
+    return HTMLResponse(f"<h3>Google connesso come {email or 'account Google'}. "
                         "Può chiudere questa scheda.</h3>")
 
 
 @router.get("/status")
-async def status(authorization: str | None = Header(None), db=Depends(get_db)):
+async def status(azienda_id: int = Query(0), authorization: str | None = Header(None), db=Depends(get_db)):
     await _verify_user(authorization)
-    return gc.stato(db)
+    return gc.stato(db, azienda_id or None)
 
 
 @router.post("/disconnect")
-async def disconnect(authorization: str | None = Header(None), db=Depends(get_db)):
+async def disconnect(azienda_id: int = Query(0), authorization: str | None = Header(None), db=Depends(get_db)):
     await _verify_user(authorization)
-    gc.disconnetti(db)
+    gc.disconnetti(db, azienda_id or None)
     return {"ok": True}
 
 
