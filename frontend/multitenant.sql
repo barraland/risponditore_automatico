@@ -207,3 +207,6 @@ alter table public.contatti add column if not exists note text;
 alter table public.azienda add column if not exists mostra_ordini     boolean;
 alter table public.azienda add column if not exists mostra_agenti     boolean;
 alter table public.azienda add column if not exists mostra_calendario boolean;
+
+-- Documenti: nota interpretativa PER FILE (scritta dall'admin, letta dal retriever).
+alter table public.documenti add column if not exists note text;

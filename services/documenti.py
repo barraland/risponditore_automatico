@@ -40,7 +40,11 @@ def catalogo_prompt(db, azienda_id: int | None = None) -> str:
         for d in lst:
             summ = next((s.summary for s in sorted(d.sezioni, key=lambda s: s.ordine) if s.summary), None)
             summ = (summ or "").strip().replace("\n", " ")
-            righe.append(f"  - {d.nome_file}: {summ[:200] if summ else '(contenuto del file)'}")
+            riga = f"  - {d.nome_file}: {summ[:200] if summ else '(contenuto del file)'}"
+            nota = (getattr(d, "note", "") or "").strip().replace("\n", " ")
+            if nota:
+                riga += f" — nota: {nota[:200]}"
+            righe.append(riga)
     return (
         "\n\n=== DOCUMENTI DISPONIBILI (cosa puoi allegare via email) ===\n"
         "Puoi allegare SOLO i documenti elencati qui sotto, indicando la loro categoria. "

@@ -265,12 +265,24 @@ def rispondi_vettoriale(db: Session, domanda: str, categoria: str | None = None,
         return _out(risposta="Non ho trovato nulla di pertinente nei documenti indicizzati.",
                     errore="no_match")
 
+    # Note interpretative per-file (scritte dall'admin): il retriever le legge insieme agli estratti.
+    ids = {r["documento_id"] for r in risultati}
+    note_file = {}
+    if ids:
+        for did, nt in db.query(Documento.id, Documento.note).filter(Documento.id.in_(ids)).all():
+            if (nt or "").strip():
+                note_file[did] = nt.strip()
+
     # Contesto per lo stadio risposta + tracce/fonti per la UI.
     parti, fonti, viste = [], [], set()
     for r in risultati:
         etichetta = r["documento"] + (f", pp. {r['pagine']}" if r.get("pagine") else "")
-        parti.append(f"FONTE: {etichetta}\n{r['testo']}")
-        if r["documento_id"] not in viste:
+        intestazione = f"FONTE: {etichetta}"
+        nuovo = r["documento_id"] not in viste
+        if nuovo and r["documento_id"] in note_file:  # la nota una sola volta per file
+            intestazione += f"\n[NOTA DEL FILE: {note_file[r['documento_id']]}]"
+        parti.append(f"{intestazione}\n{r['testo']}")
+        if nuovo:
             viste.add(r["documento_id"])
             fonti.append({"documento_id": r["documento_id"], "documento": r["documento"],
                           "categoria": r["categoria"], "pagine": r.get("pagine"),
@@ -423,7 +435,11 @@ def _indice_documenti(db: Session, azienda_id: int | None = None) -> str:
         if not d.sezioni:
             continue
         descr = (d.riassunto or "").strip() or "; ".join(s.titolo for s in d.sezioni[:5])
-        righe.append(f"- «{d.nome_file}» (categoria {d.categoria}): {descr[:300]}")
+        riga = f"- «{d.nome_file}» (categoria {d.categoria}): {descr[:300]}"
+        nota = (getattr(d, "note", "") or "").strip()
+        if nota:
+            riga += f"\n    NOTA: {nota}"   # nota interpretativa scritta dall'admin per questo file
+        righe.append(riga)
     return "\n".join(righe)
 
 

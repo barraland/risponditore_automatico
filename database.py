@@ -423,6 +423,7 @@ class Documento(Base):
     errore = Column(Text, nullable=True)             # messaggio in caso di stato ERROR
     indice_raw = Column(Text, nullable=True)         # output grezzo del sezionatore (per ispezione / needs_review)
     riassunto = Column(Text, nullable=True)          # summary generato da AI (metadato per il retriever)
+    note = Column(Text, nullable=True)               # nota interpretativa scritta dall'admin: il retriever la legge
     inviabile = Column(Boolean, default=True, nullable=False)  # se l'assistente può inviarlo al cliente come allegato
     caricato_at = Column(DateTime, default=datetime.utcnow)
 

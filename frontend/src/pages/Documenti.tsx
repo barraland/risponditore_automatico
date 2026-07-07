@@ -1,92 +1,37 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
 import CampoAzienda from '../components/CampoAzienda'
 import { DOC_CATEGORIE, badgeDoc, dataBreve, fileSize, labelCategoria, lower, statoDoc } from '../lib/format'
-import Modal from '../components/Modal'
 
 const BUCKET = 'documenti'
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
-// Note in testo libero per categoria: il retriever le antepone SEMPRE quando consulta i
-// documenti (es. "prezzi IVA inclusa", come leggere una colonna). Lista compatta, editor in modal.
-function NoteCategorie() {
-  const { aziendaId } = useTenant()
-  const [note, setNote] = useState<Record<string, string>>({})
-  const [open, setOpen] = useState(false)
-  const [editing, setEditing] = useState<{ k: string; label: string } | null>(null)
-
-  async function carica() {
-    if (!aziendaId) return
-    const { data } = await supabase.from('testi_categoria').select('categoria, testo').eq('azienda_id', aziendaId)
-    const m: Record<string, string> = {}
-    for (const r of data || []) m[r.categoria] = r.testo || ''
-    setNote(m)
-  }
-  useEffect(() => { carica() }, [])
-
-  const preview = (t?: string) => {
-    const s = (t || '').replace(/\s+/g, ' ').trim()
-    return s ? (s.length > 90 ? s.slice(0, 90) + '…' : s) : '—'
-  }
-
-  return (
-    <div className="pw-card">
-      <div className="pw-card-head" style={{ cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>
-        <h3>Note per categoria <span className="pw-muted" style={{ fontWeight: 400, fontSize: 13 }}>— l'assistente le usa sempre</span></h3>
-        <button className="pw-btn pw-btn-ghost pw-btn-sm">{open ? '▾' : '▸'}</button>
-      </div>
-      {open && (
-        <div className="pw-card-body pw-stack" style={{ gap: 0 }}>
-          <div className="pw-muted" style={{ fontSize: 13, marginBottom: 8 }}>
-            Precisazioni corte legate ai file (es. “prezzi IVA inclusa”, come leggere una colonna).
-            Per sconti e offerte usa <strong>Regole commerciali</strong> qui sotto.
-          </div>
-          {DOC_CATEGORIE.map(([k, label]) => (
-            <div key={k} className="pw-between" style={{ borderTop: '1px solid var(--border)', padding: '10px 0' }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, color: 'var(--fg)' }}>{label}</div>
-                <div className="pw-muted" style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview(note[k])}</div>
-              </div>
-              <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setEditing({ k, label })}>Modifica</button>
-            </div>
-          ))}
-        </div>
-      )}
-      {editing && (
-        <EditNota cat={editing} value={note[editing.k] || ''}
-          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); carica() }} />
-      )}
-    </div>
-  )
-}
-
-function EditNota({ cat, value, onClose, onSaved }: {
-  cat: { k: string; label: string }; value: string; onClose: () => void; onSaved: () => void
-}) {
-  const { aziendaId } = useTenant()
-  const [testo, setTesto] = useState(value)
+// Nota interpretativa PER FILE: poche righe che spiegano cosa contiene il documento / come va letto.
+// Il retriever la legge quando usa quel file. Salva su documenti.note (onBlur).
+function NotaFile({ r, onSaved }: { r: any; onSaved: () => void }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  async function salva() {
+  async function salva(v: string) {
+    if (v.trim() === (r.note || '').trim()) return
     setBusy(true); setErr(null)
-    const { error } = await supabase.from('testi_categoria').upsert(
-      { azienda_id: aziendaId, categoria: cat.k, testo: testo.trim() || null, aggiornato_at: new Date().toISOString() },
-      { onConflict: 'azienda_id,categoria' })
+    const { error } = await supabase.from('documenti').update({ note: v.trim() || null }).eq('id', r.id)
     setBusy(false)
     if (error) setErr(error.message); else onSaved()
   }
   return (
-    <Modal title={`Note — ${cat.label}`} onClose={onClose}
-      footer={<><button className="pw-btn pw-btn-ghost" onClick={onClose}>Annulla</button>
-               <button className="pw-btn pw-btn-primary" disabled={busy} onClick={salva}>{busy ? 'Salvo…' : 'Salva'}</button></>}>
-      <div className="pw-muted" style={{ fontSize: 13 }}>Testo aggiunto sempre quando l'assistente consulta i documenti di questa categoria.</div>
-      <textarea className="pw-input" rows={10} style={{ resize: 'vertical', fontFamily: 'inherit' }}
-        autoFocus value={testo} onChange={e => setTesto(e.target.value)} />
-      {err && <div className="pw-error">{err}</div>}
-    </Modal>
+    <div className="pw-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+      <span className="pw-muted" style={{ fontSize: 12, minWidth: 96, paddingTop: 6, flex: '0 0 auto' }}>Nota per l'AI</span>
+      <div style={{ flex: 1 }}>
+        <textarea className="pw-input" rows={2} defaultValue={r.note || ''} disabled={busy}
+          placeholder="Testo interpretativo (poche righe): cosa contiene il file, come va letto, precisazioni. Il retriever lo legge quando usa questo documento."
+          style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 13, width: '100%' }}
+          onBlur={e => salva(e.target.value)} />
+        {err && <div className="pw-error">{err}</div>}
+      </div>
+    </div>
   )
 }
 
@@ -104,7 +49,7 @@ export default function Documenti() {
   async function carica() {
     if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('documenti')
-      .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore, inviabile')
+      .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore, inviabile, note')
       .eq('azienda_id', aziendaId)
       .order('caricato_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
@@ -219,7 +164,6 @@ export default function Documenti() {
         </div>
       </div>
 
-      <NoteCategorie />
       <CampoAzienda campo="descrizione_servizi" titolo="Cosa offriamo"
         hint="Prodotti/servizi, dove operate, tempi di consegna, ordine minimo… Info sul catalogo che l'assistente usa per rispondere."
         rows={6} />
@@ -238,26 +182,33 @@ export default function Documenti() {
               <thead><tr><th>Nome</th><th>Categoria</th><th>Dimensione</th><th>Caricato</th><th>Stato</th><th>Inviabile</th><th></th></tr></thead>
               <tbody>
                 {righe.map(r => (
-                  <tr key={r.id} style={{ cursor: 'default' }}>
-                    <td style={{ fontWeight: 600 }}><Link to={`/documenti/${r.id}`}>{r.nome_file}</Link></td>
-                    <td>{labelCategoria(r.categoria)}</td>
-                    <td>{fileSize(r.dimensione)}</td>
-                    <td>{dataBreve(r.caricato_at)}</td>
-                    <td>
-                      <span className={`pw-badge ${badgeDoc(r.stato)}`} title={r.errore || ''}>{statoDoc(r.stato)}</span>
-                    </td>
-                    <td>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}
-                        title="Se attivo, l'assistente può inviare questo documento al cliente come allegato">
-                        <input type="checkbox" checked={r.inviabile !== false} onChange={() => toggleInviabile(r)} />
-                        {r.inviabile !== false ? 'Sì' : 'No'}
-                      </label>
-                    </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => scarica(r)} disabled={!r.storage_path}>Scarica</button>{' '}
-                      <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(r)}>Elimina</button>
-                    </td>
-                  </tr>
+                  <Fragment key={r.id}>
+                    <tr style={{ cursor: 'default' }}>
+                      <td style={{ fontWeight: 600 }}><Link to={`/documenti/${r.id}`}>{r.nome_file}</Link></td>
+                      <td>{labelCategoria(r.categoria)}</td>
+                      <td>{fileSize(r.dimensione)}</td>
+                      <td>{dataBreve(r.caricato_at)}</td>
+                      <td>
+                        <span className={`pw-badge ${badgeDoc(r.stato)}`} title={r.errore || ''}>{statoDoc(r.stato)}</span>
+                      </td>
+                      <td>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}
+                          title="Se attivo, l'assistente può inviare questo documento al cliente come allegato">
+                          <input type="checkbox" checked={r.inviabile !== false} onChange={() => toggleInviabile(r)} />
+                          {r.inviabile !== false ? 'Sì' : 'No'}
+                        </label>
+                      </td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => scarica(r)} disabled={!r.storage_path}>Scarica</button>{' '}
+                        <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(r)}>Elimina</button>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colSpan={7} style={{ paddingTop: 0, borderTop: 'none' }}>
+                        <NotaFile r={r} onSaved={carica} />
+                      </td>
+                    </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
