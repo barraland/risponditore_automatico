@@ -199,3 +199,6 @@ create policy tenant_all on public.prompt_modulo for all to authenticated
 -- Prompt modulare multicanale: applicabilità per canale + varianti di testo per canale.
 alter table public.prompt_modulo add column if not exists canali       text;  -- JSON list dei canali
 alter table public.prompt_modulo add column if not exists testi_canale text;  -- JSON {canale: testo}
+
+-- Contatti: campo note (testo libero) per contesto specifico del business (es. veterinario).
+alter table public.contatti add column if not exists note text;

@@ -79,6 +79,10 @@ export default function ContattoDetail() {
                 <div className="pw-muted" style={{ fontSize: 12 }}>Società</div>
                 <div>{c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : '—'}</div>
               </div>
+              <div>
+                <div className="pw-muted" style={{ fontSize: 12 }}>Note</div>
+                <div style={{ color: 'var(--fg-2)', whiteSpace: 'pre-wrap' }}>{c.note || '—'}</div>
+              </div>
             </div>
           </div>
           <Promemoria contattoId={c.id} />
@@ -233,7 +237,7 @@ function Kv({ k, v }: { k: string; v?: string | null }) {
 function EditContatto({ c, locali, onClose, onSalvato }: any) {
   const [f, setF] = useState({
     nome: c.nome || '', cognome: c.cognome || '', ruolo: c.ruolo || '', telefono: c.telefono || '',
-    email: c.email || '', locale_id: c.locale_id ? String(c.locale_id) : '',
+    email: c.email || '', locale_id: c.locale_id ? String(c.locale_id) : '', note: c.note || '',
   })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
@@ -243,7 +247,7 @@ function EditContatto({ c, locali, onClose, onSalvato }: any) {
     const { error } = await supabase.from('contatti').update({
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
       telefono: f.telefono.trim() || null, email: f.email.trim() || null,
-      locale_id: f.locale_id ? Number(f.locale_id) : null,
+      locale_id: f.locale_id ? Number(f.locale_id) : null, note: f.note.trim() || null,
     }).eq('id', c.id)
     setBusy(false); if (error) setErr(error.message); else onSalvato()
   }
@@ -262,6 +266,10 @@ function EditContatto({ c, locali, onClose, onSalvato }: any) {
         <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={f.telefono} onChange={e => set('telefono', e.target.value)} /></div>
         <div className="pw-field" style={{ flex: 1 }}><label>Email</label><input className="pw-input" value={f.email} onChange={e => set('email', e.target.value)} /></div>
       </div>
+      <div className="pw-field"><label>Note (testo libero)</label>
+        <textarea className="pw-input" rows={5} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+          placeholder="Contesto libero sul contatto (es. per un veterinario: nome animale, patologie, allergie…)"
+          value={f.note} onChange={e => set('note', e.target.value)} /></div>
       {err && <div className="pw-error">{err}</div>}
     </Modal>
   )

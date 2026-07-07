@@ -102,6 +102,8 @@ def _riassunto(contatto, societa, ultimo) -> str:
     if ultimo:
         testo += (f" Ultimo ordine: #{ultimo.id} del {ultimo.data.strftime('%d/%m/%Y')}, "
                   f"{ultimo.n_articoli} articoli, € {ultimo.totale:.2f} ({ultimo.stato.value}).")
+    if (getattr(contatto, "note", "") or "").strip():
+        testo += f" Note: {contatto.note.strip()}"
     return testo
 
 

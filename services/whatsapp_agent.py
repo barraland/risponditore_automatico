@@ -267,6 +267,7 @@ def _scheda_contatto(c: Contatto) -> str:
         ("Nome", c.nome), ("Cognome", c.cognome), ("Ragione sociale", c.ragione_sociale),
         ("Ruolo", c.ruolo), ("Email", c.email), ("Telefono", c.telefono),
         ("Sede", c.sede), ("Stato", c.stato.value if c.stato else None),
+        ("Note", c.note),
     ]
     noti = [f"{k}: {v}" for k, v in campi if v]
     return "\n".join(noti) if noti else "(nessun dato ancora raccolto)"
