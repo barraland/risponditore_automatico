@@ -50,6 +50,22 @@ REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
 REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "alloy")
 OPENAI_WS_URL = f"wss://api.openai.com/v1/realtime?model={REALTIME_MODEL}"
 
+# --- Grok (xAI) Voice Agent: protocollo compatibile con OpenAI Realtime (stessi eventi) ---
+GROK_API_KEY = os.getenv("XAI_API_KEY", "") or os.getenv("GROK_API_KEY", "")
+GROK_MODEL = os.getenv("GROK_VOICE_MODEL", "grok-voice-latest")
+GROK_VOICE = os.getenv("GROK_VOICE", "eve")
+GROK_WS_URL = f"wss://api.x.ai/v1/realtime?model={GROK_MODEL}"
+
+
+def _provider_cfg(provider: str) -> dict:
+    """Config del motore vocale realtime: OpenAI (default) o Grok/xAI. Stesso protocollo, cambiano
+    URL WebSocket, API key, modello e voce."""
+    if provider == "grok":
+        return {"nome": "Grok", "provider": "grok", "ws": GROK_WS_URL,
+                "key": GROK_API_KEY, "voice": GROK_VOICE}
+    return {"nome": "OpenAI", "provider": "openai", "ws": OPENAI_WS_URL,
+            "key": OPENAI_API_KEY, "voice": REALTIME_VOICE}
+
 
 # ---------- Tool Realtime ----------
 
@@ -329,8 +345,11 @@ def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str
     if promemoria.is_admin(telefono, db):
         return prompts.voce_admin().replace("{{telefono_chiamante}}", telefono or "")
 
-    from services import inoltri
-    configurazione = (profilo.blocco_prompt(db) + istruzioni.blocco_prompt()
+    from services import inoltri, prompt_moduli
+    # Stessa configurazione di ElevenLabs: prompt MODULARE (canale voce) + conoscenza + regole + catalogo.
+    configurazione = (profilo.blocco_prompt(db)
+                      + prompt_moduli.componi(db, None, canale="voce")
+                      + istruzioni.blocco_regole(db)
                       + documenti_service.catalogo_prompt(db)
                       + inoltri.blocco_prompt(db)).strip()
     if contatto:  # promemoria mirati dell'amministratore per questo cliente
@@ -410,6 +429,23 @@ async def incoming_call(request: Request):
     ws_url = f"wss://{host}/voice/stream"
     logger.info("Chiamata in arrivo da %s -> stream %s", caller, ws_url)
 
+    return _twiml_stream(ws_url, caller, chiamato)
+
+
+@router.post("/incoming-grok")
+async def incoming_call_grok(request: Request):
+    """Come /incoming ma instrada la chiamata al motore vocale GROK (xAI). Punta qui il webhook
+    Twilio del numero che vuoi far gestire da Grok (stesso prompt e stessi tool della voce)."""
+    form = await request.form()
+    caller = form.get("From", "")
+    chiamato = form.get("To", "")
+    host = request.headers.get("host", request.url.hostname)
+    ws_url = f"wss://{host}/voice/stream?provider=grok"
+    logger.info("Chiamata in arrivo (GROK) da %s -> stream %s", caller, ws_url)
+    return _twiml_stream(ws_url, caller, chiamato)
+
+
+def _twiml_stream(ws_url: str, caller: str, chiamato: str) -> PlainTextResponse:
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
@@ -493,10 +529,12 @@ async def inoltro_esito(request: Request):
 @router.websocket("/stream")
 async def media_stream(twilio_ws: WebSocket):
     await twilio_ws.accept()
-    logger.info("WS Twilio connesso")
+    provider = (twilio_ws.query_params.get("provider") or "openai").lower()
+    cfg = _provider_cfg(provider)
+    logger.info("WS Twilio connesso (motore=%s)", cfg["nome"])
 
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY mancante: impossibile gestire la chiamata")
+    if not cfg["key"]:
+        logger.error("%s: API key mancante, impossibile gestire la chiamata", cfg["nome"])
         await twilio_ws.close()
         return
 
@@ -515,14 +553,14 @@ async def media_stream(twilio_ws: WebSocket):
         "assist_buf": "",           # accumulo del transcript dell'assistente nel turno corrente
     }
 
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    headers = {"Authorization": f"Bearer {cfg['key']}"}
     try:
         try:
-            openai_ws = await websockets.connect(OPENAI_WS_URL, additional_headers=headers)
+            openai_ws = await websockets.connect(cfg["ws"], additional_headers=headers)
         except TypeError:
-            openai_ws = await websockets.connect(OPENAI_WS_URL, extra_headers=headers)
+            openai_ws = await websockets.connect(cfg["ws"], extra_headers=headers)
     except Exception as e:
-        logger.error("Connessione a OpenAI Realtime fallita: %s", e)
+        logger.error("Connessione a %s Realtime fallita: %s", cfg["nome"], e)
         db.close()
         await twilio_ws.close()
         return
@@ -542,11 +580,25 @@ async def media_stream(twilio_ws: WebSocket):
             stato["contatto_id"] = contatto.id
             logger.info("Chiamante: contatto id %s (%s)", contatto.id, contatto.nome_completo)
 
-        await openai_ws.send(json.dumps({
-            "type": "session.update",
-            "session": {
+        istruzioni_voce = _build_voice_instructions(db, contatto, tel)
+        if cfg["provider"] == "grok":
+            # Formato documentato Grok Voice Agent (xAI): voice/turn_detection a livello session,
+            # audio μ-law 8kHz (telefono), niente transcription whisper (specifica OpenAI).
+            session = {
+                "instructions": istruzioni_voce,
+                "voice": cfg["voice"],
+                "turn_detection": {"type": "server_vad"},
+                "audio": {
+                    "input": {"format": {"type": "audio/pcmu", "rate": 8000}},
+                    "output": {"format": {"type": "audio/pcmu", "rate": 8000}},
+                },
+                "tools": REALTIME_TOOLS,
+                "tool_choice": "auto",
+            }
+        else:
+            session = {
                 "type": "realtime",
-                "instructions": _build_voice_instructions(db, contatto, tel),
+                "instructions": istruzioni_voce,
                 "output_modalities": ["audio"],
                 "audio": {
                     "input": {
@@ -559,15 +611,12 @@ async def media_stream(twilio_ws: WebSocket):
                         },
                         "transcription": {"model": "whisper-1"},
                     },
-                    "output": {
-                        "format": {"type": "audio/pcmu"},
-                        "voice": REALTIME_VOICE,
-                    },
+                    "output": {"format": {"type": "audio/pcmu"}, "voice": cfg["voice"]},
                 },
                 "tools": REALTIME_TOOLS,
                 "tool_choice": "auto",
-            },
-        }))
+            }
+        await openai_ws.send(json.dumps({"type": "session.update", "session": session}))
         # Prima battuta: fai dire ESATTAMENTE il saluto configurato in dashboard, poi ascolta.
         saluto = ("Buongiorno, sono l'assistente. Vuole lasciare un promemoria per un cliente?"
                   if stato.get("is_admin") else _saluto_voce(db, contatto))

@@ -73,6 +73,7 @@ add_secret dash-pass  DASHBOARD_PASSWORD        "${DASHBOARD_PASSWORD:-}"
 add_secret twilio-sid TWILIO_ACCOUNT_SID        "${TWILIO_ACCOUNT_SID:-}"   # inoltro chiamata (REST)
 add_secret twilio-tok TWILIO_AUTH_TOKEN         "${TWILIO_AUTH_TOKEN:-}"
 add_secret el-api-key ELEVENLABS_API_KEY        "${ELEVENLABS_API_KEY:-}"   # inoltro assistito (outbound)
+add_secret xai-key    XAI_API_KEY               "${XAI_API_KEY:-}"          # Grok Voice Agent (voce alternativa)
 add_secret sb-svc-key SUPABASE_SERVICE_ROLE_KEY "${SUPABASE_SERVICE_ROLE_KEY:-}"  # download allegati da Storage
 add_secret g-cli-id   GOOGLE_CLIENT_ID           "${GOOGLE_CLIENT_ID:-}"     # Google Calendar OAuth
 add_secret g-cli-sec  GOOGLE_CLIENT_SECRET       "${GOOGLE_CLIENT_SECRET:-}"
