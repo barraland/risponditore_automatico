@@ -251,6 +251,31 @@ DEFAULT_MODULI = [
         ),
     },
     {
+        "chiave": "qualificare_lead", "ordine": 52, "titolo": "Come qualificare il lead",
+        "canali": ["voce", "whatsapp"],
+        "testo": (
+            "COME QUALIFICARE IL LEAD (informazioni da raccogliere durante la conversazione)\n"
+            "Raccogli, in modo naturale e senza interrogatori, almeno:\n"
+            "- nome e cognome della persona;\n"
+            "- ragione sociale della società e ruolo (es. titolare, ufficio acquisti);\n"
+            "- email e telefono per essere ricontattati;\n"
+            "- sede / località;\n"
+            "- di cosa ha bisogno (prodotto/servizio), quantità/volumi se rilevanti, tempistiche e, "
+            "se emerge, budget."
+        ),
+    },
+    {
+        "chiave": "prioritizzare_lead", "ordine": 54, "titolo": "Come prioritizzare il lead",
+        "canali": ["voce", "whatsapp"],
+        "testo": (
+            "COME ASSEGNARE LA PRIORITÀ AL LEAD (alta / media / bassa)\n"
+            "- ALTA: cliente storico, oppure ordine urgente entro 24h, oppure nuovo locale con "
+            "volumi alti.\n"
+            "- MEDIA: ordine ordinario di un cliente attivo.\n"
+            "- BASSA: solo richiesta di listino o informazioni."
+        ),
+    },
+    {
         "chiave": "gestione_promemoria", "ordine": 200, "titolo": "Gestione promemoria (admin)",
         "canali": ["admin"],
         "testo": (
@@ -267,6 +292,13 @@ DEFAULT_MODULI = [
             "- Conferma a voce quando l'hai registrato (a chi, cosa, entro quando)."
         ),
     },
+]
+
+# 5 slot liberi numerati per uso futuro: vuoti (componi li salta finché non hanno testo).
+DEFAULT_MODULI += [
+    {"chiave": f"libero_{i}", "ordine": 300 + i * 10, "titolo": f"Modulo libero {i}",
+     "canali": ["voce", "whatsapp"], "testo": ""}
+    for i in range(1, 6)
 ]
 
 _DEFAULT_MAP = {m["chiave"]: m for m in DEFAULT_MODULI}

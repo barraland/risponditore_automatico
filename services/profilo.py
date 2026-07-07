@@ -58,18 +58,12 @@ def blocco_prompt(db: Session, azienda_id: int | None = None) -> str:
     if not az:
         return ""
 
+    # Qualifica lead e priorità sono ora MODULI (services/prompt_moduli), non più qui, per non
+    # duplicarli. Qui resta solo la conoscenza prodotto ("Cosa offriamo", editata in Documenti).
     blocchi = [
         _sezione(
-            "COSA OFFRIAMO (usa SOLO queste informazioni per rispondere su prodotti/servizi/costi)",
+            "COSA OFFRIAMO (usa queste informazioni per rispondere su prodotti/servizi/costi)",
             az.descrizione_servizi,
-        ),
-        _sezione(
-            "COME QUALIFICARE IL LEAD (informazioni da raccogliere durante la conversazione)",
-            az.info_qualificazione or INFO_QUALIFICAZIONE_DEFAULT,
-        ),
-        _sezione(
-            "COME ASSEGNARE LA PRIORITÀ AL LEAD (alta / media / bassa)",
-            az.criteri_priorita,
         ),
     ]
     return "".join(b for b in blocchi if b)

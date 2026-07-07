@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
 import CampoAzienda from '../components/CampoAzienda'
-import CampoAziendaLista from '../components/CampoAziendaLista'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
@@ -184,12 +183,6 @@ export default function Prompt() {
       <CampoAzienda campo="saluto_sconosciuto" titolo="Primo saluto (chiamante sconosciuto)" rows={2}
         hint="Primo messaggio quando il numero non è riconosciuto. Qui {nome} è vuoto: non usarlo."
         placeholder="Es. Buongiorno, sono Margherita di {azienda}, come posso aiutarla?" />
-      <CampoAziendaLista campo="info_qualificazione" titolo="Come qualificare il lead"
-        hint="Un criterio per riga (numerati). Informazioni minime da raccogliere durante la conversazione."
-        placeholder="Es. Nome e cognome della persona" />
-      <CampoAziendaLista campo="criteri_priorita" titolo="Come prioritizzare i lead"
-        hint="Un criterio per riga (numerati). Cosa rende un lead alta / media / bassa priorità."
-        placeholder="Es. ALTA: cliente storico o ordine urgente entro 24h" />
 
       {showPreview && (
         <div className="pw-card">
