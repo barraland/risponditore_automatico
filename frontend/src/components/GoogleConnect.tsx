@@ -7,7 +7,7 @@ const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 // Card di connessione OAuth Google (Calendar + invio email) del CLIENTE attivo. Sta in una pagina
 // sempre visibile (Assistente) e anche in Calendario, così l'email funziona anche se il cliente
 // tiene nascosta la voce Calendario.
-export default function GoogleConnect() {
+export default function GoogleConnect({ bare = false }: { bare?: boolean }) {
   const { session } = useAuth()
   const { aziendaId } = useTenant()
   const tq = aziendaId ? `?azienda_id=${aziendaId}` : ''
@@ -34,10 +34,8 @@ export default function GoogleConnect() {
   }
 
   const connesso = stato?.connesso
-  return (
-    <div className="pw-card">
-      <div className="pw-card-head"><h3>Google — Calendar & Email</h3></div>
-      <div className="pw-card-body">
+  const corpo = (
+    <>
         {loading ? <div className="pw-spinner">Caricamento…</div>
           : err ? <div className="pw-error">{err}</div>
           : connesso ? (
@@ -62,7 +60,13 @@ export default function GoogleConnect() {
               <button className="pw-btn pw-btn-primary" onClick={connetti}>Connetti Google</button>
             </div>
           )}
-      </div>
+    </>
+  )
+  if (bare) return <div className="pw-stack" style={{ gap: 10 }}>{corpo}</div>
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head"><h3>Google — Calendar & Email</h3></div>
+      <div className="pw-card-body">{corpo}</div>
     </div>
   )
 }

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
 import CampoAzienda from '../components/CampoAzienda'
-import GoogleConnect from '../components/GoogleConnect'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
@@ -207,11 +206,6 @@ export default function Prompt() {
       {moduli.map(m => (
         <ModuloCard key={m.chiave} m={m} onPatch={patch} onSalva={salva} onToggle={toggle} onRipristina={ripristina} />
       ))}
-
-      <div style={{ marginTop: 8 }}>
-        <div className="pw-eyebrow">Integrazioni</div>
-        <GoogleConnect />
-      </div>
     </div>
   )
 }

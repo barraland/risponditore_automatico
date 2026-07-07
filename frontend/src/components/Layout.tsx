@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
 import { supabase } from '../lib/supabase'
 import Modal from './Modal'
+import GoogleConnect from './GoogleConnect'
 
 function TenantSwitcher() {
   const { isSuperAdmin, aziende, aziendaId, setAziendaId } = useTenant()
@@ -62,6 +63,7 @@ export default function Layout() {
   const { session, signOut } = useAuth()
   const { isSuperAdmin, aziendaId, aziende } = useTenant()
   const [config, setConfig] = useState(false)
+  const [google, setGoogle] = useState(false)
   const attiva = aziende.find(a => a.id === aziendaId)
   const mostra = (campo: string) => (attiva as any)?.[campo] !== false  // default: visibile
   return (
@@ -83,6 +85,8 @@ export default function Layout() {
         </div>
         <div className="pw-nav-right">
           <TenantSwitcher />
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setGoogle(true)}
+            title="Collega l'account Google del cliente (Calendar + invio email)">Google account</button>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
             onClick={() => setConfig(true)} style={{ fontSize: 16, lineHeight: 1 }}>⚙️</button>
           {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
@@ -96,6 +100,15 @@ export default function Layout() {
         <Outlet key={aziendaId ?? 'none'} />
       </main>
       {config && <GuiConfig onClose={() => setConfig(false)} />}
+      {google && (
+        <Modal title="Google account del cliente" onClose={() => setGoogle(false)}>
+          <div className="pw-muted" style={{ fontSize: 13 }}>
+            Collega l'account Google del cliente per prenotare meeting sul suo calendario e inviare
+            le email <strong>dalla sua casella</strong>. È facoltativo.
+          </div>
+          <GoogleConnect bare />
+        </Modal>
+      )}
     </>
   )
 }
