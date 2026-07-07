@@ -31,6 +31,8 @@ from services import ticket as ticket_service
 from services import istruzioni
 from services import profilo
 from services import prompt_moduli
+from services import promemoria
+from services import agente_tools
 from services import retriever
 from services import crm
 from services import email as email_service
@@ -134,48 +136,19 @@ def _ticket_aperto(db: Session, contatto_id: int) -> Ticket | None:
 
 # ---------- LLM lead-capture ----------
 
-SYSTEM = """Sei l'assistente WhatsApp di un'azienda e ti occupi della LEAD CAPTURE: rispondi a
-clienti e potenziali clienti che chiedono informazioni su prodotti, servizi, ordini, costi e
-tempistiche, e nel frattempo raccogli i loro dati e qualifichi il lead per il team commerciale.
+SYSTEM = """Sei l'assistente WhatsApp di un'azienda: rispondi a clienti e potenziali clienti
+(prodotti, prezzi, ordini, tempistiche) e intanto qualifichi il lead per il team commerciale.
 
-REGOLE:
-- Rispondi in italiano, con tono cordiale e professionale, messaggi brevi adatti a WhatsApp.
-- Per domande su prodotti/servizi/costi usa le informazioni della sezione "COSA OFFRIAMO".
-- Se per rispondere ti servono dettagli che NON sono in "COSA OFFRIAMO" ma potrebbero trovarsi nei
-  DOCUMENTI caricati (listini, schede prodotto, contratti, condizioni, FAQ, file Excel/CSV...), NON
-  inventare: imposta consulta_documenti.serve=true e scrivi in consulta_documenti.domanda una domanda
-  chiara e autosufficiente (con tutto il contesto utile) per l'agente che consulta i documenti. In
-  quel caso metti pure una "risposta" interlocutoria breve (es. "Verifico subito."): ti verrà fornita
-  la risposta tratta dai documenti e potrai completare. Quando NON serve, consulta_documenti.serve=false
-  e consulta_documenti.domanda="".
-- Se nemmeno i documenti hanno l'informazione, dillo con onestà senza inventare, e rassicura che un
-  collega ricontatterà il lead.
-- Raccogli con naturalezza (non come un interrogatorio) le informazioni indicate in
-  "COME QUALIFICARE IL LEAD". Chiedi pochi dati per volta, integrandoli nella conversazione.
-- Aggiorna l'anagrafica con i dati che emergono: compila SOLO i campi che hai effettivamente
-  appreso in questa conversazione; lascia "" gli altri. Non inventare dati.
-- Apri SEMPRE un ticket di follow-up per il lead (uno solo per conversazione): metti apri=true
-  appena hai capito di cosa ha bisogno il lead, con un titolo riassuntivo, una descrizione
-  sintetica della richiesta e la priorità (alta/media/bassa) secondo i criteri forniti. Se per il
-  contatto risulta GIÀ un ticket aperto, tienilo aggiornato (apri=true: titolo/priorità/descrizione
-  aggiornati), non temere i duplicati (il sistema aggiorna quello esistente).
-- Se non hai ancora elementi sufficienti (es. solo un saluto), apri=false e prosegui la raccolta.
-- ORDINI: se il cliente sta ordinando o riordinando prodotti (con quantità), imposta
-  ordine.registra=true ed elenca in ordine.righe i prodotti (descrizione, quantità, unità di
-  misura, e prezzo_unitario se lo conosci dai documenti/listino, altrimenti null). Imposta
-  ordine.conferma=true per registrarlo come CONFERMATO oppure false per lasciarlo in bozza, secondo
-  le indicazioni dell'amministratore su quando confermare. Se devi inviare al cliente il riepilogo
-  via email imposta ordine.invia_email=true, ma SOLO se conosci la sua email (campo email
-  dell'anagrafica); se non ce l'hai, chiedila nel messaggio e lascia invia_email=false per ora.
-  Riepiloga nel messaggio cosa hai registrato. Se NON è un ordine: registra=false, conferma=false,
-  invia_email=false, righe=[].
-- INVIO DOCUMENTI: hai a disposizione l'invio via email dei documenti caricati (es. listino,
-  condizioni/costi di consegna). Se devi inviarne uno, imposta documento.invia=true e documento.categoria
-  (tra: listino, schede_prodotto, contratti, faq, altro), SOLO se conosci l'email del cliente; se non ce
-  l'hai, chiedila nel messaggio e lascia invia=false per ora. Usalo secondo le indicazioni
-  dell'amministratore. Se non serve: documento.invia=false e documento.categoria="".
-
-Compila SEMPRE tutti i campi dell'output: usa "" per i valori non noti."""
+- Scrivi in italiano, tono cordiale e professionale, messaggi BREVI adatti a una chat: vai al punto,
+  niente muri di testo, elenchi puntati corti quando elenchi prodotti o prezzi. Puoi mandare link.
+- Hai a disposizione degli STRUMENTI (cercare nei documenti, salvare/aggiornare il contatto e il
+  locale, registrare ordini, aprire ticket, inviare email/documenti, controllare il calendario e
+  prenotare meeting): USALI quando servono. Agisci e poi rispondi; non annunciare che stai per usare
+  uno strumento.
+- Non inventare mai dati: registra SOLO ciò che il cliente ha scritto. Se un'informazione non è nei
+  documenti, dillo con onestà e rassicura che un collega ricontatterà il lead.
+- Le regole di dettaglio (come qualificare il lead, gestire ordini, note, meeting, ticket) sono nelle
+  sezioni seguenti."""
 
 SCHEMA = {
     "type": "object",
@@ -448,20 +421,22 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     storia = _storia_recente(db, contatto.id)
     storia_testo = _storia_testo(storia)
 
-    # Prompt WhatsApp MODULARE: i moduli flaggati "whatsapp" (con eventuale variante di canale)
-    # sostituiscono il blob prompt_whatsapp; conoscenza tenant (profilo) e regole restano.
+    # Prompt WhatsApp MODULARE (moduli flaggati "whatsapp") + conoscenza tenant + regole + catalogo
+    # documenti + promemoria mirati. Stessa base della voce; qui l'agente usa i TOOL (function-calling).
     system = (
         SYSTEM
         + f"\n\n{contesto_temporale()}"
         + profilo.blocco_prompt(db)
         + prompt_moduli.componi(db, None, canale="whatsapp")
         + istruzioni.blocco_regole(db)
+        + documenti_service.catalogo_prompt(db)
+        + promemoria.blocco_prompt(db, contatto.id)
     )
     ticket_esistente = _ticket_aperto(db, contatto.id)
     user = (
         f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
         f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
-        f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo)' if ticket_esistente else 'no'}\n\n"
+        f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
         f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"
     )
 
@@ -471,46 +446,45 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         "output": f"Contatto id {contatto.id} — {contatto.nome_completo} ({contatto.stato.value})",
     }]
 
+    # Loop di function-calling: gli stessi tool MCP della voce. telefono/tenant iniettati dal codice.
+    tenant = ""  # WhatsApp single-tenant per ora (tenant da phone_number_id = step futuro)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    risposta = ""
     try:
         client = OpenAI(api_key=OPENAI_API_KEY)
-        raw = _chiama_llm(client, system, user)
-        traccia.append({"fase": "Lead capture", "modello": MODEL,
-                        "input": user[:6000], "output": raw[:6000]})
-        out = json.loads(raw)
-
-        # Se l'agente chiede di consultare i documenti, interroga il retriever e
-        # rigenera la risposta avendo in contesto l'output dei documenti (un solo giro).
-        cons = out.get("consulta_documenti") or {}
-        domanda_doc = (cons.get("domanda") or "").strip()
-        if cons.get("serve") and domanda_doc:
-            esito = retriever.cerca(db, domanda_doc)   # agnostico: documenti PDF + tabelle CSV
-            risposta_doc = esito.get("risposta", "")
-            traccia.append({"fase": "Consultazione documenti (retriever)", "modello": retriever.MODEL,
-                            "input": domanda_doc, "output": risposta_doc[:6000]})
-            user2 = (
-                f"{user}\n\n"
-                f"HAI CHIESTO ALL'AGENTE DOCUMENTI: «{domanda_doc}»\n"
-                f"RISPOSTA TRATTA DAI DOCUMENTI:\n{risposta_doc}\n\n"
-                "Usa questa risposta per rispondere al lead. Non richiedere di nuovo i documenti "
-                "(consulta_documenti.serve=false)."
+        for _giro in range(6):
+            resp = client.chat.completions.create(
+                model=MODEL, messages=messages, tools=agente_tools.SCHEMI,
+                reasoning_effort=EFFORT, max_completion_tokens=2000,
             )
-            raw = _chiama_llm(client, system, user2)
-            traccia.append({"fase": "Lead capture (post-documenti)", "modello": MODEL,
-                            "input": user2[:6000], "output": raw[:6000]})
-            out = json.loads(raw)
+            msg = resp.choices[0].message
+            if not msg.tool_calls:
+                risposta = (msg.content or "").strip()
+                break
+            # registra la richiesta di tool e poi esegui ogni tool, accodando i risultati
+            messages.append({
+                "role": "assistant", "content": msg.content or "",
+                "tool_calls": [{"id": tc.id, "type": "function",
+                                "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                               for tc in msg.tool_calls],
+            })
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                risultato = agente_tools.esegui(tc.function.name, args, telefono, tenant)
+                traccia.append({"fase": f"tool: {tc.function.name}", "modello": MODEL,
+                                "input": json.dumps(args, ensure_ascii=False)[:2000],
+                                "output": json.dumps(risultato, ensure_ascii=False, default=str)[:2000]})
+                messages.append({"role": "tool", "tool_call_id": tc.id,
+                                 "content": json.dumps(risultato, ensure_ascii=False, default=str)})
     except Exception as e:
-        logger.error("Lead capture LLM fallita: %s", e)
+        logger.error("WhatsApp agent (tool loop) fallito: %s", e)
         risposta = "Mi scusi, ho avuto un problema tecnico. Può ripetere?"
         _log(db, contatto.id, DirezioneMessaggio.OUT, risposta, traccia=traccia)
         return {"risposta": risposta}
 
-    _applica_anagrafica(db, contatto, out.get("anagrafica") or {})
-    _collega_societa(db, contatto, traccia)
-    # Storia aggiornata (include il messaggio appena ricevuto) per il ticket.
-    _applica_ticket(db, contatto, out.get("ticket") or {}, _storia_testo(_storia_recente(db, contatto.id)))
-    _applica_ordine(db, contatto, out.get("ordine") or {}, traccia)
-    _applica_documento(db, contatto, out.get("documento") or {}, traccia)
-
-    risposta = (out.get("risposta") or "").strip() or "Come posso aiutarla?"
+    risposta = risposta or "Come posso aiutarla?"
     _log(db, contatto.id, DirezioneMessaggio.OUT, risposta, traccia=traccia)
     return {"risposta": risposta}
