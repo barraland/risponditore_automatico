@@ -316,7 +316,9 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
             insegna_nuova = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
             if not insegna_nuova:
                 return {"ok": False, "errore": "Nessun locale associato e nessun nome per crearlo."}
-            societa = crm.trova_o_crea_societa(db, insegna=insegna_nuova, azienda_id=c.azienda_id)
+            # città nota → match città-aware (non aggancia un omonimo di un'altra città).
+            societa = crm.trova_o_crea_societa(db, insegna=insegna_nuova,
+                                               citta=(citta or c.sede or None), azienda_id=c.azienda_id)
             if not c.societa_id:
                 c.societa_id = societa.id
         campi = {"citta": citta, "indirizzo": indirizzo, "ragione_sociale": ragione_sociale,

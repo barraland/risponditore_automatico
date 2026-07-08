@@ -34,16 +34,33 @@ def _norm(s: str | None) -> str:
 
 
 def trova_societa(db: Session, insegna: str | None = None,
-                  ragione_sociale: str | None = None, azienda_id: int | None = None) -> Societa | None:
-    """Cerca una società per insegna o ragione sociale (case-insensitive, match esatto), nel tenant."""
+                  ragione_sociale: str | None = None, azienda_id: int | None = None,
+                  citta: str | None = None) -> Societa | None:
+    """Cerca una società per insegna o ragione sociale (case-insensitive, match esatto), nel tenant.
+
+    Se `citta` è nota, il match è CITTÀ-AWARE: due attività con lo stesso nome in città diverse sono
+    entità diverse. Con città nota si riusa solo una società della STESSA città (o senza città
+    impostata); se esiste solo un omonimo in un'ALTRA città, NON lo si riusa (se ne creerà uno nuovo).
+    Senza città (None/vuota) resta il match per solo nome (comportamento precedente).
+    """
     chiavi = {_norm(insegna), _norm(ragione_sociale)} - {""}
     if not chiavi:
         return None
     aid = _aid(db, azienda_id)
-    for soc in db.query(Societa).filter(Societa.azienda_id == aid).all():
-        if _norm(soc.insegna) in chiavi or _norm(soc.ragione_sociale) in chiavi:
-            return soc
-    return None
+    candidati = [soc for soc in db.query(Societa).filter(Societa.azienda_id == aid).all()
+                 if _norm(soc.insegna) in chiavi or _norm(soc.ragione_sociale) in chiavi]
+    if not candidati:
+        return None
+    c = _norm(citta)
+    if not c:
+        return candidati[0]                                   # città sconosciuta: match per nome
+    stessa = [s for s in candidati if _norm(s.citta) == c]
+    if stessa:
+        return stessa[0]                                      # stesso nome, stessa città → riusa
+    senza_citta = [s for s in candidati if not _norm(s.citta)]
+    if senza_citta:
+        return senza_citta[0]                                 # omonimo senza città nota → riusa
+    return None                                               # solo omonimi in ALTRE città → non riusare
 
 
 def trova_o_crea_societa(db: Session, insegna: str | None = None,
@@ -53,7 +70,7 @@ def trova_o_crea_societa(db: Session, insegna: str | None = None,
                          azienda_id: int | None = None) -> Societa:
     """Ritorna la società corrispondente (nel tenant) o ne crea una nuova (prospect)."""
     aid = _aid(db, azienda_id)
-    soc = trova_societa(db, insegna, ragione_sociale, azienda_id=aid)
+    soc = trova_societa(db, insegna, ragione_sociale, azienda_id=aid, citta=citta)
     if soc:
         return soc
     nome = (insegna or ragione_sociale or "Nuova società").strip()
