@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 const VUOTO = { nome: '', cognome: '', ruolo: '', email: '', telefono: '', regole: '',
-                calendar_id: '', regole_prenotazione: '' }
+                calendar_id: '', regole_prenotazione: '', admin: false }
 
 export default function Inoltri() {
   const { aziendaId } = useTenant()
@@ -21,7 +21,7 @@ export default function Inoltri() {
   async function carica() {
     if (!aziendaId) return
     const { data, error } = await supabase.from('inoltri')
-      .select('id, nome, cognome, ruolo, email, telefono, regole, calendar_id, regole_prenotazione')
+      .select('id, nome, cognome, ruolo, email, telefono, regole, calendar_id, regole_prenotazione, admin')
       .eq('azienda_id', aziendaId).order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
   }
@@ -42,7 +42,8 @@ export default function Inoltri() {
     setEditId(r.id)
     setF({ nome: r.nome || '', cognome: r.cognome || '', ruolo: r.ruolo || '', email: r.email || '',
            telefono: r.telefono || '', regole: r.regole || '',
-           calendar_id: r.calendar_id || '', regole_prenotazione: r.regole_prenotazione || '' })
+           calendar_id: r.calendar_id || '', regole_prenotazione: r.regole_prenotazione || '',
+           admin: !!r.admin })
     setErr(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -55,6 +56,7 @@ export default function Inoltri() {
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
       email: f.email.trim() || null, telefono: f.telefono.trim(), regole: f.regole.trim() || null,
       calendar_id: f.calendar_id.trim() || null, regole_prenotazione: f.regole_prenotazione.trim() || null,
+      admin: !!f.admin,
     }
     const { error } = editId == null
       ? await supabase.from('inoltri').insert({ ...payload, azienda_id: aziendaId })
@@ -97,6 +99,12 @@ export default function Inoltri() {
               placeholder="Quando inoltrare a questa persona, es: «questioni di spedizione, consegne, resi»"
               value={f.regole} onChange={e => set('regole', e.target.value)} /></div>
 
+          <label className="pw-row" style={{ gap: 8, alignItems: 'center', cursor: 'pointer' }}
+            title="Se attivo, quando questa persona scrive su WhatsApp o chiama, parte il prompt AMMINISTRATORE (può lasciare promemoria) invece del prompt cliente.">
+            <input type="checkbox" checked={f.admin} onChange={e => setF({ ...f, admin: e.target.checked })} />
+            <span>È un <strong>amministratore</strong> — dal suo numero (voce/WhatsApp) parte il prompt admin</span>
+          </label>
+
           <div className="pw-field"><label>Calendario per i meeting di questa persona</label>
             <select className="pw-input" value={f.calendar_id} onChange={e => set('calendar_id', e.target.value)}>
               <option value="">— usa il calendario dell'azienda (predefinito) —</option>
@@ -122,12 +130,13 @@ export default function Inoltri() {
         {righe.length === 0 ? <div className="pw-empty">Nessun destinatario di inoltro.</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table className="pw-table">
-              <thead><tr><th>Nome</th><th>Ruolo</th><th>Telefono</th><th>Calendario</th><th>Regole prenotazione</th><th></th></tr></thead>
+              <thead><tr><th>Nome</th><th>Ruolo</th><th>Admin</th><th>Telefono</th><th>Calendario</th><th>Regole prenotazione</th><th></th></tr></thead>
               <tbody>
                 {righe.map(r => (
                   <tr key={r.id} style={{ cursor: 'default' }}>
                     <td style={{ fontWeight: 600, color: 'var(--fg)' }}>{`${r.nome || ''} ${r.cognome || ''}`.trim() || '—'}</td>
                     <td>{r.ruolo || '—'}</td>
+                    <td>{r.admin ? <span className="pw-tenant-tag" style={{ fontSize: 11 }}>admin</span> : '—'}</td>
                     <td>{r.telefono}</td>
                     <td style={{ fontSize: 13 }}>{r.calendar_id ? nomeCal(r.calendar_id) : <span className="pw-muted">azienda</span>}</td>
                     <td style={{ color: 'var(--fg-2)', fontSize: 13, maxWidth: 240, whiteSpace: 'pre-wrap' }}>{r.regole_prenotazione || '—'}</td>

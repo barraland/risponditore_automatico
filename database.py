@@ -583,6 +583,7 @@ class Inoltro(Base):
     regole = Column(Text)                 # quando inoltrare a questa persona (testo libero)
     calendar_id = Column(String(200))     # calendario Google su cui prenotare i meeting di questa persona
     regole_prenotazione = Column(Text)    # regole libere per la prenotazione (fasce, vincoli, ecc.)
+    admin = Column(Boolean, default=False)  # se True: dal suo numero (voce/WhatsApp) parte il prompt admin
     created_at = Column(DateTime, default=datetime.utcnow)
 
     @property

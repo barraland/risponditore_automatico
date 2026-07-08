@@ -444,48 +444,61 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     storia = _storia_recente(db, contatto.id)
     storia_testo = _storia_testo(storia)
 
-    # Prompt WhatsApp MODULARE (moduli flaggati "whatsapp") + conoscenza tenant + regole + catalogo
-    # documenti + promemoria mirati. Stessa base della voce; qui l'agente usa i TOOL (function-calling).
-    system = (
-        SYSTEM
-        + f"\n\n{contesto_temporale()}"
-        + profilo.blocco_prompt(db)
-        + prompt_moduli.componi(db, None, canale="whatsapp")
-        + istruzioni.blocco_regole(db)
-        + documenti_service.catalogo_prompt(db)
-        + promemoria.blocco_prompt(db, contatto.id)
-    )
-    # Valorizza i segnaposto dinamici dei moduli ({{cliente_conosciuto}}, {{riassunto_cliente}},
-    # {{telefono_chiamante}}, {{tenant}}…) come fanno voce ed ElevenLabs — altrimenti restano grezzi.
-    from routers import elevenlabs  # _riassunto: stessa logica dell'init ElevenLabs (import pigro)
-    _soc = crm.societa_di_contatto(db, contatto)
-    _ultimo = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
-               .order_by(Ordine.data.desc()).first())
-    _known = bool(contatto.nome or contatto.cognome or contatto.ragione_sociale)
-    _riass = (elevenlabs._riassunto(contatto, _soc, _ultimo) if _known
-              else "Contatto non riconosciuto: è un nuovo contatto da registrare.")
-    _dv = {
-        "cliente_conosciuto": "sì" if _known else "no",
-        "riassunto_cliente": _riass,
-        "telefono_chiamante": (contatto.telefono or telefono or ""),
-        "tenant": "",  # WhatsApp single-tenant; il tool riceve il tenant dal codice
-        "nome": contatto.nome or "", "cognome": contatto.cognome or "",
-        "titolo": contatto.titolo or "", "nome_cliente": (contatto.nome_completo if _known else ""),
-        "societa": (_soc.nome if _soc else (contatto.ragione_sociale or "")),
-        "ruolo": contatto.ruolo or "", "email_cliente": contatto.email or "",
-        "azienda": profilo.nome_azienda(db), "saluto": "", "configurazione": "",
-    }
-    for _k, _v in _dv.items():
-        system = system.replace("{{" + _k + "}}", _v or "")
+    # Se scrive un AMMINISTRATORE (numero in amministratori o inoltro flaggato admin), usa il prompt
+    # admin (voce_admin + moduli 'admin') e il toolset admin (promemoria). Altrimenti flusso cliente.
+    admin = promemoria.is_admin(telefono, db)
+    from routers import elevenlabs  # _riassunto / sostituzioni (import pigro)
 
-    ticket_esistente = _ticket_aperto(db, contatto.id)
-    user = (
-        f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo_da_ultimo(db, contatto.id)}\n\n"
-        f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
-        f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
-        f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
-        f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"
-    )
+    if admin:
+        from services import prompts
+        system = (prompts.voce_admin()
+                  + prompt_moduli.componi(db, None, canale="admin")
+                  + istruzioni.blocco_regole(db))
+        for _k, _v in {"telefono_chiamante": telefono or "", "tenant": "",
+                       "azienda": profilo.nome_azienda(db)}.items():
+            system = system.replace("{{" + _k + "}}", _v or "")
+        user = ("Stai parlando con l'AMMINISTRATORE (canale WhatsApp).\n\n"
+                f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}")
+        tools_set = agente_tools.SCHEMI_ADMIN
+    else:
+        # Prompt WhatsApp MODULARE (moduli 'whatsapp') + conoscenza tenant + regole + catalogo + promemoria.
+        system = (
+            SYSTEM
+            + f"\n\n{contesto_temporale()}"
+            + profilo.blocco_prompt(db)
+            + prompt_moduli.componi(db, None, canale="whatsapp")
+            + istruzioni.blocco_regole(db)
+            + documenti_service.catalogo_prompt(db)
+            + promemoria.blocco_prompt(db, contatto.id)
+        )
+        _soc = crm.societa_di_contatto(db, contatto)
+        _ultimo = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
+                   .order_by(Ordine.data.desc()).first())
+        _known = bool(contatto.nome or contatto.cognome or contatto.ragione_sociale)
+        _riass = (elevenlabs._riassunto(contatto, _soc, _ultimo) if _known
+                  else "Contatto non riconosciuto: è un nuovo contatto da registrare.")
+        _dv = {
+            "cliente_conosciuto": "sì" if _known else "no",
+            "riassunto_cliente": _riass,
+            "telefono_chiamante": (contatto.telefono or telefono or ""),
+            "tenant": "",  # WhatsApp single-tenant; il tool riceve il tenant dal codice
+            "nome": contatto.nome or "", "cognome": contatto.cognome or "",
+            "titolo": contatto.titolo or "", "nome_cliente": (contatto.nome_completo if _known else ""),
+            "societa": (_soc.nome if _soc else (contatto.ragione_sociale or "")),
+            "ruolo": contatto.ruolo or "", "email_cliente": contatto.email or "",
+            "azienda": profilo.nome_azienda(db), "saluto": "", "configurazione": "",
+        }
+        for _k, _v in _dv.items():
+            system = system.replace("{{" + _k + "}}", _v or "")
+        ticket_esistente = _ticket_aperto(db, contatto.id)
+        user = (
+            f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo_da_ultimo(db, contatto.id)}\n\n"
+            f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
+            f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
+            f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
+            f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"
+        )
+        tools_set = agente_tools.SCHEMI
 
     traccia = [{
         "fase": "Identificazione contatto", "modello": "—",
@@ -501,7 +514,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         client = OpenAI(api_key=OPENAI_API_KEY)
         for _giro in range(6):
             resp = client.chat.completions.create(
-                model=MODEL, messages=messages, tools=agente_tools.SCHEMI,
+                model=MODEL, messages=messages, tools=tools_set,
                 reasoning_effort=EFFORT, max_completion_tokens=2000,
             )
             msg = resp.choices[0].message

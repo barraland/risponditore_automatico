@@ -107,8 +107,21 @@ SCHEMI = [
         ["titolo", "data_ora"]),
 ]
 
-# Nomi consentiti (difesa: ignora tool non previsti).
-NOMI = {s["function"]["name"] for s in SCHEMI}
+# Toolset ADMIN (quando scrive/chiama un amministratore): consulta documenti + lascia promemoria.
+SCHEMI_ADMIN = [
+    next(s for s in SCHEMI if s["function"]["name"] == "cerca"),
+    _fn("lascia_promemoria",
+        "Registra un PROMEMORIA per un cliente: lo vedrà l'assistente quando quel cliente scriverà o "
+        "chiamerà. `nome_cliente` = nome/cognome del destinatario; `societa` per distinguerlo; "
+        "`testo` = l'avviso; `giorni_validita` = validità in giorni (0 = senza scadenza). Se più "
+        "clienti corrispondono, ti vengono elencati: chiedi quale e riprova.",
+        {"nome_cliente": {"type": "string"}, "testo": {"type": "string"},
+         "societa": {"type": "string"}, "giorni_validita": {"type": "integer"}},
+        ["nome_cliente", "testo"]),
+]
+
+# Nomi consentiti (difesa: ignora tool non previsti). Include client + admin.
+NOMI = {s["function"]["name"] for s in SCHEMI} | {s["function"]["name"] for s in SCHEMI_ADMIN}
 
 
 def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
@@ -124,6 +137,10 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
     try:
         if nome == "cerca":
             return m.cerca(domanda=a.get("domanda", ""), tenant=tenant)
+        if nome == "lascia_promemoria":
+            return m.lascia_promemoria(telefono=telefono, nome_cliente=a.get("nome_cliente", ""),
+                                       testo=a.get("testo", ""), societa=a.get("societa", ""),
+                                       giorni_validita=int(a.get("giorni_validita", 0) or 0), tenant=tenant)
         if nome == "salva_contatto":
             return m.salva_contatto(telefono=telefono, tenant=tenant, **a)
         if nome == "aggiorna_contatto":

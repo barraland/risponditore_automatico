@@ -80,7 +80,7 @@ export default function Layout() {
           <NavLink to="/ticket">Ticket</NavLink>
           <NavLink to="/documenti">Base di Conoscenza</NavLink>
           <NavLink to="/promemoria">Promemoria</NavLink>
-          <NavLink to="/inoltri">Inoltri</NavLink>
+          <NavLink to="/inoltri">Inoltra & Admin</NavLink>
           {mostra('mostra_calendario') && <NavLink to="/calendario">Calendario</NavLink>}
         </div>
         <div className="pw-nav-right">
@@ -90,7 +90,6 @@ export default function Layout() {
             title="Collega l'account Google del cliente (Calendar + invio email)">Google account</button>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
             onClick={() => setConfig(true)} style={{ fontSize: 16, lineHeight: 1 }}>⚙️</button>
-          <NavLink to="/admin">Admin</NavLink>
           <NavLink to="/prompt">Assistente</NavLink>
           <span className="pw-muted" style={{ fontSize: 13 }}>{session?.user?.email}</span>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => signOut()}>Esci</button>

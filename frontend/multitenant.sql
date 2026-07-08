@@ -217,3 +217,6 @@ alter table public.google_calendar add column if not exists scopes text;
 -- Inoltri: calendario dedicato + regole di prenotazione per ogni persona della rubrica.
 alter table public.inoltri add column if not exists calendar_id          varchar(200);
 alter table public.inoltri add column if not exists regole_prenotazione  text;
+
+-- Inoltri: flag admin (dal suo numero, voce/WhatsApp, parte il prompt amministratore).
+alter table public.inoltri add column if not exists admin boolean default false;

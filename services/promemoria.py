@@ -7,25 +7,32 @@ from datetime import datetime, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, Promemoria, Contatto, Societa, Amministratore
+from database import SessionLocal, Promemoria, Contatto, Societa, Amministratore, Inoltro
 
 
 def _numeri_admin(db=None, azienda_id: int | None = None) -> set[str]:
-    """Numeri abilitati come amministratore (sole cifre) NEL TENANT, dalla tabella amministratori."""
+    """Numeri abilitati come amministratore (sole cifre) NEL TENANT: dalla tabella amministratori
+    E dalle persone della rubrica inoltri flaggate `admin`."""
     own = db is None
     if own:
         db = SessionLocal()
+    numeri: set[str] = set()
     try:
-        q = db.query(Amministratore.telefono)
+        qa = db.query(Amministratore.telefono)
+        qi = db.query(Inoltro.telefono).filter(Inoltro.admin.is_(True))
         if azienda_id:
-            q = q.filter(Amministratore.azienda_id == azienda_id)
-        righe = q.all()
+            qa = qa.filter(Amministratore.azienda_id == azienda_id)
+            qi = qi.filter(Inoltro.azienda_id == azienda_id)
+        for (t,) in list(qa.all()) + list(qi.all()):
+            d = re.sub(r"\D", "", t or "")
+            if d:
+                numeri.add(d)
     except Exception:
-        righe = []
+        pass
     finally:
         if own:
             db.close()
-    return {re.sub(r"\D", "", (t[0] or "")) for t in righe if t[0]}
+    return numeri
 
 
 def is_admin(telefono: str, db=None, azienda_id: int | None = None) -> bool:
