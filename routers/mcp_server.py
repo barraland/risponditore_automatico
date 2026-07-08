@@ -326,13 +326,19 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
             nome = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
             if not nome:
                 return {"ok": False, "errore": "Serve almeno il nome dell'attività per registrarla."}
+            # escludi_clienti: un lead non può agganciarsi a un CLIENTE per solo nome → prospect nuovo.
             societa = crm.trova_o_crea_societa(db, insegna=nome, ragione_sociale=ragione_sociale or None,
-                                               citta=(citta or c.sede or None), azienda_id=c.azienda_id)
+                                               citta=(citta or c.sede or None), azienda_id=c.azienda_id,
+                                               escludi_clienti=True)
             c.societa_id = societa.id
 
-        # (a) PROTEZIONE CLIENTI + FILL-ONLY: da una chiamata in ingresso NON sovrascrivo dati già
-        # presenti su un locale esistente (a maggior ragione se è un CLIENTE): riempio solo i VUOTI.
-        e_cliente = (societa.stato_relazione == StatoRelazione.CLIENTE)
+        # PROTEZIONE CLIENTI: l'anagrafica di un CLIENTE non si tocca dalle chiamate in ingresso.
+        if societa.stato_relazione == StatoRelazione.CLIENTE:
+            db.commit()  # eventuale ri-aggancio del contatto, ma NESSUNA modifica ai dati del cliente
+            return {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": False,
+                    "nota": "Locale già cliente: l'anagrafica dei clienti non si modifica dalle chiamate."}
+
+        # FILL-ONLY sui prospect: riempio solo i campi VUOTI, non sovrascrivo quelli già valorizzati.
         campi = {"citta": citta, "indirizzo": indirizzo, "ragione_sociale": ragione_sociale,
                  "piva": piva, "insegna": insegna}
         cambiato, saltati = False, []
@@ -348,8 +354,7 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
         out = {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": cambiato}
         if saltati:
             out["non_sovrascritti"] = saltati
-            out["nota"] = ("Alcuni dati del locale erano già registrati e li ho lasciati invariati"
-                           + (" (locale già cliente)." if e_cliente else "."))
+            out["nota"] = "Alcuni dati del locale erano già registrati e li ho lasciati invariati."
         return out
     finally:
         db.close()

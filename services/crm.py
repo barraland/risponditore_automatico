@@ -35,13 +35,16 @@ def _norm(s: str | None) -> str:
 
 def trova_societa(db: Session, insegna: str | None = None,
                   ragione_sociale: str | None = None, azienda_id: int | None = None,
-                  citta: str | None = None) -> Societa | None:
+                  citta: str | None = None, escludi_clienti: bool = False) -> Societa | None:
     """Cerca una società per insegna o ragione sociale (case-insensitive, match esatto), nel tenant.
 
     Se `citta` è nota, il match è CITTÀ-AWARE: due attività con lo stesso nome in città diverse sono
     entità diverse. Con città nota si riusa solo una società della STESSA città (o senza città
     impostata); se esiste solo un omonimo in un'ALTRA città, NON lo si riusa (se ne creerà uno nuovo).
     Senza città (None/vuota) resta il match per solo nome (comportamento precedente).
+
+    `escludi_clienti`=True: i locali in stato CLIENTE non fanno match (un lead in ingresso non deve
+    MAI agganciarsi a un cliente esistente per solo nome → gli si crea un prospect nuovo).
     """
     chiavi = {_norm(insegna), _norm(ragione_sociale)} - {""}
     if not chiavi:
@@ -49,6 +52,8 @@ def trova_societa(db: Session, insegna: str | None = None,
     aid = _aid(db, azienda_id)
     candidati = [soc for soc in db.query(Societa).filter(Societa.azienda_id == aid).all()
                  if _norm(soc.insegna) in chiavi or _norm(soc.ragione_sociale) in chiavi]
+    if escludi_clienti:
+        candidati = [s for s in candidati if s.stato_relazione != StatoRelazione.CLIENTE]
     if not candidati:
         return None
     c = _norm(citta)
@@ -67,10 +72,13 @@ def trova_o_crea_societa(db: Session, insegna: str | None = None,
                          ragione_sociale: str | None = None,
                          citta: str | None = None,
                          tipo: TipoAttivita = TipoAttivita.RISTORANTE,
-                         azienda_id: int | None = None) -> Societa:
-    """Ritorna la società corrispondente (nel tenant) o ne crea una nuova (prospect)."""
+                         azienda_id: int | None = None,
+                         escludi_clienti: bool = False) -> Societa:
+    """Ritorna la società corrispondente (nel tenant) o ne crea una nuova (prospect).
+    `escludi_clienti`=True: non riusa un locale CLIENTE (crea sempre un prospect nuovo)."""
     aid = _aid(db, azienda_id)
-    soc = trova_societa(db, insegna, ragione_sociale, azienda_id=aid, citta=citta)
+    soc = trova_societa(db, insegna, ragione_sociale, azienda_id=aid, citta=citta,
+                        escludi_clienti=escludi_clienti)
     if soc:
         return soc
     nome = (insegna or ragione_sociale or "Nuova società").strip()
@@ -95,8 +103,11 @@ def societa_di_contatto(db: Session, contatto: Contatto) -> Societa | None:
     nome = (contatto.ragione_sociale or "").strip()
     if not nome:
         return None
+    # Auto-collegamento da una chiamata in ingresso: un lead non ancora associato NON deve agganciarsi
+    # a un CLIENTE per solo nome → se l'omonimo è un cliente, gli si crea un prospect nuovo.
     soc = trova_o_crea_societa(db, insegna=nome, ragione_sociale=contatto.ragione_sociale,
-                               citta=contatto.sede, azienda_id=contatto.azienda_id)
+                               citta=contatto.sede, azienda_id=contatto.azienda_id,
+                               escludi_clienti=True)
     contatto.societa_id = soc.id
     if not soc.contatti:
         contatto.is_primario = True
