@@ -9,7 +9,7 @@
 import os
 import logging
 
-from fastapi import APIRouter, Request, Depends, Header, Query
+from fastapi import APIRouter, Request, Depends, Header, Query, Body
 from fastapi.responses import RedirectResponse, HTMLResponse
 
 from database import SessionLocal
@@ -88,3 +88,20 @@ async def events(da: str = Query(...), a: str = Query(...),
     """Eventi tra `da` e `a` (ISO/RFC3339). Usato dalla vista calendario in dashboard."""
     await _verify_user(authorization)
     return {"eventi": gc.eventi(db, da, a)}
+
+
+@router.get("/calendari")
+async def calendari(azienda_id: int = Query(0), authorization: str | None = Header(None),
+                    db=Depends(get_db)):
+    """Elenco dei calendari dell'account Google connesso (per il menù a tendina)."""
+    await _verify_user(authorization)
+    return {"calendari": gc.calendari(db, azienda_id or None)}
+
+
+@router.post("/calendario")
+async def imposta_calendario(payload: dict = Body(...), azienda_id: int = Query(0),
+                             authorization: str | None = Header(None), db=Depends(get_db)):
+    """Imposta il calendario attivo (id passato nel body: {"calendar_id": "..."})."""
+    await _verify_user(authorization)
+    ok = gc.imposta_calendario(db, azienda_id or None, (payload or {}).get("calendar_id", ""))
+    return {"ok": ok}

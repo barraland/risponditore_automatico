@@ -26,6 +26,7 @@ export default function Calendario() {
   const [week, setWeek] = useState(0)
   const [eventi, setEventi] = useState<any[]>([])
   const [loadingEv, setLoadingEv] = useState(false)
+  const [calendari, setCalendari] = useState<any[]>([])
 
   const auth = { Authorization: `Bearer ${session?.access_token}` }
 
@@ -50,7 +51,26 @@ export default function Calendario() {
   }
   useEffect(() => { if (stato?.connesso) caricaEventi() }, [stato?.connesso, week])
 
+  async function caricaCalendari() {
+    try {
+      const res = await fetch(`${API}/google/calendari${tq}`, { headers: auth })
+      const data = await res.json()
+      if (res.ok) setCalendari(data.calendari || [])
+    } catch { /* ignora */ }
+  }
+  useEffect(() => { if (stato?.connesso) caricaCalendari() }, [stato?.connesso])
+
+  async function cambiaCalendario(id: string) {
+    await fetch(`${API}/google/calendario${tq}`, {
+      method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calendar_id: id }),
+    })
+    await caricaCalendari()
+    await caricaEventi()
+  }
+
   const connesso = stato?.connesso
+  const calSel = calendari.find(c => c.selezionato)?.id || stato?.calendar_id || 'primary'
   const giorni = Array.from({ length: 7 }, (_, i) => addDays(lunedi(week), i))
   const oggiKey = isoDay(new Date())
   const range = `${fmtGiorno(giorni[0])} – ${fmtGiorno(giorni[6])}`
@@ -67,6 +87,18 @@ export default function Calendario() {
       </div>
 
       <GoogleConnect />
+
+      {connesso && calendari.length > 0 && (
+        <div className="pw-row" style={{ gap: 8, alignItems: 'center' }}>
+          <span className="pw-muted" style={{ fontSize: 13 }}>Calendario:</span>
+          <select className="pw-input pw-btn-sm" style={{ maxWidth: 320 }} value={calSel}
+            onChange={e => cambiaCalendario(e.target.value)} title="Calendario usato per vista, disponibilità e meeting">
+            {calendari.map(c => (
+              <option key={c.id} value={c.id}>{c.nome}{c.primario ? ' (principale)' : ''}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {!connesso && !loading && (
         <div className="pw-card"><div className="pw-card-body pw-muted">

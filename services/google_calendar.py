@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
-# Una sola connessione Google per tenant copre Calendar + invio email (gmail.send).
+# Una sola connessione Google per tenant copre Calendar + elenco calendari + invio email.
 SCOPES = ("openid email https://www.googleapis.com/auth/calendar.events "
+          "https://www.googleapis.com/auth/calendar.calendarlist.readonly "
           "https://www.googleapis.com/auth/gmail.send")
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -101,7 +102,8 @@ def scambia_e_salva(code: str, host: str, azienda_id: int | None = None) -> str:
             row = GoogleCalendar(azienda_id=azienda_id)
             db.add(row)
         row.email = email
-        row.calendar_id = "primary"
+        if not (row.calendar_id or "").strip():   # non resettare il calendario già scelto sui riconnect
+            row.calendar_id = "primary"
         row.access_token = access
         row.scopes = scopes
         if refresh:  # arriva solo al primo consenso; non sovrascrivere con vuoto
@@ -354,6 +356,49 @@ def access_token_valido(db, azienda_id: int | None = None) -> str | None:
     except Exception as e:
         logger.warning("Refresh token Google errore: %s", e)
         return None
+
+
+# ---------- Elenco calendari + selezione di quello attivo ----------
+
+CALENDARLIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList"
+
+
+def calendari(db, azienda_id: int | None = None) -> list[dict]:
+    """Elenco dei calendari dell'account Google connesso: [{id, nome, primario, selezionato}].
+    Lista vuota se non connesso o in errore (serve lo scope calendar.calendarlist.readonly)."""
+    token = access_token_valido(db, azienda_id)
+    row = _row(db, azienda_id)
+    if not token or not row:
+        return []
+    attivo = (row.calendar_id or "primary")
+    try:
+        r = httpx.get(CALENDARLIST_URL, headers={"Authorization": f"Bearer {token}"},
+                      params={"minAccessRole": "reader", "maxResults": 250}, timeout=15)
+        if r.status_code != 200:
+            logger.warning("calendarList fallito (%s): %s", r.status_code, r.text[:160])
+            return []
+        out = []
+        for it in r.json().get("items", []):
+            cid = it.get("id")
+            out.append({"id": cid, "nome": it.get("summary") or cid,
+                        "primario": bool(it.get("primary")), "selezionato": cid == attivo})
+        # primario in cima, poi per nome
+        out.sort(key=lambda c: (not c["primario"], (c["nome"] or "").lower()))
+        return out
+    except Exception as e:
+        logger.warning("Elenco calendari Google errore: %s", e)
+        return []
+
+
+def imposta_calendario(db, azienda_id: int | None, calendar_id: str) -> bool:
+    """Imposta il calendario attivo (usato per vista, disponibilità e prenotazione meeting)."""
+    row = _row(db, azienda_id)
+    if not row or not (calendar_id or "").strip():
+        return False
+    row.calendar_id = calendar_id.strip()
+    db.commit()
+    logger.info("📅 Calendario attivo (tenant=%s) -> %s", azienda_id, row.calendar_id)
+    return True
 
 
 # ---------- Invio email via Gmail API (dalla casella connessa del tenant) ----------
