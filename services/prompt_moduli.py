@@ -77,21 +77,28 @@ DEFAULT_MODULI = [
         ),
     },
     {
-        "chiave": "gestione_email", "ordine": 40, "titolo": "Email: riuso e dettatura",
+        "chiave": "gestione_email", "ordine": 40, "titolo": "Email del cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "EMAIL DEL CLIENTE — usala se ce l'hai già:\n"
             "Se conosci GIÀ l'email del cliente (è nel riepilogo, o l'hai appena salvata), NON "
             "chiedergliela da capo: PROPONIGLIELA e chiedi solo conferma («Le invio a {email che "
-            "conosci}, corretto?»). Chiedi di dettarla SOLO se non ce l'hai, o se il cliente vuole "
-            "usarne un'altra.\n\n"
-            "EMAIL E DATI SCANDITI (mai inventare):\n"
-            "- Quando il cliente detta un'email: 1) RIPETILA scandita lettera per lettera («punto», "
-            "«chiocciola», «trattino»); 2) chiedi conferma («Confermo, è corretta?»); 3) salvala con "
-            "salva_contatto/aggiorna_contatto SOLO dopo il «sì».\n"
-            "- Se non l'hai sentita chiaramente, chiedi di scandirla lettera per lettera.\n"
-            "- NON dedurre né completare email/nomi/P.IVA dal contesto o dalla società: trascrivi "
-            "SOLO ciò che il cliente ha pronunciato."
+            "conosci}, corretto?»). Chiedila SOLO se non ce l'hai, o se il cliente vuole usarne "
+            "un'altra.\n"
+            "Quando il cliente fornisce una NUOVA email, fattela confermare prima di salvarla e "
+            "salvala con salva_contatto/aggiorna_contatto SOLO dopo l'ok.\n"
+            "NON dedurre né completare email/nomi/P.IVA dal contesto o dalla società: usa SOLO ciò "
+            "che il cliente ha effettivamente indicato."
+        ),
+    },
+    {
+        "chiave": "email_dettatura_voce", "ordine": 42, "titolo": "Dettatura email a voce",
+        "canali": ["voce"],   # solo voce: su chat non ha senso scandire lettera per lettera
+        "testo": (
+            "DETTATURA A VOCE (email e dati):\n"
+            "- Quando il cliente detta un'email, RIPETILA scandita lettera per lettera («punto», "
+            "«chiocciola», «trattino») e chiedi conferma («Confermo, è corretta?») PRIMA di salvarla.\n"
+            "- Se non l'hai sentita chiaramente, chiedi di scandirla di nuovo lettera per lettera."
         ),
     },
     {
