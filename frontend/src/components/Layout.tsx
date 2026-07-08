@@ -85,11 +85,11 @@ export default function Layout() {
         </div>
         <div className="pw-nav-right">
           <TenantSwitcher />
+          {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setGoogle(true)}
             title="Collega l'account Google del cliente (Calendar + invio email)">Google account</button>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
             onClick={() => setConfig(true)} style={{ fontSize: 16, lineHeight: 1 }}>⚙️</button>
-          {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
           <NavLink to="/admin">Admin</NavLink>
           <NavLink to="/prompt">Assistente</NavLink>
           <span className="pw-muted" style={{ fontSize: 13 }}>{session?.user?.email}</span>
