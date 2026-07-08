@@ -79,6 +79,11 @@ add_secret g-cli-id   GOOGLE_CLIENT_ID           "${GOOGLE_CLIENT_ID:-}"     # G
 add_secret g-cli-sec  GOOGLE_CLIENT_SECRET       "${GOOGLE_CLIENT_SECRET:-}"
 
 # env in chiaro (non segrete), solo se presenti
+# Modelli/effort degli agenti (default sensati nel codice; qui li rendi override-abili)
+for _mk in WHATSAPP_AGENT_MODEL WHATSAPP_AGENT_EFFORT RETRIEVER_MODEL RETRIEVER_EFFORT \
+           RETRIEVER_ROUTER_MODEL RETRIEVER_ROUTER_EFFORT; do
+  if [ -n "${!_mk:-}" ]; then ENVS+=("$_mk=${!_mk}"); fi
+done
 if [ -n "${GMAIL_FROM:-}" ]; then ENVS+=("GMAIL_FROM=$GMAIL_FROM"); fi
 if [ -n "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then ENVS+=("WHATSAPP_PHONE_NUMBER_ID=$WHATSAPP_PHONE_NUMBER_ID"); fi
 if [ -n "${OPENAI_REALTIME_VOICE:-}" ]; then ENVS+=("OPENAI_REALTIME_VOICE=$OPENAI_REALTIME_VOICE"); fi
