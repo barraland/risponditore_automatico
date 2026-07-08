@@ -507,14 +507,24 @@ def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato:
 @mcp.tool()
 @_loggato
 def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str = "",
-                trascrizione: str = "", tenant: str = "") -> dict:
+                trascrizione: str = "", canale: str = "voce", tenant: str = "") -> dict:
     """Apre (o aggiorna) un ticket di follow-up per il chiamante, per il team commerciale.
     Passa titolo, una descrizione della richiesta, la priorità (alta/media/bassa) e, se la hai,
-    la trascrizione/sintesi della conversazione."""
+    la trascrizione/sintesi della conversazione. `canale` lo imposta il codice (voce/whatsapp)."""
     _log_tool("apri_ticket", telefono=telefono, titolo=titolo, priorita=priorita)
     db = SessionLocal()
     try:
         c = _contatto(db, telefono, tenant)
+        # Su WhatsApp la STORIA del ticket è la conversazione REALE (dai messaggi), non il riassunto
+        # del modello: più fedele per il collega che rilavora il lead.
+        storia = (trascrizione or "").strip()
+        if canale == "whatsapp":
+            try:
+                reale = whatsapp_agent._storia_testo(whatsapp_agent._storia_recente(db, c.id))
+                if reale.strip():
+                    storia = reale
+            except Exception as e:
+                logger.warning("Storia WhatsApp per ticket non recuperata: %s", e)
         esistente = whatsapp_agent._ticket_aperto(db, c.id)
         if esistente:
             esistente.titolo = (titolo or esistente.titolo).strip()[:300]
@@ -522,13 +532,15 @@ def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str
             if p:
                 esistente.priorita = p
             esistente.descrizione = (descrizione or "").strip() or esistente.descrizione
-            if (trascrizione or "").strip():
-                esistente.storia = trascrizione.strip()
+            if storia:
+                esistente.storia = storia
+            if canale:
+                esistente.canale = canale
             db.commit()
             return {"aperto": True, "ticket_id": esistente.id, "aggiornato": True}
         t = ticket_service.apri_ticket(
-            db, contatto_id=c.id, titolo=titolo or "Lead telefonico", priorita=priorita,
-            descrizione=descrizione, storia=trascrizione, canale="voce")
+            db, contatto_id=c.id, titolo=titolo or "Lead", priorita=priorita,
+            descrizione=descrizione, storia=storia, canale=canale)
         return {"aperto": bool(t), "ticket_id": t.id if t else None}
     finally:
         db.close()

@@ -151,7 +151,7 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
         if nome == "apri_ticket":
             return m.apri_ticket(telefono=telefono, titolo=a.get("titolo", ""),
                                  descrizione=a.get("descrizione", ""), priorita=a.get("priorita", ""),
-                                 trascrizione=a.get("trascrizione", ""), tenant=tenant)
+                                 trascrizione=a.get("trascrizione", ""), canale="whatsapp", tenant=tenant)
         if nome == "controlla_disponibilita":
             return m.controlla_disponibilita(giorno=a.get("giorno", ""),
                                              durata_minuti=int(a.get("durata_minuti", 30) or 30),
