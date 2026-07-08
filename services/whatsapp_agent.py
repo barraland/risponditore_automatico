@@ -124,6 +124,29 @@ def _storia_testo(storia: list[MessaggioChat]) -> str:
     )
 
 
+def _tempo_da_ultimo(db: Session, contatto_id: int) -> str:
+    """Tempo trascorso dal MESSAGGIO PRECEDENTE del thread (quello prima di quello appena ricevuto),
+    in forma leggibile. «primo messaggio in assoluto» se non ce n'è uno prima. È un DATO grezzo per il
+    prompt: la regola sul saluto la scrive l'amministratore in dashboard, non è cablata nel codice."""
+    from datetime import datetime
+    ultimi = (db.query(MessaggioChat)
+              .filter(MessaggioChat.contatto_id == contatto_id)
+              .order_by(MessaggioChat.timestamp.desc()).limit(2).all())
+    if len(ultimi) < 2 or not ultimi[1].timestamp:
+        return "primo messaggio in assoluto"
+    sec = max(0, int((datetime.utcnow() - ultimi[1].timestamp).total_seconds()))
+    if sec < 60:
+        return "meno di un minuto"
+    if sec < 3600:
+        m = sec // 60
+        return f"{m} minuto" if m == 1 else f"{m} minuti"
+    if sec < 86400:
+        h = sec // 3600
+        return f"{h} ora" if h == 1 else f"{h} ore"
+    g = sec // 86400
+    return f"{g} giorno" if g == 1 else f"{g} giorni"
+
+
 def _ticket_aperto(db: Session, contatto_id: int) -> Ticket | None:
     """Eventuale ticket già aperto per il contatto (per non crearne duplicati)."""
     return (
@@ -141,9 +164,6 @@ SYSTEM = """Sei l'assistente WhatsApp di un'azienda: rispondi a clienti e potenz
 
 - Scrivi in italiano, tono cordiale e professionale, messaggi BREVI adatti a una chat: vai al punto,
   niente muri di testo, elenchi puntati corti quando elenchi prodotti o prezzi. Puoi mandare link.
-- SALUTO: fai un saluto formale (es. «Buongiorno Signor {cognome}») SOLO se nel contesto «PRIMO
-  MESSAGGIO IN 24H» è «sì». Negli altri messaggi rispondi DIRETTO, senza risalutare, senza ripetere
-  il buongiorno né il nome del cliente ad ogni riga.
 - Hai a disposizione degli STRUMENTI (cercare nei documenti, salvare/aggiornare il contatto e il
   locale, registrare ordini, aprire ticket, inviare email/documenti, controllare il calendario e
   prenotare meeting): USALI quando servono. Agisci e poi rispondi; non annunciare che stai per usare
@@ -458,17 +478,9 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     for _k, _v in _dv.items():
         system = system.replace("{{" + _k + "}}", _v or "")
 
-    # Primo messaggio in 24h? (il messaggio appena ricevuto è già loggato, quindi 1 = primo)
-    from datetime import datetime, timedelta
-    _24h_fa = datetime.utcnow() - timedelta(hours=24)
-    _msg_24h = (db.query(MessaggioChat)
-                .filter(MessaggioChat.contatto_id == contatto.id, MessaggioChat.timestamp >= _24h_fa)
-                .count())
-    primo_in_24h = _msg_24h <= 1
-
     ticket_esistente = _ticket_aperto(db, contatto.id)
     user = (
-        f"PRIMO MESSAGGIO IN 24H (saluta formalmente SOLO se «sì»): {'sì' if primo_in_24h else 'no'}\n\n"
+        f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo_da_ultimo(db, contatto.id)}\n\n"
         f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
         f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
         f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
