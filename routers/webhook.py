@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from database import SessionLocal
 from services import whatsapp_agent
-from services.whatsapp import invia_messaggio
+from services.whatsapp import invia_messaggio, trascrivi_audio
 
 logger = logging.getLogger(__name__)
 # Prefisso /whatsapp: l'endpoint pubblico diventa /whatsapp/webhook (più chiaro di /webhook).
@@ -48,6 +48,18 @@ async def _gestisci_messaggio(telefono: str, testo: str):
         db.close()
 
 
+async def _gestisci_audio(telefono: str, media_id: str):
+    """Trascrive un messaggio vocale WhatsApp con Whisper, poi lo processa come un testo normale
+    (stesso canale/agente). Se la trascrizione fallisce, chiede al cliente di riprovare."""
+    testo = await run_in_threadpool(trascrivi_audio, media_id)
+    if not testo:
+        await invia_messaggio(telefono, "Scusi, non sono riuscito a capire il messaggio vocale. "
+                                        "Può riprovare o scrivermelo?")
+        return
+    logger.info("Audio da %s trascritto: %s", telefono, testo[:100])
+    await _gestisci_messaggio(telefono, testo)
+
+
 @router.post("/webhook")
 async def receive_webhook(
     request: Request,
@@ -68,23 +80,27 @@ async def receive_webhook(
             messages = value.get("messages", [])
 
             for message in messages:
-                if message.get("type") != "text":
-                    continue
-
+                tipo = message.get("type")
                 telefono_raw = message.get("from", "")
-                testo = message.get("text", {}).get("body", "")
-                wa_message_id = message.get("id")
-
-                if not telefono_raw or not testo:
+                if not telefono_raw:
                     continue
-
                 # Converti in formato E.164
                 telefono = f"+{telefono_raw}" if not telefono_raw.startswith("+") else telefono_raw
 
-                logger.info("Messaggio ricevuto da %s: %s", telefono, testo[:100])
-
-                # Processa in background per rispondere subito 200 a Meta
-                background_tasks.add_task(_gestisci_messaggio, telefono, testo)
+                if tipo == "text":
+                    testo = message.get("text", {}).get("body", "")
+                    if not testo:
+                        continue
+                    logger.info("Messaggio ricevuto da %s: %s", telefono, testo[:100])
+                    background_tasks.add_task(_gestisci_messaggio, telefono, testo)
+                elif tipo == "audio":
+                    # Messaggio vocale/audio: trascrivi con Whisper, poi stesso flusso del testo.
+                    media_id = (message.get("audio") or {}).get("id")
+                    if not media_id:
+                        continue
+                    logger.info("Audio WhatsApp da %s (media %s) → trascrizione", telefono, media_id)
+                    background_tasks.add_task(_gestisci_audio, telefono, media_id)
+                # altri tipi (immagini, documenti, ecc.) per ora ignorati
 
     # Rispondi sempre 200 OK a Meta
     return {"status": "ok"}

@@ -1,3 +1,4 @@
+import io
 import os
 import logging
 
@@ -7,7 +8,42 @@ logger = logging.getLogger(__name__)
 
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
-GRAPH_API_URL = f"https://graph.facebook.com/v21.0/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+GRAPH_BASE = "https://graph.facebook.com/v21.0"
+GRAPH_API_URL = f"{GRAPH_BASE}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+WHISPER_MODEL = os.getenv("WHATSAPP_WHISPER_MODEL", "whisper-1")
+
+
+def trascrivi_audio(media_id: str) -> str:
+    """Scarica un messaggio vocale/audio WhatsApp (per media_id) e lo trascrive con Whisper.
+    Ritorna il testo trascritto (o stringa vuota se non configurato o in errore). Sincrona:
+    chiamala in threadpool. I vocali WhatsApp sono OGG/Opus, formato accettato da Whisper."""
+    if not (WHATSAPP_TOKEN and OPENAI_API_KEY and media_id):
+        return ""
+    try:
+        headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+        # 1) media_id -> URL temporaneo del file
+        info = httpx.get(f"{GRAPH_BASE}/{media_id}", headers=headers, timeout=30).json()
+        url = info.get("url")
+        if not url:
+            logger.warning("Media WhatsApp %s: URL non trovato (%s)", media_id, info)
+            return ""
+        # 2) scarica i byte (serve lo STESSO bearer)
+        audio = httpx.get(url, headers=headers, timeout=30).content
+        mime = (info.get("mime_type") or "audio/ogg").split(";")[0]
+        ext = mime.split("/")[-1] or "ogg"
+        buf = io.BytesIO(audio)
+        buf.name = f"audio.{ext}"   # l'estensione serve a Whisper per riconoscere il formato
+        # 3) trascrizione Whisper
+        from openai import OpenAI
+        cli = OpenAI(api_key=OPENAI_API_KEY)
+        tr = cli.audio.transcriptions.create(model=WHISPER_MODEL, file=buf, language="it")
+        testo = (getattr(tr, "text", "") or "").strip()
+        logger.info("🎙️ Audio WhatsApp trascritto (%d byte, %s): %s", len(audio), mime, testo[:80])
+        return testo
+    except Exception as e:
+        logger.error("Trascrizione audio WhatsApp fallita (media %s): %s", media_id, e)
+        return ""
 
 
 async def invia_messaggio(telefono: str, testo: str) -> dict | None:
