@@ -213,3 +213,7 @@ alter table public.documenti add column if not exists note text;
 
 -- Google: scope concessi (per sapere se la connessione include gmail.send = invio email per-tenant).
 alter table public.google_calendar add column if not exists scopes text;
+
+-- Inoltri: calendario dedicato + regole di prenotazione per ogni persona della rubrica.
+alter table public.inoltri add column if not exists calendar_id          varchar(200);
+alter table public.inoltri add column if not exists regole_prenotazione  text;

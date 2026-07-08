@@ -92,16 +92,18 @@ SCHEMI = [
          "trascrizione": {"type": "string"}},
         ["titolo"]),
     _fn("controlla_disponibilita",
-        "Slot liberi sul calendario. `giorno` vuoto = prossimi 7 giorni. Proponi SOLO gli orari in "
-        "`slot_liberi`.",
+        "Slot liberi sul calendario. `giorno` vuoto = prossimi 7 giorni. `persona` = nome/ruolo della "
+        "persona della rubrica per cui è il meeting (usa il suo calendario e le sue regole). Proponi "
+        "SOLO orari in `slot_liberi` che rispettano anche le `regole_prenotazione` restituite.",
         {"giorno": {"type": "string"}, "durata_minuti": {"type": "integer"},
-         "dalle": {"type": "integer"}, "alle": {"type": "integer"}}),
+         "dalle": {"type": "integer"}, "alle": {"type": "integer"}, "persona": {"type": "string"}}),
     _fn("prenota_meeting",
         "Prenota un meeting e invia l'invito (con link Google Meet se online). `data_ora` ISO "
-        "(es. 2026-07-01T16:00:00). Conferma prima data/ora ed email col cliente.",
+        "(es. 2026-07-01T16:00:00). `persona` = come in controlla_disponibilita (prenota sul suo "
+        "calendario). Conferma prima data/ora ed email col cliente.",
         {"titolo": {"type": "string"}, "data_ora": {"type": "string"},
          "durata_minuti": {"type": "integer"}, "invitati": {"type": "string"},
-         "descrizione": {"type": "string"}, "online": {"type": "boolean"}},
+         "descrizione": {"type": "string"}, "online": {"type": "boolean"}, "persona": {"type": "string"}},
         ["titolo", "data_ora"]),
 ]
 
@@ -156,12 +158,14 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
             return m.controlla_disponibilita(giorno=a.get("giorno", ""),
                                              durata_minuti=int(a.get("durata_minuti", 30) or 30),
                                              dalle=int(a.get("dalle", 9) or 9),
-                                             alle=int(a.get("alle", 18) or 18), tenant=tenant)
+                                             alle=int(a.get("alle", 18) or 18),
+                                             persona=a.get("persona", ""), tenant=tenant)
         if nome == "prenota_meeting":
             return m.prenota_meeting(titolo=a.get("titolo", ""), data_ora=a.get("data_ora", ""),
                                      durata_minuti=int(a.get("durata_minuti", 30) or 30),
                                      invitati=a.get("invitati", ""), descrizione=a.get("descrizione", ""),
-                                     online=bool(a.get("online", True)), tenant=tenant)
+                                     online=bool(a.get("online", True)),
+                                     persona=a.get("persona", ""), tenant=tenant)
     except Exception as e:
         logger.error("Tool %s fallito: %s", nome, e)
         return {"errore": str(e)}

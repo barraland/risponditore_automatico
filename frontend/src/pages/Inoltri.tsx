@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../lib/tenant'
+import { useAuth } from '../lib/auth'
 
-const VUOTO = { nome: '', cognome: '', ruolo: '', email: '', telefono: '', regole: '' }
+const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
+const VUOTO = { nome: '', cognome: '', ruolo: '', email: '', telefono: '', regole: '',
+                calendar_id: '', regole_prenotazione: '' }
 
 export default function Inoltri() {
   const { aziendaId } = useTenant()
+  const { session } = useAuth()
   const [righe, setRighe] = useState<any[]>([])
+  const [calendari, setCalendari] = useState<any[]>([])
   const [f, setF] = useState({ ...VUOTO })
   const [editId, setEditId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
@@ -16,14 +21,28 @@ export default function Inoltri() {
   async function carica() {
     if (!aziendaId) return
     const { data, error } = await supabase.from('inoltri')
-      .select('id, nome, cognome, ruolo, email, telefono, regole').eq('azienda_id', aziendaId).order('created_at', { ascending: false })
+      .select('id, nome, cognome, ruolo, email, telefono, regole, calendar_id, regole_prenotazione')
+      .eq('azienda_id', aziendaId).order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
   }
-  useEffect(() => { carica() }, [])
+  async function caricaCalendari() {
+    if (!API) return
+    try {
+      const tq = aziendaId ? `?azienda_id=${aziendaId}` : ''
+      const res = await fetch(`${API}/google/calendari${tq}`, { headers: { Authorization: `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (res.ok) setCalendari(data.calendari || [])
+    } catch { /* Google non connesso: nessun calendario da elencare */ }
+  }
+  useEffect(() => { carica(); caricaCalendari() }, [aziendaId])
+
+  const nomeCal = (id: string) => calendari.find(c => c.id === id)?.nome || id
 
   function modifica(r: any) {
     setEditId(r.id)
-    setF({ nome: r.nome || '', cognome: r.cognome || '', ruolo: r.ruolo || '', email: r.email || '', telefono: r.telefono || '', regole: r.regole || '' })
+    setF({ nome: r.nome || '', cognome: r.cognome || '', ruolo: r.ruolo || '', email: r.email || '',
+           telefono: r.telefono || '', regole: r.regole || '',
+           calendar_id: r.calendar_id || '', regole_prenotazione: r.regole_prenotazione || '' })
     setErr(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -35,6 +54,7 @@ export default function Inoltri() {
     const payload = {
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
       email: f.email.trim() || null, telefono: f.telefono.trim(), regole: f.regole.trim() || null,
+      calendar_id: f.calendar_id.trim() || null, regole_prenotazione: f.regole_prenotazione.trim() || null,
     }
     const { error } = editId == null
       ? await supabase.from('inoltri').insert({ ...payload, azienda_id: aziendaId })
@@ -55,7 +75,8 @@ export default function Inoltri() {
         <h1 style={{ fontSize: 28, marginTop: 6 }}>Inoltri chiamata</h1>
         <div className="pw-muted" style={{ fontSize: 14, marginTop: 6 }}>
           Persone a cui l'assistente può passare la chiamata. Le regole spiegano QUANDO inoltrare a
-          ciascuno (es. «spedizioni e consegne»). L'assistente le vede sempre nel prompt.
+          ciascuno. Puoi anche assegnare a ognuno un <strong>calendario</strong> e delle <strong>regole
+          di prenotazione</strong>: i meeting per quella persona verranno prenotati sul suo calendario.
         </div>
       </div>
 
@@ -75,6 +96,20 @@ export default function Inoltri() {
             <textarea className="pw-input" rows={2} style={{ resize: 'vertical', fontFamily: 'inherit' }}
               placeholder="Quando inoltrare a questa persona, es: «questioni di spedizione, consegne, resi»"
               value={f.regole} onChange={e => set('regole', e.target.value)} /></div>
+
+          <div className="pw-field"><label>Calendario per i meeting di questa persona</label>
+            <select className="pw-input" value={f.calendar_id} onChange={e => set('calendar_id', e.target.value)}>
+              <option value="">— usa il calendario dell'azienda (predefinito) —</option>
+              {calendari.map(c => <option key={c.id} value={c.id}>{c.nome}{c.primario ? ' (principale)' : ''}</option>)}
+            </select>
+            {!API && <div className="pw-muted" style={{ fontSize: 12, marginTop: 4 }}>VITE_API_BASE non configurato: lista calendari non disponibile.</div>}
+            {API && calendari.length === 0 && <div className="pw-muted" style={{ fontSize: 12, marginTop: 4 }}>Nessun calendario: collega Google (pulsante «Google account») e riconnetti per lo scope elenco calendari.</div>}
+          </div>
+          <div className="pw-field"><label>Regole di prenotazione (testo libero)</label>
+            <textarea className="pw-input" rows={3} style={{ resize: 'vertical', fontFamily: 'inherit' }}
+              placeholder="Vincoli che l'assistente rispetta quando propone gli slot (oltre alla disponibilità del calendario). Es: «solo pomeriggio», «mai il venerdì», «lascia 30 min tra un meeting e l'altro», «no meeting sotto le 2h di preavviso»."
+              value={f.regole_prenotazione} onChange={e => set('regole_prenotazione', e.target.value)} /></div>
+
           {err && <div className="pw-error">{err}</div>}
           <div className="pw-row" style={{ justifyContent: 'flex-end', gap: 8 }}>
             {editId != null && <button className="pw-btn pw-btn-ghost" disabled={busy} onClick={annulla}>Annulla</button>}
@@ -87,14 +122,15 @@ export default function Inoltri() {
         {righe.length === 0 ? <div className="pw-empty">Nessun destinatario di inoltro.</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table className="pw-table">
-              <thead><tr><th>Nome</th><th>Ruolo</th><th>Telefono</th><th>Regole di inoltro</th><th></th></tr></thead>
+              <thead><tr><th>Nome</th><th>Ruolo</th><th>Telefono</th><th>Calendario</th><th>Regole prenotazione</th><th></th></tr></thead>
               <tbody>
                 {righe.map(r => (
                   <tr key={r.id} style={{ cursor: 'default' }}>
                     <td style={{ fontWeight: 600, color: 'var(--fg)' }}>{`${r.nome || ''} ${r.cognome || ''}`.trim() || '—'}</td>
                     <td>{r.ruolo || '—'}</td>
                     <td>{r.telefono}</td>
-                    <td style={{ color: 'var(--fg-2)', fontSize: 13 }}>{r.regole || '—'}</td>
+                    <td style={{ fontSize: 13 }}>{r.calendar_id ? nomeCal(r.calendar_id) : <span className="pw-muted">azienda</span>}</td>
+                    <td style={{ color: 'var(--fg-2)', fontSize: 13, maxWidth: 240, whiteSpace: 'pre-wrap' }}>{r.regole_prenotazione || '—'}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => modifica(r)}>Modifica</button>
                       <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(r.id)}>Elimina</button>

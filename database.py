@@ -581,6 +581,8 @@ class Inoltro(Base):
     email = Column(String(150))
     telefono = Column(String(30), nullable=False)
     regole = Column(Text)                 # quando inoltrare a questa persona (testo libero)
+    calendar_id = Column(String(200))     # calendario Google su cui prenotare i meeting di questa persona
+    regole_prenotazione = Column(Text)    # regole libere per la prenotazione (fasce, vincoli, ecc.)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     @property

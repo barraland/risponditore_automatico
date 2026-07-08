@@ -133,13 +133,14 @@ def disconnetti(db, azienda_id: int | None = None) -> None:
         db.commit()
 
 
-def eventi(db, time_min: str, time_max: str, max_results: int = 100) -> list[dict]:
+def eventi(db, time_min: str, time_max: str, max_results: int = 100,
+           calendar_id: str | None = None) -> list[dict]:
     """Eventi del calendario connesso tra time_min e time_max (RFC3339). Lista vuota se non connesso."""
     access = access_token_valido(db)
     if not access:
         return []
     row = db.query(GoogleCalendar).first()
-    cal = (row.calendar_id if row else "primary") or "primary"
+    cal = calendar_id or (row.calendar_id if row else None) or "primary"
     try:
         r = httpx.get(
             f"https://www.googleapis.com/calendar/v3/calendars/{urllib.parse.quote(cal)}/events",
@@ -171,7 +172,8 @@ TZ_DEFAULT = os.getenv("CALENDAR_TZ", "Europe/Rome")
 
 
 def crea_evento(db, titolo: str, inizio_iso: str, fine_iso: str, invitati: list[str],
-                descrizione: str = "", online: bool = True, tz: str = TZ_DEFAULT) -> dict:
+                descrizione: str = "", online: bool = True, tz: str = TZ_DEFAULT,
+                calendar_id: str | None = None) -> dict:
     """Crea un evento sul calendario connesso e INVIA l'invito ai destinatari. Se online=True crea
     anche una Google Meet. `inizio_iso`/`fine_iso` = datetime ISO locale (es. 2026-07-01T16:00:00).
     Ritorna {ok, event_id, link_evento, link_meet, invitati}."""
@@ -179,7 +181,7 @@ def crea_evento(db, titolo: str, inizio_iso: str, fine_iso: str, invitati: list[
     if not access:
         return {"ok": False, "errore": "Google Calendar non connesso."}
     row = db.query(GoogleCalendar).first()
-    cal = (row.calendar_id if row else "primary") or "primary"
+    cal = calendar_id or (row.calendar_id if row else None) or "primary"
 
     body: dict = {
         "summary": titolo or "Meeting",
@@ -224,7 +226,7 @@ def _parse_iso(s: str):
 
 
 def disponibilita(db, giorno: str, durata_min: int = 30, ora_inizio: int = 9, ora_fine: int = 18,
-                  tz: str = TZ_DEFAULT, max_slot: int = 6) -> dict:
+                  tz: str = TZ_DEFAULT, max_slot: int = 6, calendar_id: str | None = None) -> dict:
     """Slot liberi in un giorno (freeBusy), nell'orario lavorativo [ora_inizio, ora_fine].
     `giorno` = 'YYYY-MM-DD'. Ritorna {ok, giorno, slot_liberi:[...], occupato:bool}."""
     from datetime import datetime, timedelta, time, date
@@ -237,7 +239,7 @@ def disponibilita(db, giorno: str, durata_min: int = 30, ora_inizio: int = 9, or
     if not access:
         return {"ok": False, "errore": "Google Calendar non connesso."}
     row = db.query(GoogleCalendar).first()
-    cal = (row.calendar_id if row else "primary") or "primary"
+    cal = calendar_id or (row.calendar_id if row else None) or "primary"
     try:
         d = date.fromisoformat(giorno.strip()[:10])
     except ValueError:
@@ -275,7 +277,8 @@ def disponibilita(db, giorno: str, durata_min: int = 30, ora_inizio: int = 9, or
 
 
 def disponibilita_settimana(db, giorni: int = 7, durata_min: int = 30, ora_inizio: int = 9,
-                            ora_fine: int = 18, tz: str = TZ_DEFAULT) -> dict:
+                            ora_fine: int = 18, tz: str = TZ_DEFAULT,
+                            calendar_id: str | None = None) -> dict:
     """Liberi + occupati per i prossimi `giorni` giorni (oggi incluso), orario [ora_inizio, ora_fine].
     Una sola chiamata a Google. Ritorna {ok, giorni:[{giorno, slot_liberi, occupati}]}."""
     from datetime import datetime, timedelta, time
@@ -288,7 +291,7 @@ def disponibilita_settimana(db, giorni: int = 7, durata_min: int = 30, ora_inizi
     if not access:
         return {"ok": False, "errore": "Google Calendar non connesso."}
     row = db.query(GoogleCalendar).first()
-    cal = (row.calendar_id if row else "primary") or "primary"
+    cal = calendar_id or (row.calendar_id if row else None) or "primary"
 
     oggi = datetime.now(zone).date()
     finestra_ini = datetime.combine(oggi, time(0, 0), tzinfo=zone)

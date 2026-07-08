@@ -718,25 +718,48 @@ def rifiuta_inoltro(sessione: str = "", telefono: str = "", motivo: str = "") ->
     return {"ok": False, "errore": errore}
 
 
+def _calendario_persona(db, persona: str, tenant: str = "") -> tuple[str | None, str, str]:
+    """Data una PERSONA della rubrica inoltri (per nome o ruolo), ritorna (calendar_id, regole_
+    prenotazione, nome). (None, '', '') se non trovata: in tal caso si usa il calendario dell'azienda."""
+    p = (persona or "").strip()
+    if not p:
+        return None, "", ""
+    cand = inoltri.trova(db, p, "", azienda_id=_aid(tenant)) or inoltri.trova(db, "", p, azienda_id=_aid(tenant))
+    if not cand:
+        return None, "", ""
+    it = cand[0]
+    return (it.calendar_id or None), (it.regole_prenotazione or ""), it.nome_completo
+
+
 @mcp.tool()
 @_loggato
 def controlla_disponibilita(giorno: str = "", durata_minuti: int = 30, dalle: int = 9,
-                            alle: int = 18, tenant: str = "") -> dict:
-    """SLOT LIBERI (e occupati) sul Google Calendar dell'azienda. Di DEFAULT (giorno vuoto) ritorna i
-    PROSSIMI 7 GIORNI (oggi incluso), un blocco per giorno con `slot_liberi` e `occupati`: usalo per
-    avere il quadro della settimana. Se ti serve un SOLO giorno, passa `giorno`='YYYY-MM-DD'.
-    `durata_minuti` = durata del meeting (default 30); `dalle`/`alle` = finestra oraria (default 9-18):
-    pomeriggio → dalle=14, mattina → alle=13. Proponi al cliente SOLO gli orari presenti in
-    `slot_liberi`, poi prenota con prenota_meeting."""
-    _log_tool("controlla_disponibilita", titolo=giorno or "settimana")
+                            alle: int = 18, persona: str = "", tenant: str = "") -> dict:
+    """SLOT LIBERI (e occupati) su Google Calendar. Di DEFAULT (giorno vuoto) ritorna i PROSSIMI 7
+    GIORNI (oggi incluso), un blocco per giorno con `slot_liberi` e `occupati`. Se ti serve un SOLO
+    giorno, passa `giorno`='YYYY-MM-DD'. `durata_minuti` (default 30); `dalle`/`alle` = finestra oraria.
+    `persona`: se il meeting è per una persona della rubrica (chi gestisce l'inoltro), passa il suo
+    nome/ruolo → si usa il SUO calendario e, se presenti, le sue `regole_prenotazione`.
+    Proponi al cliente SOLO orari in `slot_liberi` CHE rispettano anche le `regole_prenotazione`
+    eventualmente restituite; poi prenota con prenota_meeting (stessa `persona`)."""
+    _log_tool("controlla_disponibilita", titolo=giorno or "settimana", nome_cliente=persona)
     from services import google_calendar as gc
     db = SessionLocal()
     try:
+        cal, regole, nome = _calendario_persona(db, persona, tenant)
         if (giorno or "").strip():
-            return gc.disponibilita(db, giorno, int(durata_minuti or 30),
-                                    ora_inizio=int(dalle or 9), ora_fine=int(alle or 18))
-        return gc.disponibilita_settimana(db, giorni=7, durata_min=int(durata_minuti or 30),
-                                          ora_inizio=int(dalle or 9), ora_fine=int(alle or 18))
+            res = gc.disponibilita(db, giorno, int(durata_minuti or 30),
+                                   ora_inizio=int(dalle or 9), ora_fine=int(alle or 18), calendar_id=cal)
+        else:
+            res = gc.disponibilita_settimana(db, giorni=7, durata_min=int(durata_minuti or 30),
+                                             ora_inizio=int(dalle or 9), ora_fine=int(alle or 18),
+                                             calendar_id=cal)
+        if isinstance(res, dict):
+            if persona:
+                res["persona"] = nome or persona
+            if (regole or "").strip():
+                res["regole_prenotazione"] = regole.strip()
+        return res
     finally:
         db.close()
 
@@ -744,14 +767,15 @@ def controlla_disponibilita(giorno: str = "", durata_minuti: int = 30, dalle: in
 @mcp.tool()
 @_loggato
 def prenota_meeting(titolo: str, data_ora: str, durata_minuti: int = 30, invitati: str = "",
-                    descrizione: str = "", online: bool = True, tenant: str = "") -> dict:
-    """Prenota un meeting sul Google Calendar dell'azienda e INVIA l'invito ai destinatari.
-    `titolo` = oggetto del meeting; `data_ora` = inizio in formato ISO locale (es.
-    "2026-07-01T16:00:00"); `durata_minuti` = durata (default 30); `invitati` = email dei
-    partecipanti separate da virgola (metti l'email del cliente e le altre); `online`=True crea una
-    Google Meet. Ritorna il link all'evento e, se online, il link alla call (Meet). Prima di
-    prenotare, conferma a voce col cliente data/ora e la sua email."""
-    _log_tool("prenota_meeting", titolo=titolo)
+                    descrizione: str = "", online: bool = True, persona: str = "",
+                    tenant: str = "") -> dict:
+    """Prenota un meeting su Google Calendar e INVIA l'invito ai destinatari.
+    `titolo` = oggetto; `data_ora` = inizio ISO locale (es. "2026-07-01T16:00:00"); `durata_minuti`
+    (default 30); `invitati` = email separate da virgola; `online`=True crea una Google Meet.
+    `persona`: se il meeting è per una persona della rubrica, passa il suo nome/ruolo → si prenota sul
+    SUO calendario (lo stesso usato in controlla_disponibilita). Prima di prenotare, conferma col
+    cliente data/ora e la sua email, e verifica che lo slot sia libero e rispetti le regole."""
+    _log_tool("prenota_meeting", titolo=titolo, nome_cliente=persona)
     from datetime import datetime, timedelta
     from services import google_calendar as gc
     try:
@@ -762,8 +786,9 @@ def prenota_meeting(titolo: str, data_ora: str, durata_minuti: int = 30, invitat
     emails = [e.strip() for e in (invitati or "").replace(";", ",").split(",") if e.strip()]
     db = SessionLocal()
     try:
+        cal, _regole, _nome = _calendario_persona(db, persona, tenant)
         return gc.crea_evento(db, titolo, inizio.isoformat(), fine.isoformat(), emails,
-                              descrizione, bool(online))
+                              descrizione, bool(online), calendar_id=cal)
     finally:
         db.close()
 
