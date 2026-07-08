@@ -21,7 +21,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from database import (
     SessionLocal, Contatto, ContattoStato, Ordine,
-    CanaleOrdine, OrigineOrdine, StatoOrdine,
+    CanaleOrdine, OrigineOrdine, StatoOrdine, StatoRelazione,
     Documento, StatoDocumento, TestoCategoria,
 )
 from services import crm
@@ -308,30 +308,49 @@ def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
     insegna. Usalo quando in conversazione emerge un dato del locale prima mancante (es. la città).
     Passa SOLO i campi nuovi; gli altri restano invariati. NON inventare valori."""
     _log_tool("aggiorna_locale", telefono=telefono, citta=citta, indirizzo=indirizzo)
+    _n = lambda s: (s or "").strip().lower()
+    citta, indirizzo = citta.strip(), indirizzo.strip()
+    ragione_sociale, piva, insegna = ragione_sociale.strip(), piva.strip(), insegna.strip()
     db = SessionLocal()
     try:
         c = _contatto(db, telefono, tenant)
         societa = crm.societa_di_contatto(db, c)
+
+        # (b) CONFLITTO DI CITTÀ: se il locale collegato ha già una città e ne arriva una DIVERSA,
+        # è un ALTRO locale (omonimo) -> non sovrascrivere: scollega e cerca/crea quello giusto.
+        if societa and citta and _n(societa.citta) and _n(societa.citta) != _n(citta):
+            c.societa_id = None
+            societa = None
+
         if not societa:
-            insegna_nuova = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
-            if not insegna_nuova:
-                return {"ok": False, "errore": "Nessun locale associato e nessun nome per crearlo."}
-            # città nota → match città-aware (non aggancia un omonimo di un'altra città).
-            societa = crm.trova_o_crea_societa(db, insegna=insegna_nuova,
+            nome = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
+            if not nome:
+                return {"ok": False, "errore": "Serve almeno il nome dell'attività per registrarla."}
+            societa = crm.trova_o_crea_societa(db, insegna=nome, ragione_sociale=ragione_sociale or None,
                                                citta=(citta or c.sede or None), azienda_id=c.azienda_id)
-            if not c.societa_id:
-                c.societa_id = societa.id
+            c.societa_id = societa.id
+
+        # (a) PROTEZIONE CLIENTI + FILL-ONLY: da una chiamata in ingresso NON sovrascrivo dati già
+        # presenti su un locale esistente (a maggior ragione se è un CLIENTE): riempio solo i VUOTI.
+        e_cliente = (societa.stato_relazione == StatoRelazione.CLIENTE)
         campi = {"citta": citta, "indirizzo": indirizzo, "ragione_sociale": ragione_sociale,
                  "piva": piva, "insegna": insegna}
-        cambiato = False
+        cambiato, saltati = False, []
         for k, v in campi.items():
-            v = (v or "").strip()
-            if v and getattr(societa, k) != v:
-                setattr(societa, k, v)
-                cambiato = True
-        if cambiato or not c.societa_id:
-            db.commit()
-        return {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": cambiato}
+            if not v:
+                continue
+            attuale = getattr(societa, k)
+            if not (attuale or "").strip():
+                setattr(societa, k, v); cambiato = True        # campo vuoto → lo riempio
+            elif _n(attuale) != _n(v):
+                saltati.append(k)                               # già valorizzato e diverso → NON tocco
+        db.commit()
+        out = {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": cambiato}
+        if saltati:
+            out["non_sovrascritti"] = saltati
+            out["nota"] = ("Alcuni dati del locale erano già registrati e li ho lasciati invariati"
+                           + (" (locale già cliente)." if e_cliente else "."))
+        return out
     finally:
         db.close()
 
