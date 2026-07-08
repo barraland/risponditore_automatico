@@ -113,6 +113,10 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
     """Esegue un tool chiamato dal modello, iniettando telefono/tenant. Ritorna il dict del tool."""
     from routers import mcp_server as m   # lazy: evita import circolare (mcp_server importa whatsapp_agent)
     a = dict(args or {})
+    # telefono/tenant li iniettiamo NOI: se il modello li ha passati comunque (il prompt glielo dice),
+    # scartali per non collidere con l'iniezione (-> "multiple values for keyword argument 'telefono'").
+    a.pop("telefono", None)
+    a.pop("tenant", None)
     if nome not in NOMI:
         return {"errore": f"strumento sconosciuto: {nome}"}
     try:
