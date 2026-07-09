@@ -338,17 +338,18 @@ def _scheda_contatto(c: Contatto) -> str:
 def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str:
     """Prompt vocale = SOLO la 'configurazione' della dashboard (come ElevenLabs {{configurazione}}),
     con i segnaposto delle dynamic variables sostituiti con i dati reali del chiamante.
-    Se chiama un amministratore usa invece il prompt di sistema dedicato (prompts/voce_admin.txt)."""
+    Se chiama un amministratore usa i moduli del PUBBLICO 'admin' (canale voce), come ElevenLabs."""
     from routers import elevenlabs  # _riassunto: stessa logica del webhook ElevenLabs (import pigro)
-    from services import promemoria, prompts
+    from services import promemoria, prompt_moduli
 
     if promemoria.is_admin(telefono, db):
-        return prompts.voce_admin().replace("{{telefono_chiamante}}", telefono or "")
+        admin_txt = prompt_moduli.componi(db, None, audience="admin", canale="voce").strip()
+        return admin_txt.replace("{{telefono_chiamante}}", telefono or "").replace("{{tenant}}", "")
 
-    from services import inoltri, prompt_moduli
-    # Stessa configurazione di ElevenLabs: prompt MODULARE (canale voce) + conoscenza + regole + catalogo.
+    from services import inoltri
+    # Cliente: prompt MODULARE (pubblico cliente, canale voce) + conoscenza + regole + catalogo.
     configurazione = (profilo.blocco_prompt(db)
-                      + prompt_moduli.componi(db, None, canale="voce")
+                      + prompt_moduli.componi(db, None, audience="cliente", canale="voce")
                       + istruzioni.blocco_regole(db)
                       + documenti_service.catalogo_prompt(db)
                       + inoltri.blocco_prompt(db)).strip()

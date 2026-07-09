@@ -22,9 +22,9 @@ from database import PromptModulo
 
 logger = logging.getLogger(__name__)
 
-# voce/whatsapp/mail = agente col CLIENTE; admin = quando chiama l'amministratore (voce_admin).
-# mail: predisposto (nessun agente conversazionale ancora).
-CANALI = ["voce", "whatsapp", "mail", "admin"]
+# Due dimensioni ORTOGONALI: PUBBLICO (con chi parli) × CANALE (da dove).
+AUDIENCE = ["cliente", "admin"]     # cliente = chiamante/lead; admin = amministratore riconosciuto
+CANALI = ["voce", "whatsapp", "mail"]   # mail: predisposto (nessun agente conversazionale ancora)
 
 
 def _loads(valore, default):
@@ -40,6 +40,7 @@ def _loads(valore, default):
 DEFAULT_MODULI = [
     {
         "chiave": "identita_tono", "ordine": 10, "titolo": "Identità e tono",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "Sei l'assistente telefonico di un distributore food&beverage per l'HORECA. "
@@ -51,6 +52,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "velocita_anti_silenzio", "ordine": 20, "titolo": "Velocità / mai silenzi",
+        "audience": "cliente",
         "canali": ["voce"],
         "testo": (
             "REGOLA #1 — VELOCITÀ (più importante di tutto):\n"
@@ -67,6 +69,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "parametri_strumenti", "ordine": 30, "titolo": "Parametri obbligatori strumenti",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "STRUMENTI — PARAMETRI OBBLIGATORI:\n"
@@ -78,6 +81,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "gestione_email", "ordine": 40, "titolo": "Email del cliente",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "EMAIL DEL CLIENTE — usala se ce l'hai già:\n"
@@ -93,6 +97,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "email_dettatura_voce", "ordine": 42, "titolo": "Dettatura email a voce",
+        "audience": "cliente",
         "canali": ["voce"],   # solo voce: su chat non ha senso scandire lettera per lettera
         "testo": (
             "DETTATURA A VOCE (email e dati):\n"
@@ -103,6 +108,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "identificazione_cliente", "ordine": 50, "titolo": "Chi sta chiamando (nuovo/noto)",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "CHI STA CHIAMANDO\n"
@@ -147,6 +153,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "base_conoscenza", "ordine": 60, "titolo": "Base di conoscenza (cerca)",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "BASE DI CONOSCENZA (prodotti, prezzi, condizioni, schede, FAQ, dati)\n"
@@ -171,6 +178,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "ordini", "ordine": 70, "titolo": "Ordini (sempre bozza)",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "ORDINI (SEMPRE come BOZZA — non li confermi MAI tu)\n"
@@ -196,6 +204,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "invii_email", "ordine": 80, "titolo": "Invii al cliente via email",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "INVIO AL CLIENTE VIA EMAIL\n"
@@ -211,6 +220,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "meeting", "ordine": 90, "titolo": "Fissare un meeting (Calendar)",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "FISSARE UN MEETING (Google Calendar)\n"
@@ -241,6 +251,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "inoltro_chiamata", "ordine": 100, "titolo": "Inoltro chiamata",
+        "audience": "cliente",
         "canali": ["voce"],
         "testo": (
             "INOLTRO CHIAMATA (passare il cliente a una persona della rubrica)\n"
@@ -266,6 +277,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "ticket_followup", "ordine": 110, "titolo": "Ticket di follow-up",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "TICKET DI FOLLOW-UP (apri SEMPRE un ticket per il lead)\n"
@@ -278,6 +290,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "qualificare_lead", "ordine": 52, "titolo": "Come qualificare il lead",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "COME QUALIFICARE IL LEAD (informazioni da raccogliere durante la conversazione)\n"
@@ -292,6 +305,7 @@ DEFAULT_MODULI = [
     },
     {
         "chiave": "prioritizzare_lead", "ordine": 54, "titolo": "Come prioritizzare il lead",
+        "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
             "COME ASSEGNARE LA PRIORITÀ AL LEAD (alta / media / bassa)\n"
@@ -302,8 +316,25 @@ DEFAULT_MODULI = [
         ),
     },
     {
-        "chiave": "gestione_promemoria", "ordine": 200, "titolo": "Gestione promemoria (admin)",
-        "canali": ["admin"],
+        "chiave": "identita_admin", "ordine": 10, "titolo": "Identità (admin)",
+        "audience": "admin",
+        "canali": ["voce", "whatsapp"],
+        "testo": (
+            "Stai parlando con l'AMMINISTRATORE del servizio, NON con un cliente. Parla in italiano, "
+            "frasi brevi e cordiali.\n"
+            "- L'amministratore NON è un cliente: NON registrarlo in anagrafica, NON aggiornare "
+            "contatti col suo numero, NON aprire ticket per lui. Gli strumenti salva_contatto, "
+            "aggiorna_contatto, aggiorna_locale, registra_ordine, apri_ticket NON vanno MAI usati per "
+            "l'amministratore stesso.\n"
+            "- Puoi rispondere a sue domande sui documenti/listini (usa cerca), se te le pone.\n"
+            "APERTURA: salutalo e chiedi cosa deve fare, es. «Buongiorno, sono l'assistente. Vuole "
+            "lasciare un promemoria per un cliente?»"
+        ),
+    },
+    {
+        "chiave": "gestione_promemoria", "ordine": 30, "titolo": "Gestione promemoria",
+        "audience": "admin",
+        "canali": ["voce", "whatsapp"],
         "testo": (
             "GESTIONE PROMEMORIA (stai parlando con l'AMMINISTRATORE)\n"
             "Il tuo compito è aiutarlo a LASCIARE un promemoria per un cliente: quando quel cliente "
@@ -323,7 +354,7 @@ DEFAULT_MODULI = [
 # 5 slot liberi numerati per uso futuro: vuoti (componi li salta finché non hanno testo).
 DEFAULT_MODULI += [
     {"chiave": f"libero_{i}", "ordine": 300 + i * 10, "titolo": f"Modulo libero {i}",
-     "canali": ["voce", "whatsapp"], "testo": ""}
+     "audience": "cliente", "canali": ["voce", "whatsapp"], "testo": ""}
     for i in range(1, 6)
 ]
 
@@ -349,6 +380,7 @@ def effettivi(db: Session, azienda_id: int | None) -> list[dict]:
             "testo": (r.testo if r and r.testo is not None else d["testo"]),
             "canali": (_loads(r.canali, None) if r and r.canali is not None else list(d["canali"])),
             "testi": (_loads(r.testi_canale, {}) if r else {}),
+            "audience": d.get("audience", "cliente"),   # intrinseco al modulo (non modificabile)
             "default": True,
             "personalizzato": bool(r and any(getattr(r, c) is not None
                                              for c in ("titolo", "ordine", "attivo", "testo",
@@ -363,19 +395,23 @@ def effettivi(db: Session, azienda_id: int | None) -> list[dict]:
             "ordine": (r.ordine if r.ordine is not None else 900),
             "attivo": (bool(r.attivo) if r.attivo is not None else True),
             "testo": (r.testo or ""), "canali": _loads(r.canali, ["voce"]),
-            "testi": _loads(r.testi_canale, {}), "default": False, "personalizzato": True,
+            "testi": _loads(r.testi_canale, {}),
+            "audience": (getattr(r, "audience", None) or "cliente"),
+            "default": False, "personalizzato": True,
         })
     out.sort(key=lambda m: (m["ordine"], m["chiave"]))
     return out
 
 
-def componi(db: Session, azienda_id: int | None, canale: str = "voce") -> str:
-    """Prompt assemblato per UN canale (voce/whatsapp/mail): moduli attivi che si applicano a quel
-    canale, in ordine. Per ciascuno usa la variante di canale se presente, altrimenti il testo base.
-    Stringa con doppio a-capo iniziale se non vuota (per innestarsi nel resto della configurazione)."""
+def componi(db: Session, azienda_id: int | None, audience: str = "cliente", canale: str = "voce") -> str:
+    """Prompt assemblato per un PUBBLICO (cliente/admin) e un CANALE (voce/whatsapp/mail): moduli
+    attivi di quel pubblico che si applicano a quel canale, in ordine. Per ciascuno usa la variante
+    di canale se presente, altrimenti il testo base. Doppio a-capo iniziale se non vuoto."""
     parti = []
     for m in effettivi(db, azienda_id):
-        if not m["attivo"] or canale not in (m["canali"] or []):
+        if not m["attivo"] or m.get("audience", "cliente") != audience:
+            continue
+        if canale not in (m["canali"] or []):
             continue
         testo = (m["testi"].get(canale) or m["testo"] or "").strip()
         if testo:
@@ -384,9 +420,10 @@ def componi(db: Session, azienda_id: int | None, canale: str = "voce") -> str:
 
 
 def salva(db: Session, azienda_id: int, chiave: str, titolo=None, ordine=None,
-          attivo=None, testo=None, canali=None, testi_canale=None) -> None:
+          attivo=None, testo=None, canali=None, testi_canale=None, audience=None) -> None:
     """Crea/aggiorna l'override di un modulo per il tenant. I campi None restano invariati.
-    `canali`: lista di canali; `testi_canale`: dict {canale: testo} (varianti). Salvati come JSON."""
+    `canali`: lista di canali; `testi_canale`: dict {canale: testo} (varianti). `audience`: solo per
+    i moduli CUSTOM (i default hanno il pubblico fisso). Salvati come JSON dove serve."""
     r = db.query(PromptModulo).filter_by(azienda_id=azienda_id, chiave=chiave).first()
     if not r:
         r = PromptModulo(azienda_id=azienda_id, chiave=chiave)
@@ -405,6 +442,8 @@ def salva(db: Session, azienda_id: int, chiave: str, titolo=None, ordine=None,
         # tieni solo varianti non vuote per canali validi
         pulite = {c: t for c, t in testi_canale.items() if c in CANALI and (t or "").strip()}
         r.testi_canale = json.dumps(pulite) if pulite else None
+    if audience is not None and chiave not in _DEFAULT_MAP:   # solo custom
+        r.audience = audience if audience in AUDIENCE else "cliente"
     db.commit()
 
 

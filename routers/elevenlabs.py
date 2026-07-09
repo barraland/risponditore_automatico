@@ -26,7 +26,6 @@ from services import istruzioni
 from services import prompt_moduli
 from services import documenti as documenti_service
 from services import promemoria
-from services import prompts
 from services import inoltri
 from services import telefonia
 from services import tenant as tenant_service
@@ -181,15 +180,12 @@ async def init_conversazione(request: Request):
         # "Configurazione assistente" della dashboard (profilo + istruzioni admin): la stessa
         # iniettata negli LLM di WhatsApp/voce. Così ElevenLabs usa il TUO prompt, non il suo.
         if admin:
-            # Chiama l'amministratore: base dedicata (prompts/voce_admin.txt) + i moduli flaggati
-            # "admin" (es. gestione promemoria), così anche il flusso admin è editabile e per-tenant.
-            dv["configurazione"] = (prompts.voce_admin()
-                                    + prompt_moduli.componi(db, aid, canale="admin")).strip()
+            # Amministratore: prompt dai moduli del PUBBLICO "admin" (canale voce). Tutto in dashboard.
+            dv["configurazione"] = prompt_moduli.componi(db, aid, audience="admin", canale="voce").strip()
         else:
-            # Prompt vocale MODULARE: i moduli (identità, velocità, ordini, meeting…) sostituiscono
-            # il vecchio blob istruzioni_admin. Conoscenza tenant (profilo) e regole commerciali restano.
+            # Cliente: moduli del pubblico "cliente" (canale voce) + conoscenza tenant + regole + catalogo.
             dv["configurazione"] = (profilo.blocco_prompt(db, azienda_id=aid)
-                                    + prompt_moduli.componi(db, aid, canale="voce")
+                                    + prompt_moduli.componi(db, aid, audience="cliente", canale="voce")
                                     + istruzioni.blocco_regole(db, azienda_id=aid)
                                     + documenti_service.catalogo_prompt(db, azienda_id=aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()

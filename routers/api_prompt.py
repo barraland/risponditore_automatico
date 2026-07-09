@@ -37,9 +37,11 @@ async def lista_moduli(payload: dict = Body(default={}), authorization: str | No
     await _verify_user(authorization)
     aid = _aid(db, payload)
     canale = (payload.get("canale") or "voce").strip()
-    return {"azienda_id": aid, "canali": prompt_moduli.CANALI,
+    audience = (payload.get("audience") or "cliente").strip()
+    return {"azienda_id": aid, "canali": prompt_moduli.CANALI, "audiences": prompt_moduli.AUDIENCE,
             "moduli": prompt_moduli.effettivi(db, aid),
-            "canale": canale, "anteprima": prompt_moduli.componi(db, aid, canale=canale).strip()}
+            "audience": audience, "canale": canale,
+            "anteprima": prompt_moduli.componi(db, aid, audience=audience, canale=canale).strip()}
 
 
 @router.post("/modulo")
@@ -53,7 +55,8 @@ async def salva_modulo(payload: dict = Body(...), authorization: str | None = He
         return {"ok": False, "errore": "azienda_id e chiave obbligatori"}
     prompt_moduli.salva(db, aid, chiave, titolo=payload.get("titolo"), ordine=payload.get("ordine"),
                         attivo=payload.get("attivo"), testo=payload.get("testo"),
-                        canali=payload.get("canali"), testi_canale=payload.get("testi_canale"))
+                        canali=payload.get("canali"), testi_canale=payload.get("testi_canale"),
+                        audience=payload.get("audience"))
     return {"ok": True}
 
 

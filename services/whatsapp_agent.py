@@ -450,9 +450,8 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
     from routers import elevenlabs  # _riassunto / sostituzioni (import pigro)
 
     if admin:
-        from services import prompts
-        system = (prompts.voce_admin()
-                  + prompt_moduli.componi(db, None, canale="admin")
+        # Prompt dai moduli del PUBBLICO "admin", canale whatsapp (+ regole). Tutto in dashboard.
+        system = (prompt_moduli.componi(db, None, audience="admin", canale="whatsapp")
                   + istruzioni.blocco_regole(db))
         for _k, _v in {"telefono_chiamante": telefono or "", "tenant": "",
                        "azienda": profilo.nome_azienda(db)}.items():
@@ -466,7 +465,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             SYSTEM
             + f"\n\n{contesto_temporale()}"
             + profilo.blocco_prompt(db)
-            + prompt_moduli.componi(db, None, canale="whatsapp")
+            + prompt_moduli.componi(db, None, audience="cliente", canale="whatsapp")
             + istruzioni.blocco_regole(db)
             + documenti_service.catalogo_prompt(db)
             + promemoria.blocco_prompt(db, contatto.id)

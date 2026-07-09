@@ -5,11 +5,12 @@ import CampoAzienda from '../components/CampoAzienda'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
-const CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp'], ['mail', 'Mail'], ['admin', 'Admin']]
+const CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp'], ['mail', 'Mail']]
+const AUDIENCES: [string, string][] = [['cliente', 'Quando parli con un CLIENTE'], ['admin', 'Quando parli con un ADMIN']]
 
 type Modulo = {
   chiave: string; titolo: string; ordine: number; attivo: boolean; testo: string
-  canali: string[]; testi: Record<string, string>; default: boolean; personalizzato: boolean
+  canali: string[]; testi: Record<string, string>; audience: string; default: boolean; personalizzato: boolean
 }
 
 function ModuloCard({ m, onPatch, onSalva, onToggle, onRipristina }: {
@@ -101,6 +102,7 @@ export default function Prompt() {
   const [moduli, setModuli] = useState<Modulo[]>([])
   const [anteprima, setAnteprima] = useState('')
   const [canale, setCanale] = useState('voce')
+  const [audience, setAudience] = useState('cliente')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
@@ -112,14 +114,14 @@ export default function Prompt() {
     setErr(null)
     try {
       const res = await fetch(`${API}/api/prompt/moduli`, {
-        method: 'POST', headers, body: JSON.stringify({ azienda_id: aziendaId, canale }),
+        method: 'POST', headers, body: JSON.stringify({ azienda_id: aziendaId, canale, audience }),
       })
       const data = await res.json()
       if (!res.ok) { setErr(data?.detail || 'Errore'); return }
       setModuli(data.moduli || []); setAnteprima(data.anteprima || '')
     } catch (e: any) { setErr(e?.message || 'Errore di rete') } finally { setLoading(false) }
   }
-  useEffect(() => { carica() }, [aziendaId, canale])
+  useEffect(() => { carica() }, [aziendaId, canale, audience])
 
   function patch(chiave: string, p: Partial<Modulo>) {
     setModuli(ms => ms.map(m => m.chiave === chiave ? { ...m, ...p } : m))
@@ -130,7 +132,8 @@ export default function Prompt() {
     const res = await fetch(`${API}/api/prompt/modulo`, {
       method: 'POST', headers,
       body: JSON.stringify({ azienda_id: aziendaId, chiave: m.chiave, titolo: m.titolo, ordine: m.ordine,
-                             attivo: m.attivo, testo: m.testo, canali: m.canali, testi_canale: m.testi }),
+                             attivo: m.attivo, testo: m.testo, canali: m.canali, testi_canale: m.testi,
+                             audience: m.audience }),
     })
     const data = await res.json()
     if (!res.ok || data?.ok === false) { setErr(data?.errore || data?.detail || 'Errore nel salvataggio'); return }
@@ -164,10 +167,9 @@ export default function Prompt() {
           <div className="pw-eyebrow">Risponditore</div>
           <h1 style={{ fontSize: 28, marginTop: 6 }}>Assistente</h1>
           <div className="pw-muted" style={{ marginTop: 6, fontSize: 14, maxWidth: 660 }}>
-            Saluti e criteri del lead qui sotto; poi il <strong>comportamento</strong> in moduli.
-            Ogni modulo si applica ai canali <strong>flaggati</strong> (Voce / WhatsApp / Mail / Admin)
-            e usa un <strong>testo base</strong>; puoi dare a un canale un testo diverso dalle
-            {' '}<em>Varianti</em>. Il catalogo e le promozioni stanno in <em>Documenti</em>.
+            Scegli il <strong>pubblico</strong> qui sotto: cambia tutto ciò che vedi. Ogni modulo si
+            applica ai canali <strong>flaggati</strong> (Voce / WhatsApp / Mail) e usa un
+            {' '}<strong>testo base</strong>; puoi dare a un canale un testo diverso dalle <em>Varianti</em>.
           </div>
         </div>
         <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setShowPreview(v => !v)}>
@@ -175,14 +177,24 @@ export default function Prompt() {
         </button>
       </div>
 
+      {/* Interruttore PUBBLICO: cliente vs admin. Cambia i moduli e i campi sotto. */}
+      <div className="pw-row" style={{ gap: 6 }}>
+        {AUDIENCES.map(([k, lab]) => (
+          <button key={k} className={`pw-btn pw-btn-sm ${audience === k ? 'pw-btn-primary' : 'pw-btn-ghost'}`}
+            onClick={() => setAudience(k)}>{lab}</button>
+        ))}
+      </div>
+
       {err && <div className="pw-error">{err}</div>}
 
-      <CampoAzienda campo="saluto" titolo="Primo saluto (cliente riconosciuto)" rows={2}
-        hint="Il primo messaggio all'apertura quando il chiamante è riconosciuto. Segnaposto: {nome} {cognome} {azienda}. Vuoto = saluto predefinito."
-        placeholder="Es. Buongiorno {cognome}, sono Margherita di {azienda}, come posso aiutarla?" />
-      <CampoAzienda campo="saluto_sconosciuto" titolo="Primo saluto (chiamante sconosciuto)" rows={2}
-        hint="Primo messaggio quando il numero non è riconosciuto. Qui {nome} è vuoto: non usarlo."
-        placeholder="Es. Buongiorno, sono Margherita di {azienda}, come posso aiutarla?" />
+      {audience === 'cliente' && <>
+        <CampoAzienda campo="saluto" titolo="Primo saluto (cliente riconosciuto)" rows={2}
+          hint="Il primo messaggio all'apertura quando il chiamante è riconosciuto. Segnaposto: {nome} {cognome} {azienda}. Vuoto = saluto predefinito."
+          placeholder="Es. Buongiorno {cognome}, sono Margherita di {azienda}, come posso aiutarla?" />
+        <CampoAzienda campo="saluto_sconosciuto" titolo="Primo saluto (chiamante sconosciuto)" rows={2}
+          hint="Primo messaggio quando il numero non è riconosciuto. Qui {nome} è vuoto: non usarlo."
+          placeholder="Es. Buongiorno, sono Margherita di {azienda}, come posso aiutarla?" />
+      </>}
 
       {showPreview && (
         <div className="pw-card">
@@ -203,7 +215,7 @@ export default function Prompt() {
         </div>
       )}
 
-      {moduli.map(m => (
+      {moduli.filter(m => m.audience === audience).map(m => (
         <ModuloCard key={m.chiave} m={m} onPatch={patch} onSalva={salva} onToggle={toggle} onRipristina={ripristina} />
       ))}
     </div>

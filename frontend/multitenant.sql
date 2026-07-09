@@ -220,3 +220,6 @@ alter table public.inoltri add column if not exists regole_prenotazione  text;
 
 -- Inoltri: flag admin (dal suo numero, voce/WhatsApp, parte il prompt amministratore).
 alter table public.inoltri add column if not exists admin boolean default false;
+
+-- Prompt moduli: dimensione PUBBLICO (cliente/admin) per i moduli custom del tenant.
+alter table public.prompt_modulo add column if not exists audience varchar(20);
