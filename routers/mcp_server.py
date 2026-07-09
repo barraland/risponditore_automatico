@@ -551,15 +551,19 @@ def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str
 def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str = "",
                       giorni_validita: int = 0, tenant: str = "") -> dict:
     """[SOLO AMMINISTRATORE] Registra un promemoria per un CLIENTE: quando quel cliente chiamerà,
-    l'assistente ne terrà conto (es. comunicargli un'offerta). `telefono` = il TUO numero
-    (amministratore). `nome_cliente` = nome e/o cognome del destinatario; `societa` aiuta a
-    distinguerlo. `testo` = il messaggio/avviso. `giorni_validita` = validità in giorni (0 = senza
-    scadenza). Se più clienti corrispondono, ti elenco i candidati per farti scegliere."""
+    l'assistente ne terrà conto (es. comunicargli un'offerta). `telefono` = il NUMERO del chiamante,
+    serve a verificare che sei l'amministratore: passa ESATTAMENTE il valore di {{telefono_chiamante}}
+    che vedi nel contesto (SOLO cifre), MAI la parola «amministratore» o altre etichette.
+    `nome_cliente` = nome e/o cognome del destinatario; `societa` aiuta a distinguerlo. `testo` = il
+    messaggio/avviso. `giorni_validita` = validità in giorni (0 = senza scadenza). Se più clienti
+    corrispondono, ti elenco i candidati per farti scegliere."""
     _log_tool("lascia_promemoria", telefono=telefono, nome_cliente=nome_cliente, societa=societa)
     db = SessionLocal()
     try:
         if not promemoria.is_admin(telefono, db, azienda_id=_aid(tenant)):
-            return {"ok": False, "errore": "Funzione riservata all'amministratore."}
+            return {"ok": False, "errore": "Numero non riconosciuto come amministratore. Richiama lo "
+                    "strumento passando telefono = il valore di {{telefono_chiamante}} (solo cifre), "
+                    "non un'etichetta come «amministratore»."}
         cand = promemoria.trova_target(db, nome_cliente, societa, azienda_id=_aid(tenant))
         if not cand:
             return {"ok": False, "errore": f"Nessun cliente trovato per «{nome_cliente}»."}
