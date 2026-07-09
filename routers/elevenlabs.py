@@ -269,6 +269,12 @@ async def post_call(request: Request):
 
     db = SessionLocal()
     try:
+        # Se chiama un AMMINISTRATORE non lo registriamo come contatto (come fa voice.py):
+        # niente anagrafica-fantasma né log chiamata con la trascrizione.
+        from services import promemoria
+        if promemoria.is_admin(telefono, db):
+            logger.info("ElevenLabs post-call: chiamante AMMINISTRATORE (%s) — niente registrazione", telefono)
+            return {"ok": True, "admin": True}
         contatto = whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto")
         db.add(ChiamataVoce(
             contatto_id=contatto.id, telefono=telefono or None,
