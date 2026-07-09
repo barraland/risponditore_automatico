@@ -80,25 +80,46 @@ def crea(db: Session, contatto_id: int, testo: str, giorni_validita: int = 0) ->
     return p
 
 
+# Parole di riempimento da ignorare nel nome (es. "quello della Trattoria" → [trattoria]).
+_FILLER = {"il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "di", "del", "dello", "della",
+           "dei", "degli", "delle", "da", "dal", "dalla", "a", "al", "alla", "e", "che", "quello",
+           "quella", "sig", "signor", "signora", "titolare", "cliente", "referente", "per"}
+
+
+def _filtro_societa(q, soc: str):
+    return q.outerjoin(Societa, Contatto.societa_id == Societa.id).filter(or_(
+        Societa.insegna.ilike(f"%{soc}%"), Societa.ragione_sociale.ilike(f"%{soc}%"),
+        Contatto.ragione_sociale.ilike(f"%{soc}%"),
+    ))
+
+
 def trova_target(db: Session, nome: str, societa: str = "", limite: int = 5,
                  azienda_id: int | None = None) -> list[Contatto]:
-    """Cerca i contatti (NEL TENANT) che corrispondono a nome (e opzionalmente società) per
-    individuare il destinatario di un promemoria lasciato via voce. Ritorna i candidati (0, 1 o più)."""
-    nome = (nome or "").strip()
-    if not nome:
-        return []
-    like = f"%{nome}%"
-    q = db.query(Contatto).filter(or_(
-        Contatto.nome.ilike(like), Contatto.cognome.ilike(like),
-        (Contatto.nome + " " + Contatto.cognome).ilike(like),
-        Contatto.ragione_sociale.ilike(like),
-    ))
-    if azienda_id:
-        q = q.filter(Contatto.azienda_id == azienda_id)
+    """Cerca i contatti (NEL TENANT) destinatari di un promemoria. Robusto:
+    - il NOME è spezzato in PAROLE (ignora riempitivi): ogni parola deve comparire in
+      nome/cognome/ragione sociale (così «Andrea Barral» matcha anche se detto con giro di parole);
+    - se il nome non produce match (o è assente/vago), FALLBACK: cerca per SOCIETÀ.
+    Ritorna i candidati (0, 1 o più)."""
     soc = (societa or "").strip()
-    if soc:
-        q = q.outerjoin(Societa, Contatto.societa_id == Societa.id).filter(or_(
-            Societa.insegna.ilike(f"%{soc}%"), Societa.ragione_sociale.ilike(f"%{soc}%"),
-            Contatto.ragione_sociale.ilike(f"%{soc}%"),
-        ))
-    return q.limit(limite).all()
+    tokens = [t for t in re.split(r"[^0-9a-zàèéìòùü]+", (nome or "").lower())
+              if len(t) > 1 and t not in _FILLER]
+
+    def base():
+        q = db.query(Contatto)
+        return q.filter(Contatto.azienda_id == azienda_id) if azienda_id else q
+
+    risultati = []
+    if tokens:
+        q = base()
+        for t in tokens:   # AND fra le parole: tutte devono comparire in un campo-nome
+            like = f"%{t}%"
+            q = q.filter(or_(Contatto.nome.ilike(like), Contatto.cognome.ilike(like),
+                             Contatto.ragione_sociale.ilike(like)))
+        if soc:
+            q = _filtro_societa(q, soc)
+        risultati = q.limit(limite).all()
+
+    # Fallback: nessun match sul nome (o nome vago) → cerca per SOLA società.
+    if not risultati and soc:
+        risultati = _filtro_societa(base(), soc).limit(limite).all()
+    return risultati

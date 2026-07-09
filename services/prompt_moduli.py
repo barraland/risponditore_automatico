@@ -341,9 +341,11 @@ DEFAULT_MODULI = [
             "chiamerà, l'assistente ne terrà conto (es. comunicargli un'offerta). Quando l'admin ti "
             "chiede di avvisare un cliente di qualcosa (es. «se chiama Claudio dell'Hotel Barceló, "
             "digli dello sconto sulle birre valido 15 giorni»):\n"
-            "- Chiama lascia_promemoria con: nome_cliente (e societa se serve a distinguerlo), testo "
-            "dell'avviso, giorni_validita (0 = senza scadenza). Passa SEMPRE anche "
-            "telefono={{telefono_chiamante}} e tenant={{tenant}}.\n"
+            "- Chiama lascia_promemoria con: nome_cliente = SOLO il nome e/o cognome del destinatario "
+            "(NON frasi come «quello della…», niente parole di contorno; se non sai il nome lascialo "
+            "vuoto), societa = nome del locale/attività (aiuta a distinguerlo), testo dell'avviso, "
+            "giorni_validita (0 = senza scadenza). Passa SEMPRE anche telefono={{telefono_chiamante}} "
+            "e tenant={{tenant}}.\n"
             "- Se più clienti corrispondono, lo strumento ti elenca i candidati: chiedi all'admin "
             "quale (nome/società) e riprova.\n"
             "- Conferma a voce quando l'hai registrato (a chi, cosa, entro quando)."
@@ -351,11 +353,18 @@ DEFAULT_MODULI = [
     },
 ]
 
-# 5 slot liberi numerati per uso futuro: vuoti (componi li salta finché non hanno testo).
+# 5 slot liberi numerati per uso futuro (CLIENTE): vuoti (componi li salta finché non hanno testo).
 DEFAULT_MODULI += [
     {"chiave": f"libero_{i}", "ordine": 300 + i * 10, "titolo": f"Modulo libero {i}",
      "audience": "cliente", "canali": ["voce", "whatsapp"], "testo": ""}
     for i in range(1, 6)
+]
+
+# 18 slot liberi ADMIN (20 caselle admin in totale con identita_admin + gestione_promemoria).
+DEFAULT_MODULI += [
+    {"chiave": f"admin_libero_{i}", "ordine": 400 + i * 10, "titolo": f"Modulo admin {i}",
+     "audience": "admin", "canali": ["voce", "whatsapp"], "testo": ""}
+    for i in range(1, 19)
 ]
 
 _DEFAULT_MAP = {m["chiave"]: m for m in DEFAULT_MODULI}
