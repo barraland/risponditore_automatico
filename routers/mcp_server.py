@@ -556,10 +556,10 @@ def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str
     distinguerlo. `testo` = il messaggio/avviso. `giorni_validita` = validità in giorni (0 = senza
     scadenza). Se più clienti corrispondono, ti elenco i candidati per farti scegliere."""
     _log_tool("lascia_promemoria", telefono=telefono, nome_cliente=nome_cliente, societa=societa)
-    if not promemoria.is_admin(telefono, db, azienda_id=_aid(tenant)):
-        return {"ok": False, "errore": "Funzione riservata all'amministratore."}
     db = SessionLocal()
     try:
+        if not promemoria.is_admin(telefono, db, azienda_id=_aid(tenant)):
+            return {"ok": False, "errore": "Funzione riservata all'amministratore."}
         cand = promemoria.trova_target(db, nome_cliente, societa, azienda_id=_aid(tenant))
         if not cand:
             return {"ok": False, "errore": f"Nessun cliente trovato per «{nome_cliente}»."}
