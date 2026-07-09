@@ -1,17 +1,18 @@
 import type { ReactNode } from 'react'
 
-export default function Modal({ title, onClose, children, footer }: {
+export default function Modal({ title, onClose, children, footer, width = 520 }: {
   title: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  width?: number
 }) {
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,.6)',
       display: 'grid', placeItems: 'center', padding: 20, backdropFilter: 'blur(2px)',
     }}>
-      <div className="pw-card" onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '100%', maxHeight: '90vh', overflow: 'auto' }}>
+      <div className="pw-card" onClick={e => e.stopPropagation()} style={{ width, maxWidth: '100%', maxHeight: '90vh', overflow: 'auto' }}>
         <div className="pw-card-head">
           <h3>{title}</h3>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={onClose}>✕</button>

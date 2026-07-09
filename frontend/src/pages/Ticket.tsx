@@ -201,11 +201,11 @@ function ChiamataDettaglio({ id, onClose, onApriTicket }: { id: number; onClose:
       .then(({ data }) => setC(data))
   }, [id])
 
-  if (!c) return <Modal title="Conversazione" onClose={onClose}><div className="pw-spinner">Caricamento…</div></Modal>
+  if (!c) return <Modal title="Conversazione" width={860} onClose={onClose}><div className="pw-spinner">Caricamento…</div></Modal>
   const cb = canaleBadge(c.canale)
 
   return (
-    <Modal title={`${cb.label} · ${c.contatti ? nomeContatto(c.contatti) : (c.telefono || '—')}`} onClose={onClose}
+    <Modal title={`${cb.label} · ${c.contatti ? nomeContatto(c.contatti) : (c.telefono || '—')}`} width={860} onClose={onClose}
       footer={<><button className="pw-btn pw-btn-ghost" onClick={onClose}>Chiudi</button>
                {c.ticket_id && <button className="pw-btn pw-btn-primary" onClick={() => onApriTicket(c.ticket_id)}>Apri ticket collegato #{c.ticket_id}</button>}</>}>
       <div className="pw-row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -225,7 +225,7 @@ function ChiamataDettaglio({ id, onClose, onApriTicket }: { id: number; onClose:
       {c.trascrizione && (
         <details open>
           <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--acc-cy, #6EE7FF)' }}>Trascrizione</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12.5, color: 'var(--fg-2)', marginTop: 8, maxHeight: '40vh', overflow: 'auto' }}>{c.trascrizione}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.55, color: 'var(--fg-2)', marginTop: 8, maxHeight: '55vh', overflow: 'auto' }}>{c.trascrizione}</pre>
         </details>
       )}
     </Modal>
@@ -260,12 +260,12 @@ function TicketDettaglio({ id, onClose, onCambiato, onApriChiamata }: {
     setBusy(false); onCambiato()
   }
 
-  if (!t) return <Modal title="Ticket" onClose={onClose}><div className="pw-spinner">Caricamento…</div></Modal>
+  if (!t) return <Modal title="Ticket" width={860} onClose={onClose}><div className="pw-spinner">Caricamento…</div></Modal>
   const risposte = (t.risposte_ticket || []).sort((a: any, b: any) => (a.created_at || '').localeCompare(b.created_at || ''))
   const cb = canaleBadge(t.canale)
 
   return (
-    <Modal title={t.titolo} onClose={onClose}
+    <Modal title={t.titolo} width={860} onClose={onClose}
       footer={<><button className="pw-btn pw-btn-ghost" onClick={onClose}>Chiudi</button>
                <button className="pw-btn pw-btn-primary" disabled={busy} onClick={cambiaStato}>
                  {lower(t.stato) === 'aperto' ? 'Segna come chiuso' : 'Riapri'}</button></>}>
@@ -300,7 +300,7 @@ function TicketDettaglio({ id, onClose, onCambiato, onApriChiamata }: {
       {t.storia && (
         <details>
           <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--acc-cy, #6EE7FF)' }}>Storia / trascrizione</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12.5, color: 'var(--fg-2)', marginTop: 8, maxHeight: '30vh', overflow: 'auto' }}>{t.storia}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.55, color: 'var(--fg-2)', marginTop: 8, maxHeight: '45vh', overflow: 'auto' }}>{t.storia}</pre>
         </details>
       )}
       {risposte.length > 0 && (
