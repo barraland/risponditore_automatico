@@ -403,6 +403,18 @@ def _saluto_voce(db, contatto) -> str:
     return elevenlabs._SALUTO_DEFAULT
 
 
+def _saluto_admin_voce(db) -> str:
+    """Saluto d'apertura per l'AMMINISTRATORE: editabile in dashboard (azienda.saluto_admin),
+    fallback al default. Segnaposto {azienda} sostituito."""
+    from routers import elevenlabs
+    az = profilo.get_azienda(db)
+    template = ((az.saluto_admin or "").strip() if az else "")
+    az_nome = (az.nome if az else "") or ""
+    if template:
+        return elevenlabs._componi_saluto(template, None, az_nome)
+    return elevenlabs._SALUTO_ADMIN_DEFAULT
+
+
 # ---------- 1) Webhook Twilio ----------
 
 @router.post("/incoming")
@@ -660,8 +672,7 @@ async def media_stream(twilio_ws: WebSocket):
             }
         await openai_ws.send(json.dumps({"type": "session.update", "session": session}))
         # Prima battuta: fai dire ESATTAMENTE il saluto configurato in dashboard, poi ascolta.
-        saluto = ("Buongiorno, sono l'assistente. Vuole lasciare un promemoria per un cliente?"
-                  if stato.get("is_admin") else _saluto_voce(db, contatto))
+        saluto = (_saluto_admin_voce(db) if stato.get("is_admin") else _saluto_voce(db, contatto))
         await openai_ws.send(json.dumps({
             "type": "response.create",
             "response": {"instructions": (

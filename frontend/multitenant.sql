@@ -243,3 +243,6 @@ drop policy if exists tenant_all on public.chiamate_voce;
 create policy tenant_all on public.chiamate_voce for all to authenticated
   using (public.can_see_tenant(azienda_id))
   with check (public.can_see_tenant(azienda_id));
+
+-- Saluto d'apertura dedicato all'AMMINISTRATORE (init voce admin), editabile in dashboard.
+alter table public.azienda add column if not exists saluto_admin text;

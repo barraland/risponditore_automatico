@@ -196,6 +196,11 @@ export default function Prompt() {
           placeholder="Es. Buongiorno, sono Margherita di {azienda}, come posso aiutarla?" />
       </>}
 
+      {audience === 'admin' &&
+        <CampoAzienda campo="saluto_admin" titolo="Primo saluto (amministratore)" rows={2}
+          hint="Prima frase quando chiama un amministratore (letta dall'init voce). Segnaposto: {azienda}. Vuoto = saluto predefinito."
+          placeholder="Es. Buongiorno, sono l'assistente di {azienda}. Vuole lasciare un promemoria per un cliente?" />}
+
       {showPreview && (
         <div className="pw-card">
           <div className="pw-card-head pw-between" style={{ alignItems: 'center' }}>

@@ -64,6 +64,7 @@ _INVIA_OVERRIDE = os.getenv("ELEVENLABS_INVIA_OVERRIDE", "").strip() in ("1", "t
 
 # Saluto di default se l'amministratore non ha configurato una formula in dashboard.
 _SALUTO_DEFAULT = "Buongiorno, come posso aiutarla?"
+_SALUTO_ADMIN_DEFAULT = "Buongiorno, sono l'assistente. Vuole lasciare un promemoria per un cliente?"
 
 
 def _pulisci_saluto(s: str) -> str:
@@ -137,7 +138,10 @@ async def init_conversazione(request: Request):
         az_nome = (az.nome if az else "") or ""
         if admin:
             dv = dict(_VARS_VUOTE)
-            dv["saluto"] = "Buongiorno, sono l'assistente. Vuole lasciare un promemoria per un cliente?"
+            # Saluto admin: editabile in dashboard (azienda.saluto_admin), fallback al default.
+            template_admin = ((az.saluto_admin or "").strip() if az else "")
+            dv["saluto"] = (_componi_saluto(template_admin, None, az_nome) if template_admin
+                            else _SALUTO_ADMIN_DEFAULT)
             first = dv["saluto"]
         elif contatto:
             societa = contatto.societa
