@@ -73,7 +73,10 @@ def crea(db: Session, contatto_id: int, testo: str, giorni_validita: int = 0) ->
     if not contatto_id or not testo:
         return None
     scade = (datetime.utcnow() + timedelta(days=int(giorni_validita))) if giorni_validita else None
-    p = Promemoria(contatto_id=contatto_id, testo=testo, scade_il=scade)
+    # Tenant dal contatto: senza azienda_id la riga è invisibile nella dashboard (RLS/filtro tenant).
+    c = db.get(Contatto, contatto_id)
+    p = Promemoria(contatto_id=contatto_id, azienda_id=(c.azienda_id if c else None),
+                   testo=testo, scade_il=scade)
     db.add(p)
     db.commit()
     db.refresh(p)
