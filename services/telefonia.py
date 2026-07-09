@@ -80,6 +80,16 @@ def pulisci_admin(telefono: str) -> None:
         ent.pop("admin_at", None)
 
 
+def tenant_attivo(ttl: int = 1800) -> int | None:
+    """azienda_id della chiamata viva, per i tool stateless che NON ricevono il tenant dall'LLM.
+    Il tenant è deciso all'init dal numero CHIAMATO (Twilio) e memorizzato qui. Ritorna l'id se
+    è univoco fra le chiamate vive, None se nessuna o ambiguo (più tenant contemporaneamente)."""
+    ora = time.time()
+    aids = {ent.get("azienda_id") for ent in _chiamate.values()
+            if ent.get("azienda_id") is not None and ora - ent.get("admin_at", 0) <= ttl}
+    return next(iter(aids)) if len(aids) == 1 else None
+
+
 def xml_escape(s: str) -> str:
     return (s or "").replace("&", " e ").replace("<", " ").replace(">", " ").replace('"', "'")
 

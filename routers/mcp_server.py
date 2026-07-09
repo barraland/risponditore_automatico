@@ -60,12 +60,16 @@ mcp = FastMCP("risponditore-horeca", stateless_http=True, streamable_http_path="
 
 
 def _aid(tenant="") -> int | None:
-    """azienda_id (tenant) dalla dynamic variable {{tenant}}. None → i service usano il default."""
+    """azienda_id (tenant). Se l'LLM lo passa (dynamic variable {{tenant}}) lo usa; ALTRIMENTI lo
+    determina il BACKEND dal registro chiamate vive (il tenant è deciso all'init dal numero
+    chiamato). None → i service usano il default (deployment single-tenant)."""
     t = str(tenant or "").strip()
-    try:
-        return int(t) if t else None
-    except ValueError:
-        return None
+    if t:
+        try:
+            return int(t)
+        except ValueError:
+            pass
+    return telefonia.tenant_attivo()
 
 
 def _contatto(db, telefono: str, tenant="") -> Contatto:
@@ -548,15 +552,14 @@ def apri_ticket(telefono: str, titolo: str, descrizione: str = "", priorita: str
 
 @mcp.tool()
 @_loggato
-def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str = "",
-                      giorni_validita: int = 0, tenant: str = "") -> dict:
+def lascia_promemoria(nome_cliente: str, testo: str, societa: str = "",
+                      giorni_validita: int = 0, telefono: str = "", tenant: str = "") -> dict:
     """[SOLO AMMINISTRATORE] Registra un promemoria per un CLIENTE: quando quel cliente chiamerà,
-    l'assistente ne terrà conto (es. comunicargli un'offerta). `telefono` = il NUMERO del chiamante,
-    serve a verificare che sei l'amministratore: passa ESATTAMENTE il valore di {{telefono_chiamante}}
-    che vedi nel contesto (SOLO cifre), MAI la parola «amministratore» o altre etichette.
-    `nome_cliente` = nome e/o cognome del destinatario; `societa` aiuta a distinguerlo. `testo` = il
-    messaggio/avviso. `giorni_validita` = validità in giorni (0 = senza scadenza). Se più clienti
-    corrispondono, ti elenco i candidati per farti scegliere."""
+    l'assistente ne terrà conto (es. comunicargli un'offerta). `nome_cliente` = nome e/o cognome del
+    destinatario; `societa` aiuta a distinguerlo. `testo` = il messaggio/avviso. `giorni_validita` =
+    validità in giorni (0 = senza scadenza). NON serve passare telefono o tenant: l'identità
+    dell'amministratore e il tenant li gestisce il backend. Se più clienti corrispondono, ti elenco i
+    candidati per farti scegliere."""
     _log_tool("lascia_promemoria", telefono=telefono, nome_cliente=nome_cliente, societa=societa)
     db = SessionLocal()
     try:
