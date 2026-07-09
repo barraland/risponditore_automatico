@@ -624,7 +624,9 @@ async def media_stream(twilio_ws: WebSocket):
         Se chiama un amministratore NON lo registra come contatto (usa il prompt admin dedicato)."""
         from services import promemoria
         tel = stato.get("telefono") or ""
-        if promemoria.is_admin(tel, db):
+        admin_call = promemoria.is_admin(tel, db)
+        telefonia.segna_admin(tel, admin_call)   # flag backend, uniforme con ElevenLabs
+        if admin_call:
             contatto = None
             stato["contatto_id"] = None
             stato["is_admin"] = True

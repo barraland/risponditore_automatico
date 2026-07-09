@@ -560,10 +560,12 @@ def lascia_promemoria(telefono: str, nome_cliente: str, testo: str, societa: str
     _log_tool("lascia_promemoria", telefono=telefono, nome_cliente=nome_cliente, societa=societa)
     db = SessionLocal()
     try:
-        if not promemoria.is_admin(telefono, db, azienda_id=_aid(tenant)):
-            return {"ok": False, "errore": "Numero non riconosciuto come amministratore. Richiama lo "
-                    "strumento passando telefono = il valore di {{telefono_chiamante}} (solo cifre), "
-                    "non un'etichetta come «amministratore»."}
+        aid = _aid(tenant)
+        # SECURITY LATO BACKEND: il flag admin è deciso all'arrivo della chiamata (caller-id
+        # affidabile) e letto qui via il tenant. Fallback: verifica diretta del numero passato.
+        admin_ok = telefonia.e_admin_tenant(aid) or promemoria.is_admin(telefono, db, azienda_id=aid)
+        if not admin_ok:
+            return {"ok": False, "errore": "Funzione riservata all'amministratore."}
         cand = promemoria.trova_target(db, nome_cliente, societa, azienda_id=_aid(tenant))
         if not cand:
             return {"ok": False, "errore": f"Nessun cliente trovato per «{nome_cliente}»."}

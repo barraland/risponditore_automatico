@@ -7,6 +7,7 @@ statiche dentro ElevenLabs: numeri e regole vivono nella dashboard (tabella inol
 
 import os
 import re
+import time
 import logging
 import urllib.parse
 
@@ -36,6 +37,47 @@ def registra_chiamata(telefono: str, call_sid: str, host: str, numero_twilio: st
 
 def dati_chiamata(telefono: str) -> dict:
     return _chiamate.get(_norm(telefono), {})
+
+
+# ---- Flag AMMINISTRATORE della chiamata viva --------------------------------------------------
+# La decisione "questo chiamante è admin?" la prende il BACKEND all'arrivo della chiamata (dal
+# caller-id affidabile della telefonia), NON l'LLM. Il tool admin (lascia_promemoria) la legge da
+# qui via il `tenant` (valore neutro che il modello copia in modo affidabile), così la security è
+# tutta lato backend e non dipende da cosa "scrive" il modello.
+
+def segna_admin(telefono: str, admin: bool, azienda_id=None) -> None:
+    """Registra, per la chiamata viva, se il chiamante è amministratore (deciso all'init)."""
+    if not telefono:
+        return
+    n = _norm(telefono)
+    ent = _chiamate.get(n) or {}
+    ent["admin"] = bool(admin)
+    ent["azienda_id"] = azienda_id
+    ent["admin_at"] = time.time()
+    _chiamate[n] = ent
+
+
+def e_admin_tenant(azienda_id, ttl: int = 1800) -> bool:
+    """True se per QUESTO tenant c'è una chiamata viva marcata come amministratore (entro `ttl`
+    secondi). Usa solo il tenant: l'LLM non decide la security."""
+    ora = time.time()
+    for ent in _chiamate.values():
+        if not ent.get("admin"):
+            continue
+        aid_ent = ent.get("azienda_id")
+        if azienda_id is not None and aid_ent is not None and aid_ent != azienda_id:
+            continue
+        if ora - ent.get("admin_at", 0) <= ttl:
+            return True
+    return False
+
+
+def pulisci_admin(telefono: str) -> None:
+    """Azzera il flag admin a fine chiamata (post-call)."""
+    ent = _chiamate.get(_norm(telefono))
+    if ent:
+        ent.pop("admin", None)
+        ent.pop("admin_at", None)
 
 
 def xml_escape(s: str) -> str:

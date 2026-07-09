@@ -131,6 +131,9 @@ async def init_conversazione(request: Request):
         azienda = tenant_service.risolvi(db, numero_chiamato=called)
         aid = azienda.id if azienda else None
         admin = promemoria.is_admin(caller, db, azienda_id=aid) if caller else False
+        # Flag admin deciso ORA dal backend (caller-id affidabile) e messo nel registro chiamate:
+        # i tool admin lo leggeranno da lì via il tenant, senza dipendere dall'LLM.
+        telefonia.segna_admin(caller, admin, aid)
         contatto = whatsapp_agent.trova_contatto(db, caller, azienda_id=aid) if (caller and not admin) else None
         az = azienda or profilo.get_azienda(db)
         template_noto = ((az.saluto or "").strip() if az else "")
@@ -276,6 +279,7 @@ async def post_call(request: Request):
         # Se chiama un AMMINISTRATORE non lo registriamo come contatto (come fa voice.py):
         # niente anagrafica-fantasma né log chiamata con la trascrizione.
         from services import promemoria
+        telefonia.pulisci_admin(telefono)   # chiamata finita: scade il flag admin del registro
         if promemoria.is_admin(telefono, db):
             logger.info("ElevenLabs post-call: chiamante AMMINISTRATORE (%s) — niente registrazione", telefono)
             return {"ok": True, "admin": True}
