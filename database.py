@@ -222,18 +222,24 @@ class MessaggioChat(Base):
 
 
 class ChiamataVoce(Base):
-    """Log di una telefonata: trascrizione completa + riassunto."""
+    """Log di una conversazione (telefonata o chat): trascrizione + riassunto.
+    Multicanale: `canale` distingue voce / whatsapp / mail; `ticket_id` la collega
+    (0..1) al ticket di follow-up che ne è nato. Un ticket può avere N conversazioni."""
     __tablename__ = "chiamate_voce"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
 
     id = Column(Integer, primary_key=True, index=True)
     contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False)
     telefono = Column(String(30))
+    canale = Column(String(20), default="voce")           # voce | whatsapp | mail
     iniziata_at = Column(DateTime, default=datetime.utcnow)
     durata_sec = Column(Integer, nullable=True)
     trascrizione = Column(Text, nullable=True)   # dialogo completo
     riassunto = Column(Text, nullable=True)       # riassunto generato dall'LLM
+    ticket_id = Column(Integer, ForeignKey("ticket.id", ondelete="SET NULL"), nullable=True, index=True)
 
     contatto = relationship("Contatto", back_populates="chiamate")
+    ticket = relationship("Ticket", back_populates="chiamate")
 
 
 class Ticket(Base):
@@ -253,6 +259,7 @@ class Ticket(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     contatto = relationship("Contatto", back_populates="ticket")
+    chiamate = relationship("ChiamataVoce", back_populates="ticket")
     risposte = relationship(
         "RispostaTicket",
         back_populates="ticket",

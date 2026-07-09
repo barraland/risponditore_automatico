@@ -23,8 +23,11 @@ import re
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
+from datetime import datetime
+
 from database import (
     Contatto, ContattoStato, MessaggioChat, DirezioneMessaggio, Ticket, StatoTicket,
+    ChiamataVoce,
 )
 from database import CanaleOrdine, OrigineOrdine, StatoOrdine, Ordine
 from services import ticket as ticket_service
@@ -155,6 +158,36 @@ def _ticket_aperto(db: Session, contatto_id: int) -> Ticket | None:
         .order_by(Ticket.created_at.desc())
         .first()
     )
+
+
+def _registra_log_conversazione(db: Session, contatto: Contatto, storia_testo: str) -> None:
+    """Log conversazione WhatsApp nel registro interazioni (chiamate_voce, canale='whatsapp').
+    Upsert: UNA riga per contatto/giorno, con trascrizione aggiornata e link al ticket aperto.
+    Non solleva: è un log secondario, non deve rompere la risposta al cliente."""
+    try:
+        tk = _ticket_aperto(db, contatto.id)
+        riassunto = (tk.descrizione or tk.titolo).strip() if tk and (tk.descrizione or tk.titolo) else None
+        ora = datetime.utcnow()
+        esistente = (db.query(ChiamataVoce)
+                     .filter(ChiamataVoce.contatto_id == contatto.id, ChiamataVoce.canale == "whatsapp")
+                     .order_by(ChiamataVoce.iniziata_at.desc()).first())
+        if esistente and esistente.iniziata_at and esistente.iniziata_at.date() == ora.date():
+            esistente.trascrizione = storia_testo or esistente.trascrizione
+            if riassunto:
+                esistente.riassunto = riassunto
+            if tk:
+                esistente.ticket_id = tk.id
+            esistente.telefono = contatto.telefono or esistente.telefono
+        else:
+            db.add(ChiamataVoce(
+                azienda_id=contatto.azienda_id, contatto_id=contatto.id, telefono=contatto.telefono,
+                canale="whatsapp", iniziata_at=ora, trascrizione=storia_testo or None,
+                riassunto=riassunto, ticket_id=(tk.id if tk else None),
+            ))
+        db.commit()
+    except Exception as e:
+        logger.error("Log conversazione WhatsApp fallito (contatto %s): %s", contatto.id, e)
+        db.rollback()
 
 
 # ---------- LLM lead-capture ----------
@@ -546,4 +579,6 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
 
     risposta = risposta or "Come posso aiutarla?"
     _log(db, contatto.id, DirezioneMessaggio.OUT, risposta, traccia=traccia)
+    if not admin:   # il traffico admin non va nel registro conversazioni cliente
+        _registra_log_conversazione(db, contatto, _storia_testo(_storia_recente(db, contatto.id)))
     return {"risposta": risposta}

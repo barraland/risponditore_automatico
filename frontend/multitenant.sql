@@ -223,3 +223,23 @@ alter table public.inoltri add column if not exists admin boolean default false;
 
 -- Prompt moduli: dimensione PUBBLICO (cliente/admin) per i moduli custom del tenant.
 alter table public.prompt_modulo add column if not exists audience varchar(20);
+
+-- ============================================================
+-- Log conversazioni MULTICANALE: chiamate_voce diventa il registro delle interazioni
+-- (voce/whatsapp/mail) con link al ticket. Serve azienda_id per RLS/tenant + canale + ticket_id.
+-- ============================================================
+alter table public.chiamate_voce add column if not exists azienda_id integer references public.azienda(id);
+alter table public.chiamate_voce add column if not exists canale     varchar(20) default 'voce';
+alter table public.chiamate_voce add column if not exists ticket_id  integer references public.ticket(id) on delete set null;
+create index if not exists ix_chiamate_azienda on public.chiamate_voce(azienda_id);
+create index if not exists ix_chiamate_ticket  on public.chiamate_voce(ticket_id);
+-- backfill: tenant dal contatto, canale storico = voce
+update public.chiamate_voce cv set azienda_id = c.azienda_id
+  from public.contatti c where cv.contatto_id = c.id and cv.azienda_id is null;
+update public.chiamate_voce set canale = 'voce' where canale is null;
+-- RLS: stessa policy tenant delle altre tabelle (la SPA legge via PostgREST)
+alter table public.chiamate_voce enable row level security;
+drop policy if exists tenant_all on public.chiamate_voce;
+create policy tenant_all on public.chiamate_voce for all to authenticated
+  using (public.can_see_tenant(azienda_id))
+  with check (public.can_see_tenant(azienda_id));

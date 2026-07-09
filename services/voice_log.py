@@ -10,7 +10,7 @@ import os
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from database import ChiamataVoce
+from database import ChiamataVoce, Contatto
 
 logger = logging.getLogger(__name__)
 
@@ -51,20 +51,25 @@ def riassumi(trascrizione: str) -> str | None:
 
 
 def salva_chiamata(db: Session, contatto_id: int, telefono: str | None,
-                   turni: list[dict], iniziata_at, durata_sec: int | None = None) -> None:
+                   turni: list[dict], iniziata_at, durata_sec: int | None = None,
+                   ticket_id: int | None = None, canale: str = "voce") -> None:
     """Crea il record ChiamataVoce con trascrizione + riassunto. Non solleva."""
     try:
         trascrizione = _formatta_trascrizione(turni)
         if not trascrizione:
             return
         riassunto = riassumi(trascrizione)
+        c = db.get(Contatto, contatto_id) if contatto_id else None
         db.add(ChiamataVoce(
+            azienda_id=(c.azienda_id if c else None),
             contatto_id=contatto_id,
             telefono=telefono,
+            canale=canale,
             iniziata_at=iniziata_at,
             durata_sec=durata_sec,
             trascrizione=trascrizione,
             riassunto=riassunto,
+            ticket_id=ticket_id,
         ))
         db.commit()
         logger.info("Chiamata salvata per contatto %s (%d turni)", contatto_id, len(turni))

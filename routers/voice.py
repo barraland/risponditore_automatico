@@ -544,6 +544,7 @@ async def media_stream(twilio_ws: WebSocket):
         "stream_sid": None,
         "telefono": None,
         "contatto_id": None,
+        "ticket_id": None,          # ticket aperto durante la chiamata (per collegare il log)
         "iniziata_at": None,
         "response_active": False,   # c'è una risposta del modello in corso?
         "speak_pending": False,     # un risultato di tool attende di essere verbalizzato
@@ -798,6 +799,7 @@ async def media_stream(twilio_ws: WebSocket):
             esistente.descrizione = (descrizione or "").strip() or esistente.descrizione
             esistente.storia = storia or esistente.storia
             db.commit()
+            stato["ticket_id"] = esistente.id   # per collegare il log chiamata al ticket
             return {"aperto": True, "ticket_id": esistente.id}
         t = ticket_service.apri_ticket(
             db, contatto_id=contatto_id,
@@ -806,6 +808,7 @@ async def media_stream(twilio_ws: WebSocket):
         )
         if not t:
             return {"errore": "Non sono riuscito a registrare il follow-up."}
+        stato["ticket_id"] = t.id   # per collegare il log chiamata al ticket
         return {"aperto": True, "ticket_id": t.id}
 
     async def esegui_tool(name: str, call_id: str, arguments: str):
@@ -978,6 +981,7 @@ async def media_stream(twilio_ws: WebSocket):
                 await asyncio.to_thread(
                     voice_log.salva_chiamata, db, stato["contatto_id"], stato["telefono"],
                     _trascrizione_ordinata(), stato["iniziata_at"], durata,
+                    stato.get("ticket_id"), "voce",
                 )
             except Exception as e:
                 logger.error("Salvataggio log chiamata fallito: %s", e)

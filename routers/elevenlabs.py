@@ -276,10 +276,13 @@ async def post_call(request: Request):
             logger.info("ElevenLabs post-call: chiamante AMMINISTRATORE (%s) — niente registrazione", telefono)
             return {"ok": True, "admin": True}
         contatto = whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto")
+        # Collega la chiamata al ticket di follow-up aperto per questo contatto (se c'è).
+        tk = whatsapp_agent._ticket_aperto(db, contatto.id)
         db.add(ChiamataVoce(
-            contatto_id=contatto.id, telefono=telefono or None,
-            iniziata_at=iniziata_at, durata_sec=int(durata) if durata else None,
+            azienda_id=contatto.azienda_id, contatto_id=contatto.id, telefono=telefono or None,
+            canale="voce", iniziata_at=iniziata_at, durata_sec=int(durata) if durata else None,
             trascrizione=trascr or None, riassunto=riassunto,
+            ticket_id=(tk.id if tk else None),
         ))
         db.commit()
         logger.info("ElevenLabs post-call: chiamata salvata per %s (%s)", contatto.nome_completo, telefono)
