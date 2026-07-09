@@ -434,6 +434,9 @@ class Documento(Base):
     riassunto = Column(Text, nullable=True)          # summary generato da AI (metadato per il retriever)
     note = Column(Text, nullable=True)               # nota interpretativa scritta dall'admin: il retriever la legge
     inviabile = Column(Boolean, default=True, nullable=False)  # se l'assistente può inviarlo al cliente come allegato
+    # "Sempre presente": il documento ESCE dalla ricerca del retriever e viene iniettato PER INTERO
+    # e SEMPRE nel prompt (info brevi e importanti che l'assistente deve avere sempre a mente).
+    sempre_contesto = Column(Boolean, default=False, nullable=False)
     caricato_at = Column(DateTime, default=datetime.utcnow)
 
     sezioni = relationship(

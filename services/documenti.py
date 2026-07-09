@@ -53,6 +53,37 @@ def catalogo_prompt(db, azienda_id: int | None = None) -> str:
     )
 
 
+def testo_sempre_presente(db, azienda_id: int | None = None, max_chars: int = 12000) -> str:
+    """Testo INTEGRALE dei documenti marcati 'Sempre presente' (Documento.sempre_contesto), da
+    iniettare fisso nel prompt (non passano dal retriever). Troncato a `max_chars` per sicurezza."""
+    q = db.query(Documento).filter(
+        Documento.sempre_contesto.is_(True),
+        Documento.stato.in_([StatoDocumento.READY, StatoDocumento.NEEDS_REVIEW]))
+    if azienda_id:
+        q = q.filter(Documento.azienda_id == azienda_id)
+    docs = q.order_by(Documento.categoria, Documento.caricato_at).all()
+    blocchi, tot = [], 0
+    for d in docs:
+        testo = "\n".join((s.content_md or "") for s in sorted(d.sezioni, key=lambda s: s.ordine)).strip()
+        if not testo:
+            continue
+        nota = (getattr(d, "note", "") or "").strip().replace("\n", " ")
+        blocco = f"\n\n## {d.nome_file}" + (f" — {nota}" if nota else "") + "\n" + testo
+        if tot + len(blocco) > max_chars:
+            blocco = blocco[: max(0, max_chars - tot)]
+        if blocco.strip():
+            blocchi.append(blocco)
+            tot += len(blocco)
+        if tot >= max_chars:
+            break
+    if not blocchi:
+        return ""
+    return (
+        "\n\n=== DOCUMENTI SEMPRE PRESENTI (tienili sempre a mente in OGNI risposta) ==="
+        + "".join(blocchi)
+    )
+
+
 def invia_mail_contatto(db, contatto, testo: str, oggetto: str = "", categoria_allegato: str = "",
                         nome_azienda: str = "") -> dict:
     """Invia un'email a testo libero al contatto, con allegato OPZIONALE (i documenti di una

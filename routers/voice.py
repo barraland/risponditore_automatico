@@ -337,6 +337,7 @@ def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str
                       + prompt_moduli.componi(db, None, audience="cliente", canale="voce")
                       + istruzioni.blocco_regole(db)
                       + documenti_service.catalogo_prompt(db)
+                      + documenti_service.testo_sempre_presente(db)
                       + inoltri.blocco_prompt(db)).strip()
     if contatto:  # promemoria mirati dell'amministratore per questo cliente
         from services import promemoria

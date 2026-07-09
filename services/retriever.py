@@ -100,6 +100,8 @@ def _catalogo(db: Session) -> tuple[str, dict[int, Sezione]]:
     for doc in docs:
         if not doc.sezioni:
             continue
+        if getattr(doc, "sempre_contesto", False):
+            continue  # 'Sempre presente': fuori dal retriever (già iniettato fisso nel prompt)
         anno = doc.anno if doc.anno else "n/d"
         righe.append(
             f"\n# DOCUMENTO «{doc.nome_file}» (categoria: {doc.categoria}, anno: {anno})"

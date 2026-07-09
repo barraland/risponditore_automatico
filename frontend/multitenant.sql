@@ -246,3 +246,6 @@ create policy tenant_all on public.chiamate_voce for all to authenticated
 
 -- Saluto d'apertura dedicato all'AMMINISTRATORE (init voce admin), editabile in dashboard.
 alter table public.azienda add column if not exists saluto_admin text;
+
+-- Documenti "Sempre presente": fuori dal retriever, iniettati per intero e sempre nel prompt.
+alter table public.documenti add column if not exists sempre_contesto boolean default false;

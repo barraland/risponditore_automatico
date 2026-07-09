@@ -195,6 +195,7 @@ async def init_conversazione(request: Request):
                                     + prompt_moduli.componi(db, aid, audience="cliente", canale="voce")
                                     + istruzioni.blocco_regole(db, azienda_id=aid)
                                     + documenti_service.catalogo_prompt(db, azienda_id=aid)
+                                    + documenti_service.testo_sempre_presente(db, azienda_id=aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
                 dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)

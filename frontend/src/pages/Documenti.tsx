@@ -49,7 +49,7 @@ export default function Documenti() {
   async function carica() {
     if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('documenti')
-      .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore, inviabile, note')
+      .select('id, nome_file, categoria, stato, dimensione, caricato_at, storage_path, errore, inviabile, sempre_contesto, note')
       .eq('azienda_id', aziendaId)
       .order('caricato_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || [])
@@ -75,6 +75,13 @@ export default function Documenti() {
     const nuovo = !r.inviabile
     setRighe(rs => rs.map(x => x.id === r.id ? { ...x, inviabile: nuovo } : x))  // ottimistico
     const { error } = await supabase.from('documenti').update({ inviabile: nuovo }).eq('id', r.id)
+    if (error) { setErr(error.message); carica() }
+  }
+
+  async function toggleSempre(r: any) {
+    const nuovo = !r.sempre_contesto
+    setRighe(rs => rs.map(x => x.id === r.id ? { ...x, sempre_contesto: nuovo } : x))  // ottimistico
+    const { error } = await supabase.from('documenti').update({ sempre_contesto: nuovo }).eq('id', r.id)
     if (error) { setErr(error.message); carica() }
   }
   useEffect(() => { carica() }, [])
@@ -179,7 +186,7 @@ export default function Documenti() {
           : (
           <div style={{ overflowX: 'auto' }}>
             <table className="pw-table">
-              <thead><tr><th>Nome</th><th>Categoria</th><th>Dimensione</th><th>Caricato</th><th>Stato</th><th>Inviabile</th><th></th></tr></thead>
+              <thead><tr><th>Nome</th><th>Categoria</th><th>Dimensione</th><th>Caricato</th><th>Stato</th><th>Inviabile</th><th>Sempre presente</th><th></th></tr></thead>
               <tbody>
                 {righe.map(r => (
                   <Fragment key={r.id}>
@@ -198,13 +205,20 @@ export default function Documenti() {
                           {r.inviabile !== false ? 'Sì' : 'No'}
                         </label>
                       </td>
+                      <td>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}
+                          title="Se attivo, l'assistente ha SEMPRE questo documento sott'occhio in ogni conversazione (non solo quando è pertinente). Ideale per informazioni brevi e importanti. In questo caso il documento esce dalla ricerca automatica.">
+                          <input type="checkbox" checked={r.sempre_contesto === true} onChange={() => toggleSempre(r)} />
+                          {r.sempre_contesto === true ? 'Sì' : 'No'}
+                        </label>
+                      </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => scarica(r)} disabled={!r.storage_path}>Scarica</button>{' '}
                         <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(r)}>Elimina</button>
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={7} style={{ paddingTop: 0, borderTop: 'none' }}>
+                      <td colSpan={8} style={{ paddingTop: 0, borderTop: 'none' }}>
                         <NotaFile r={r} onSaved={carica} />
                       </td>
                     </tr>

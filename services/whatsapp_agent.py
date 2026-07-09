@@ -501,6 +501,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             + prompt_moduli.componi(db, None, audience="cliente", canale="whatsapp")
             + istruzioni.blocco_regole(db)
             + documenti_service.catalogo_prompt(db)
+            + documenti_service.testo_sempre_presente(db)
             + promemoria.blocco_prompt(db, contatto.id)
         )
         _soc = crm.societa_di_contatto(db, contatto)

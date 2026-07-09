@@ -215,7 +215,7 @@ def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None,
         "select c.documento_id, c.categoria, c.page_start, c.page_end, c.testo, d.nome_file, d.inviabile, "
         "1 - (c.embedding_vec <=> cast(:q as vector)) as score "
         "from documento_chunk c join documenti d on d.id = c.documento_id "
-        f"where c.embedding_vec is not null{filtro} "
+        f"where c.embedding_vec is not null and coalesce(d.sempre_contesto, false) = false{filtro} "
         "order by c.embedding_vec <=> cast(:q as vector) limit :k"
     )
     params = {"q": _vec_literal(qemb), "k": k}
@@ -230,11 +230,14 @@ def _cerca_pg(db: Session, qemb: list[float], k: int, categoria: str | None,
 
 def _cerca_python(db: Session, qemb: list[float], k: int, categoria: str | None,
                   azienda_id: int | None = None) -> list[dict]:
+    from database import Documento
     q = db.query(DocumentoChunk).filter(DocumentoChunk.embedding.isnot(None))
     if categoria:
         q = q.filter(DocumentoChunk.categoria == categoria)
+    # Escludi i documenti 'Sempre presente' (sono già iniettati fissi nel prompt, fuori dal retriever).
+    q = q.filter(~DocumentoChunk.documento_id.in_(
+        db.query(Documento.id).filter(Documento.sempre_contesto.is_(True))))
     if azienda_id:
-        from database import Documento
         q = q.filter(DocumentoChunk.documento_id.in_(
             db.query(Documento.id).filter(Documento.azienda_id == azienda_id)))
     scored = []
