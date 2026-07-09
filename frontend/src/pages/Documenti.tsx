@@ -207,9 +207,11 @@ export default function Documenti() {
                       </td>
                       <td>
                         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}
-                          title="Se attivo, l'assistente ha SEMPRE questo documento sott'occhio in ogni conversazione (non solo quando è pertinente). Ideale per informazioni brevi e importanti. In questo caso il documento esce dalla ricerca automatica.">
+                          title="Se attivo, l'assistente ha SEMPRE il testo di questo documento nel prompt, in ogni conversazione — ED ESCE dalla ricerca automatica (retriever). Usalo SOLO per documenti BREVI e importanti (poche pagine: regole, orari, listino sintetico). Per FAQ/cataloghi/guide lunghe lascialo su 'No': il retriever ne recupera solo i pezzi pertinenti.">
                           <input type="checkbox" checked={r.sempre_contesto === true} onChange={() => toggleSempre(r)} />
                           {r.sempre_contesto === true ? 'Sì' : 'No'}
+                          {r.sempre_contesto === true && (r.dimensione || 0) > 40000 &&
+                            <span className="pw-badge warn" title="Documento grande: 'sempre presente' inietta il testo in OGNI messaggio e viene troncato oltre il limite. Meglio lasciarlo al retriever (metti 'No').">⚠ grande</span>}
                         </label>
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>

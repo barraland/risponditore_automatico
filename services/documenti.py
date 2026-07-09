@@ -62,7 +62,7 @@ def testo_sempre_presente(db, azienda_id: int | None = None, max_chars: int = 12
     if azienda_id:
         q = q.filter(Documento.azienda_id == azienda_id)
     docs = q.order_by(Documento.categoria, Documento.caricato_at).all()
-    blocchi, tot = [], 0
+    blocchi, tot, troncati = [], 0, []
     for d in docs:
         testo = "\n".join((s.content_md or "") for s in sorted(d.sezioni, key=lambda s: s.ordine)).strip()
         if not testo:
@@ -70,12 +70,18 @@ def testo_sempre_presente(db, azienda_id: int | None = None, max_chars: int = 12
         nota = (getattr(d, "note", "") or "").strip().replace("\n", " ")
         blocco = f"\n\n## {d.nome_file}" + (f" — {nota}" if nota else "") + "\n" + testo
         if tot + len(blocco) > max_chars:
+            troncati.append(d.nome_file)
             blocco = blocco[: max(0, max_chars - tot)]
         if blocco.strip():
             blocchi.append(blocco)
             tot += len(blocco)
         if tot >= max_chars:
             break
+    if troncati:
+        # NIENTE tagli silenziosi: se il testo "sempre presente" supera il tetto, lo si sappia.
+        logger.warning("⚠️ 'Sempre presente' TRONCATO a %d char: documenti troppo grandi per stare "
+                       "sempre nel prompt (%s). Usa il retriever per i doc lunghi.", max_chars,
+                       ", ".join(troncati))
     if not blocchi:
         return ""
     return (
