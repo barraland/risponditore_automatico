@@ -276,9 +276,9 @@ DEFAULT_MODULI = [
         ),
     },
     {
-        "chiave": "ticket_followup", "ordine": 110, "titolo": "Ticket di follow-up",
+        "chiave": "ticket_followup", "ordine": 110, "titolo": "Ticket di follow-up (WhatsApp)",
         "audience": "cliente",
-        "canali": ["voce", "whatsapp"],
+        "canali": ["whatsapp"],
         "testo": (
             "TICKET DI FOLLOW-UP (apri SEMPRE un ticket per il lead)\n"
             "Verso la fine, chiama apri_ticket UNA SOLA volta: titolo riassuntivo, descrizione della "
@@ -286,6 +286,18 @@ DEFAULT_MODULI = [
             "«ci pensa», non ordina o chiede solo info. Dopo, di' al cliente che un collega lo "
             "ricontatterà se necessario. Vale anche per reclami, problemi di consegna o richieste da "
             "far seguire a un collega."
+        ),
+    },
+    {
+        "chiave": "chiusura_voce", "ordine": 111, "titolo": "Chiusura chiamata (voce)",
+        "audience": "cliente",
+        "canali": ["voce"],
+        "testo": (
+            "CHIUSURA: quando hai capito di cosa ha bisogno il lead, riepiloga brevemente e digli che "
+            "un collega lo ricontatterà se necessario, poi saluta con cortesia. NON devi aprire alcun "
+            "ticket né usare strumenti per il follow-up: la scheda per il team commerciale (con titolo, "
+            "priorità e sintesi) viene creata AUTOMATICAMENTE a fine chiamata. Concentrati sul dialogo "
+            "e sul raccogliere i dati utili."
         ),
     },
     {

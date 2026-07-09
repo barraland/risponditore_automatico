@@ -2,14 +2,17 @@
 
 Speech-to-speech nativo: l'audio del chiamante va al modello Realtime, che risponde
 in audio. L'assistente risponde alle domande su prodotti/servizi usando il profilo
-aziendale (testo libero), qualifica il lead, COMPILA l'anagrafica del contatto via il
-tool `salva_contatto` e a fine chiamata APRE un ticket di follow-up con `apri_ticket`
-(titolo riassuntivo + priorità + trascrizione).
+aziendale (testo libero), qualifica il lead e COMPILA l'anagrafica del contatto via il
+tool `salva_contatto`. Il TICKET di follow-up NON lo apre l'agente durante la chiamata:
+lo crea il POST-PROCESSING (services/ticket_auto) sulla trascrizione completa a fine
+chiamata, così non si perde nulla se il cliente riaggancia.
 
 Flusso:
   1. Twilio -> POST /voice/incoming -> TwiML che apre un Media Stream verso /voice/stream.
   2. /voice/stream fa da ponte audio bidirezionale Twilio <-> OpenAI Realtime.
-  3. I tool (salva_contatto, apri_ticket) girano in background per non bloccare l'audio.
+  3. I tool (salva_contatto, ...) girano in background per non bloccare l'audio.
+  4. A fine chiamata: ticket automatico + log (trascrizione/riassunto). Le chiamate perse
+     (squillo senza risposta) arrivano via POST /voice/status (status callback Twilio).
 """
 
 import os
@@ -25,12 +28,15 @@ from fastapi.responses import PlainTextResponse
 from fastapi.websockets import WebSocketState
 
 from database import (
-    SessionLocal, Contatto, ContattoStato, Ordine,
+    SessionLocal, Contatto, ContattoStato, Ordine, ChiamataVoce,
     CanaleOrdine, OrigineOrdine, StatoOrdine,
 )
 from services import whatsapp_agent
 from services import voice_log
 from services import ticket as ticket_service
+from services import ticket_auto
+from services import tenant as tenant_service
+from services import promemoria
 from services import istruzioni
 from services import profilo
 from services import crm
@@ -262,27 +268,6 @@ REALTIME_TOOLS = [
     },
     {
         "type": "function",
-        "name": "apri_ticket",
-        "description": (
-            "Apre (o aggiorna) il TICKET di follow-up per questo lead, per il team commerciale. "
-            "Chiamalo quando hai capito di cosa ha bisogno il lead — tipicamente verso la fine "
-            "della chiamata. Riepiloga in titolo e descrizione la richiesta e assegna la priorità "
-            "secondo i criteri ricevuti. Dopo averlo aperto, di' al chiamante che un collega lo "
-            "ricontatterà."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "titolo": {"type": "string", "description": "Titolo breve riassuntivo (max ~10 parole)."},
-                "priorita": {"type": "string", "enum": ["alta", "media", "bassa"],
-                             "description": "Priorità del lead secondo i criteri dell'azienda."},
-                "descrizione": {"type": "string", "description": "Sintesi della richiesta e dei dati utili raccolti."},
-            },
-            "required": ["titolo", "descrizione"],
-        },
-    },
-    {
-        "type": "function",
         "name": "lascia_promemoria",
         "description": (
             "[SOLO AMMINISTRATORE] Registra un promemoria per un CLIENTE: quando quel cliente "
@@ -444,6 +429,61 @@ async def incoming_call_grok(request: Request):
     ws_url = f"wss://{host}/voice/stream?provider=grok"
     logger.info("Chiamata in arrivo (GROK) da %s -> stream %s", caller, ws_url)
     return _twiml_stream(ws_url, caller, chiamato)
+
+
+def _registra_chiamata_persa(contatto_id: int, telefono: str | None, durata_sec: int | None = None) -> None:
+    """Registra nel log una chiamata SENZA dialogo (persa / riagganciata), se non già presente
+    negli ultimi minuti (dedup col log normale). Niente ticket. Apre la propria sessione (thread-safe)."""
+    from datetime import timedelta
+    db = SessionLocal()
+    try:
+        recente = (db.query(ChiamataVoce)
+                   .filter(ChiamataVoce.contatto_id == contatto_id,
+                           ChiamataVoce.iniziata_at >= datetime.utcnow() - timedelta(minutes=5))
+                   .first())
+        if recente:
+            return
+        c = db.get(Contatto, contatto_id)
+        db.add(ChiamataVoce(
+            azienda_id=(c.azienda_id if c else None), contatto_id=contatto_id,
+            telefono=telefono, canale="voce", durata_sec=durata_sec,
+            riassunto="Chiamata persa / riagganciata prima del dialogo.",
+        ))
+        db.commit()
+        logger.info("📵 Chiamata persa registrata (contatto %s)", contatto_id)
+    except Exception as e:
+        logger.error("Registrazione chiamata persa fallita: %s", e)
+        db.rollback()
+    finally:
+        db.close()
+
+
+@router.post("/status")
+async def call_status(request: Request):
+    """Status callback di Twilio a livello di chiamata: cattura le chiamate PERSE (squillo senza
+    risposta) che non passano dallo stream. Configura questo URL come 'Call status changes' del
+    numero Twilio. Idempotente: non duplica il log se la chiamata è già stata registrata."""
+    form = await request.form()
+    stato_ch = (form.get("CallStatus") or "").lower()
+    caller = (form.get("From") or "").strip()
+    chiamato = (form.get("To") or "").strip()
+    dur_raw = form.get("CallDuration") or "0"
+    durata = int(dur_raw) if dur_raw.isdigit() else 0
+    # Ci interessano solo le chiamate senza risposta / a vuoto.
+    persa = stato_ch in ("no-answer", "busy", "failed", "canceled") or (stato_ch == "completed" and durata == 0)
+    if not persa or not caller:
+        return PlainTextResponse("", media_type="text/xml")
+    db = SessionLocal()
+    try:
+        if promemoria.is_admin(caller, db):
+            return PlainTextResponse("", media_type="text/xml")
+        az = tenant_service.da_numero_voce(db, chiamato)
+        contatto = whatsapp_agent.trova_o_crea_contatto(db, caller, azienda_id=(az.id if az else None))
+        cid = contatto.id
+    finally:
+        db.close()
+    await asyncio.to_thread(_registra_chiamata_persa, cid, caller, durata)
+    return PlainTextResponse("", media_type="text/xml")
 
 
 def _twiml_stream(ws_url: str, caller: str, chiamato: str) -> PlainTextResponse:
@@ -786,31 +826,6 @@ async def media_stream(twilio_ws: WebSocket):
         return fn(telefono=tel, motivo=args.get("motivo", ""),
                   nome_destinatario=args.get("nome_destinatario", ""), ruolo=args.get("ruolo", ""))
 
-    def _apri_ticket(titolo: str, priorita: str, descrizione: str) -> dict:
-        """Apre/aggiorna il ticket di follow-up usando la trascrizione come storia (sincrona)."""
-        storia = ticket_service.formatta_storia(_trascrizione_ordinata())
-        contatto_id = stato.get("contatto_id")
-        esistente = whatsapp_agent._ticket_aperto(db, contatto_id) if contatto_id else None
-        if esistente:
-            esistente.titolo = (titolo or esistente.titolo).strip()[:300]
-            p = ticket_service.normalizza_priorita(priorita)
-            if p:
-                esistente.priorita = p
-            esistente.descrizione = (descrizione or "").strip() or esistente.descrizione
-            esistente.storia = storia or esistente.storia
-            db.commit()
-            stato["ticket_id"] = esistente.id   # per collegare il log chiamata al ticket
-            return {"aperto": True, "ticket_id": esistente.id}
-        t = ticket_service.apri_ticket(
-            db, contatto_id=contatto_id,
-            titolo=titolo or "Lead telefonico", priorita=priorita,
-            descrizione=descrizione or "", storia=storia, canale="voce",
-        )
-        if not t:
-            return {"errore": "Non sono riuscito a registrare il follow-up."}
-        stato["ticket_id"] = t.id   # per collegare il log chiamata al ticket
-        return {"aperto": True, "ticket_id": t.id}
-
     async def esegui_tool(name: str, call_id: str, arguments: str):
         """Esegue il tool richiesto in background e ne verbalizza il risultato."""
         try:
@@ -841,9 +856,6 @@ async def media_stream(twilio_ws: WebSocket):
             result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
         elif name == "invia_mail":
             result = await asyncio.to_thread(_invia_mail, args)
-        elif name == "apri_ticket":
-            result = await asyncio.to_thread(
-                _apri_ticket, args.get("titolo", ""), args.get("priorita", ""), args.get("descrizione", ""))
         elif name == "lascia_promemoria":
             result = await asyncio.to_thread(_lascia_promemoria, args)
         elif name == "inoltra_chiamata":
@@ -972,11 +984,20 @@ async def media_stream(twilio_ws: WebSocket):
     finally:
         for t in list(stato["tasks"]):
             t.cancel()
-        # Salva il log della chiamata (trascrizione + riassunto) se c'è stato dialogo.
+        durata = None
+        if stato["iniziata_at"]:
+            durata = int((datetime.utcnow() - stato["iniziata_at"]).total_seconds())
         if stato["contatto_id"] and stato["trascrizione"]:
-            durata = None
-            if stato["iniziata_at"]:
-                durata = int((datetime.utcnow() - stato["iniziata_at"]).total_seconds())
+            # POST-PROCESSING: il ticket lo decide ora il back-office sulla trascrizione completa,
+            # non l'agente durante la chiamata (che muore col canale se il cliente riaggancia).
+            storia = ticket_service.formatta_storia(_trascrizione_ordinata())
+            try:
+                t = await asyncio.to_thread(
+                    ticket_auto.genera_da_trascrizione, db, stato["contatto_id"], storia, "voce", None)
+                if t:
+                    stato["ticket_id"] = t.id
+            except Exception as e:
+                logger.error("Ticket automatico post-chiamata fallito: %s", e)
             try:
                 await asyncio.to_thread(
                     voice_log.salva_chiamata, db, stato["contatto_id"], stato["telefono"],
@@ -985,6 +1006,13 @@ async def media_stream(twilio_ws: WebSocket):
                 )
             except Exception as e:
                 logger.error("Salvataggio log chiamata fallito: %s", e)
+        elif stato["contatto_id"] and not stato.get("is_admin"):
+            # Chiamata connessa ma SENZA dialogo (riagganciata durante il saluto): la registro come
+            # persa, così finisce nella lista chiamate/callback. Niente ticket.
+            try:
+                await asyncio.to_thread(_registra_chiamata_persa, stato["contatto_id"], stato["telefono"], durata)
+            except Exception as e:
+                logger.error("Log chiamata persa fallito: %s", e)
         db.close()
         if twilio_ws.client_state != WebSocketState.DISCONNECTED:
             await twilio_ws.close()
