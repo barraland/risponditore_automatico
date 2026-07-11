@@ -16,6 +16,16 @@ const slug = (s: string) =>
   (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'campo'
 
+// Input opzioni: tiene il TESTO grezzo in stato locale (così la virgola si può digitare), e
+// riporta al parent l'array parsato. Il valore mostrato non viene ri-derivato dall'array a ogni tasto.
+function OpzioniInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [txt, setTxt] = useState((value || []).join(', '))
+  return (
+    <input className="pw-input" value={txt} placeholder="Es. cane, gatto, coniglio"
+      onChange={e => { setTxt(e.target.value); onChange(e.target.value.split(',').map(s => s.trim()).filter(Boolean)) }} />
+  )
+}
+
 const vuoto = (): Tipo => ({
   nome_singolare: '', nome_plurale: '', max_per_contatto: 0, condivisibile: true,
   campo_etichetta: '', campi: [], attivo: true,
@@ -251,8 +261,7 @@ function Editor({ tipo, aziendaId, onClose, onSaved }: {
               {c.tipo === 'scelta' && (
                 <div className="pw-field">
                   <label>Opzioni (separate da virgola)</label>
-                  <input className="pw-input" value={(c.opzioni || []).join(', ')} placeholder="Es. cane, gatto, coniglio"
-                    onChange={e => patchCampo(i, { opzioni: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
+                  <OpzioniInput value={c.opzioni || []} onChange={v => patchCampo(i, { opzioni: v })} />
                 </div>
               )}
               <div className="pw-muted" style={{ fontSize: 11 }}>chiave: <code>{c.chiave || slug(c.label)}</code></div>
