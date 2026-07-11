@@ -41,6 +41,41 @@ def nome_azienda(db: Session, azienda_id: int | None = None) -> str:
     return (az.nome if az else None) or "la nostra azienda"
 
 
+# Campi della PERSONA (contatto) che l'assistente può raccogliere, con etichetta.
+CONTATTO_CAMPI = [("nome", "Nome"), ("cognome", "Cognome"), ("telefono", "Telefono"),
+                  ("email", "Email"), ("ruolo", "Ruolo")]
+_CONTATTO_OBBL_DEFAULT = ["nome", "telefono"]
+
+
+def contatto_obbligatori(db: Session, azienda_id: int | None = None) -> list[str]:
+    """Chiavi dei campi persona obbligatori per il tenant (config), o il default."""
+    import json
+    az = get_azienda(db, azienda_id)
+    raw = (getattr(az, "contatto_obbligatori", None) or "").strip() if az else ""
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list):
+                return [k for k in val if k in dict(CONTATTO_CAMPI)]
+        except Exception:
+            pass
+    return list(_CONTATTO_OBBL_DEFAULT)
+
+
+def contatto_campi_prompt(db: Session, azienda_id: int | None = None) -> str:
+    """Blocco da iniettare: dati della PERSONA da raccogliere, con gli OBBLIGATORI (da config).
+    Dinamico come quello dell'entità: nel prompt non si scrivono i campi a mano."""
+    obb_keys = contatto_obbligatori(db, azienda_id)
+    obb = [lab for k, lab in CONTATTO_CAMPI if k in obb_keys]
+    opz = [lab for k, lab in CONTATTO_CAMPI if k not in obb_keys]
+    righe = ["\n\n=== DATI DELLA PERSONA (contatto) — da raccogliere e registrare con salva_contatto ==="]
+    if obb:
+        righe.append("Chiedi SEMPRE (obbligatori): " + ", ".join(obb) + ".")
+    if opz:
+        righe.append("Raccogli se emergono (opzionali): " + ", ".join(opz) + ".")
+    return "\n".join(righe)
+
+
 def _sezione(titolo: str, corpo: str) -> str:
     corpo = (corpo or "").strip()
     if not corpo:

@@ -308,3 +308,6 @@ create table if not exists public.tool_descrizione (
   updated_at  timestamptz default now()
 );
 alter table public.tool_descrizione enable row level security;  -- accesso solo via backend
+
+-- Campi della PERSONA (contatto) che l'assistente chiede SEMPRE: JSON list (nome/cognome/telefono/email/ruolo).
+alter table public.azienda add column if not exists contatto_obbligatori text;

@@ -504,6 +504,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             + istruzioni.blocco_regole(db)
             + documenti_service.catalogo_prompt(db)
             + documenti_service.testo_sempre_presente(db)
+            + profilo.contatto_campi_prompt(db)
             + entita_service.blocco_prompt(db, None)
             + promemoria.blocco_prompt(db, contatto.id)
         )

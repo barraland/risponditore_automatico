@@ -233,6 +233,7 @@ def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str
                       + istruzioni.blocco_regole(db)
                       + documenti_service.catalogo_prompt(db)
                       + documenti_service.testo_sempre_presente(db)
+                      + profilo.contatto_campi_prompt(db)
                       + entita_service.blocco_prompt(db, None)
                       + inoltri.blocco_prompt(db)).strip()
     if contatto:  # promemoria mirati dell'amministratore per questo cliente

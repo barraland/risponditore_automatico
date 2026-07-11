@@ -44,6 +44,54 @@ const templateSocieta = (): Tipo => ({
   ],
 })
 
+const CONTATTO_CAMPI: [string, string][] = [
+  ['nome', 'Nome'], ['cognome', 'Cognome'], ['telefono', 'Telefono'], ['email', 'Email'], ['ruolo', 'Ruolo'],
+]
+const CONTATTO_DEFAULT = ['nome', 'telefono']
+
+// Config: quali dati della PERSONA (contatto) l'assistente chiede SEMPRE. Salva su azienda.contatto_obbligatori.
+function ContattoObbligatori() {
+  const { aziendaId } = useTenant()
+  const [obbl, setObbl] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    if (!aziendaId) return
+    supabase.from('azienda').select('contatto_obbligatori').eq('id', aziendaId).maybeSingle()
+      .then(({ data }) => {
+        let v = CONTATTO_DEFAULT
+        try { if (data?.contatto_obbligatori) { const p = JSON.parse(data.contatto_obbligatori); if (Array.isArray(p)) v = p } } catch { /* default */ }
+        setObbl(v)
+      })
+  }, [aziendaId])
+
+  async function toggle(k: string) {
+    if (!obbl || !aziendaId) return
+    const nv = obbl.includes(k) ? obbl.filter(x => x !== k) : [...obbl, k]
+    setObbl(nv)
+    await supabase.from('azienda').update({ contatto_obbligatori: JSON.stringify(nv) }).eq('id', aziendaId)
+  }
+
+  if (!obbl) return null
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head"><h3>Dati del contatto (persona)</h3></div>
+      <div className="pw-card-body pw-stack" style={{ gap: 10 }}>
+        <div className="pw-muted" style={{ fontSize: 13 }}>
+          Quali dati della persona l'assistente chiede <strong>sempre</strong> (obbligatori). Gli altri li
+          raccoglie solo se emergono. L'elenco finisce automaticamente nel prompt — non va scritto a mano.
+        </div>
+        <div className="pw-row" style={{ gap: 16, flexWrap: 'wrap' }}>
+          {CONTATTO_CAMPI.map(([k, l]) => (
+            <label key={k} className="pw-row" style={{ gap: 6, cursor: 'pointer' }}>
+              <input type="checkbox" checked={obbl.includes(k)} onChange={() => toggle(k)} /> {l}
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function EntitaConfig() {
   const { aziendaId } = useTenant()
   const [tipi, setTipi] = useState<Tipo[]>([])
@@ -107,6 +155,9 @@ export default function EntitaConfig() {
 
       {err && <div className="pw-error">{err}</div>}
 
+      <ContattoObbligatori />
+
+      <div className="pw-card-head" style={{ border: 'none', paddingLeft: 0 }}><h3>Tipi di entità</h3></div>
       <div className="pw-card">
         {tipi.length === 0
           ? <div className="pw-empty">Nessun tipo di entità. Aggiungine uno (es. «Società» o «Animale»).</div>

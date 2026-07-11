@@ -197,6 +197,7 @@ async def init_conversazione(request: Request):
                                     + istruzioni.blocco_regole(db, azienda_id=aid)
                                     + documenti_service.catalogo_prompt(db, azienda_id=aid)
                                     + documenti_service.testo_sempre_presente(db, azienda_id=aid)
+                                    + profilo.contatto_campi_prompt(db, aid)
                                     + entita_service.blocco_prompt(db, aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
