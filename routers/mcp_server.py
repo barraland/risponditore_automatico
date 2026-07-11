@@ -15,16 +15,13 @@ import functools
 import logging
 import os
 
-from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from database import (
-    SessionLocal, Contatto, ContattoStato, Ordine,
-    CanaleOrdine, OrigineOrdine, StatoOrdine, StatoRelazione,
+    SessionLocal, Contatto,
     Documento, StatoDocumento, TestoCategoria,
 )
-from services import crm
 from services import entita as entita_service
 from services import promemoria
 from services import inoltri
@@ -76,13 +73,6 @@ def _aid(tenant="") -> int | None:
 def _contatto(db, telefono: str, tenant="") -> Contatto:
     """Identifica (o crea) il contatto dal numero NEL TENANT, come fa il canale WhatsApp."""
     return whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto", azienda_id=_aid(tenant))
-
-
-class RigaOrdineInput(BaseModel):
-    descrizione: str = Field(description="Nome del prodotto.")
-    quantita: float | None = Field(default=None, description="Quantità ordinata.")
-    unita: str = Field(default="", description="Unità di misura (pz, kg, casse, bottiglie...).")
-    prezzo_unitario: float | None = Field(default=None, description="Prezzo unitario se noto.")
 
 
 def _log_tool(tool: str, **kv):
@@ -269,192 +259,6 @@ def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ruolo: str 
     dell'ENTITÀ collegata (animale, società, deceduto, ...) usa `registra_entita`, non questo tool."""
     _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ruolo=ruolo)
     return _applica_contatto(telefono, nome, cognome, ruolo, email, titolo, note, tenant)
-
-
-@mcp.tool()
-@_loggato
-def aggiorna_locale(telefono: str, citta: str = "", indirizzo: str = "",
-                    ragione_sociale: str = "", piva: str = "", insegna: str = "", tenant: str = "") -> dict:
-    """Aggiorna l'anagrafica del LOCALE/azienda del chiamante (il ristorante/bar/hotel a cui è
-    associato il contatto identificato da `telefono`): città, indirizzo, ragione sociale, P.IVA,
-    insegna. Usalo quando in conversazione emerge un dato del locale prima mancante (es. la città).
-    Passa SOLO i campi nuovi; gli altri restano invariati. NON inventare valori."""
-    _log_tool("aggiorna_locale", telefono=telefono, citta=citta, indirizzo=indirizzo)
-    _n = lambda s: (s or "").strip().lower()
-    citta, indirizzo = citta.strip(), indirizzo.strip()
-    ragione_sociale, piva, insegna = ragione_sociale.strip(), piva.strip(), insegna.strip()
-    db = SessionLocal()
-    try:
-        c = _contatto(db, telefono, tenant)
-        societa = crm.societa_di_contatto(db, c)
-
-        # (b) CONFLITTO DI CITTÀ: se il locale collegato ha già una città e ne arriva una DIVERSA,
-        # è un ALTRO locale (omonimo) -> non sovrascrivere: scollega e cerca/crea quello giusto.
-        if societa and citta and _n(societa.citta) and _n(societa.citta) != _n(citta):
-            c.societa_id = None
-            societa = None
-
-        if not societa:
-            nome = (insegna or ragione_sociale or c.ragione_sociale or "").strip()
-            if not nome:
-                return {"ok": False, "errore": "Serve almeno il nome dell'attività per registrarla."}
-            # escludi_clienti: un lead non può agganciarsi a un CLIENTE per solo nome → prospect nuovo.
-            societa = crm.trova_o_crea_societa(db, insegna=nome, ragione_sociale=ragione_sociale or None,
-                                               citta=(citta or c.sede or None), azienda_id=c.azienda_id,
-                                               escludi_clienti=True)
-            c.societa_id = societa.id
-
-        # PROTEZIONE CLIENTI: l'anagrafica di un CLIENTE non si tocca dalle chiamate in ingresso.
-        if societa.stato_relazione == StatoRelazione.CLIENTE:
-            db.commit()  # eventuale ri-aggancio del contatto, ma NESSUNA modifica ai dati del cliente
-            return {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": False,
-                    "nota": "Locale già cliente: l'anagrafica dei clienti non si modifica dalle chiamate."}
-
-        # FILL-ONLY sui prospect: riempio solo i campi VUOTI, non sovrascrivo quelli già valorizzati.
-        campi = {"citta": citta, "indirizzo": indirizzo, "ragione_sociale": ragione_sociale,
-                 "piva": piva, "insegna": insegna}
-        cambiato, saltati = False, []
-        for k, v in campi.items():
-            if not v:
-                continue
-            attuale = getattr(societa, k)
-            if not (attuale or "").strip():
-                setattr(societa, k, v); cambiato = True        # campo vuoto → lo riempio
-            elif _n(attuale) != _n(v):
-                saltati.append(k)                               # già valorizzato e diverso → NON tocco
-        db.commit()
-        out = {"ok": True, "locale_id": societa.id, "locale": societa.insegna, "aggiornato": cambiato}
-        if saltati:
-            out["non_sovrascritti"] = saltati
-            out["nota"] = "Alcuni dati del locale erano già registrati e li ho lasciati invariati."
-        return out
-    finally:
-        db.close()
-
-
-@mcp.tool()
-@_loggato
-def registra_ordine(telefono: str, righe: list[RigaOrdineInput], note: str = "",
-                    conferma: bool = False, tenant: str = "") -> dict:
-    """Registra un ordine del chiamante. `conferma`=true lo salva come CONFERMATO, altrimenti
-    come bozza (segui le indicazioni dell'amministratore su quando confermare). Se per la stessa
-    trattativa esiste già una bozza, la aggiorna invece di duplicarla.
-    `note`: testo libero su questo ordine (es. orario di consegna preferito, richieste particolari,
-    note su sconti applicati). Per modificare SOLO le note di un ordine già creato usa aggiorna_ordine."""
-    _log_tool("registra_ordine", telefono=telefono, n_righe=len(righe), conferma=conferma)
-    db = SessionLocal()
-    try:
-        c = _contatto(db, telefono, tenant)
-        societa = crm.societa_di_contatto(db, c) or crm.trova_o_crea_societa(db, insegna=c.nome_completo, azienda_id=c.azienda_id)
-        if not c.societa_id:
-            c.societa_id = societa.id
-            c.is_primario = True
-            db.commit()
-        ordine, creato = crm.registra_ordine_conversazione(
-            db, societa_id=societa.id, righe=[r.model_dump() for r in righe], contatto_id=c.id,
-            origine=OrigineOrdine.CLIENTE, canale=CanaleOrdine.VOCE,
-            note=(note or "").strip() or None,
-            stato=StatoOrdine.CONFERMATO if conferma else StatoOrdine.BOZZA,
-        )
-        if not ordine:
-            return {"errore": "Registrazione ordine non riuscita."}
-        return {"registrato": True, "aggiornato": not creato, "ordine_id": ordine.id,
-                "stato": ordine.stato.value, "articoli": ordine.n_articoli, "totale": ordine.totale}
-    finally:
-        db.close()
-
-
-@mcp.tool()
-@_loggato
-def aggiorna_ordine(telefono: str, note: str, ordine_id: int = 0, tenant: str = "") -> dict:
-    """Aggiorna le NOTE libere di un ordine GIÀ registrato del chiamante (es. orario di consegna
-    preferito, richieste particolari, note sugli sconti applicati). Se `ordine_id` è 0/omesso,
-    aggiorna l'ULTIMO ordine del cliente (quello appena creato). Le note fornite SOSTITUISCONO le
-    precedenti: per aggiungere, includi anche il testo già presente. Non tocca le righe."""
-    _log_tool("aggiorna_ordine", telefono=telefono, ordine_id=ordine_id)
-    db = SessionLocal()
-    try:
-        c = _contatto(db, telefono, tenant)
-        ordine = None
-        if ordine_id:
-            o = db.get(Ordine, int(ordine_id))
-            if o and (o.contatto_id == c.id or (c.societa_id and o.societa_id == c.societa_id)):
-                ordine = o
-        if ordine is None:
-            ordine = (db.query(Ordine).filter(Ordine.contatto_id == c.id)
-                      .order_by(Ordine.data.desc()).first())
-        if ordine is None:
-            return {"ok": False, "errore": "Nessun ordine da aggiornare per questo cliente."}
-        ordine.note = (note or "").strip() or None
-        db.commit()
-        return {"ok": True, "ordine_id": ordine.id, "note": ordine.note}
-    finally:
-        db.close()
-
-
-@mcp.tool()
-@_loggato
-def storico_ordini(telefono: str, giorni: int = 0, limite: int = 10, tenant: str = "") -> dict:
-    """Restituisce gli ordini RECENTI del cliente (la sua società), con prodotti e quantità di
-    ciascuno. Usalo per: (a) capire cosa ordina di solito e DISAMBIGUARE un prodotto generico
-    (es. "la Peroni" → quale formato ha già ordinato; se ne ha ordinati più formati, chiedigli
-    quale); (b) RIORDINARE un ordine passato ("riordina l'ultimo con le birre" → cerchi l'ordine
-    giusto qui e poi lo registri con registra_ordine). `giorni`: finestra temporale (7 = ultima
-    settimana, 30 = ultimo mese; 0 = tutti). `limite`: max ordini da restituire (default 10)."""
-    _log_tool("storico_ordini", telefono=telefono, giorni=giorni)
-    from datetime import datetime, timedelta
-    db = SessionLocal()
-    try:
-        c = _contatto(db, telefono, tenant)
-        societa = crm.societa_di_contatto(db, c)
-        q = db.query(Ordine)
-        q = q.filter(Ordine.societa_id == societa.id) if societa else q.filter(Ordine.contatto_id == c.id)
-        if giorni and giorni > 0:
-            q = q.filter(Ordine.data >= datetime.utcnow() - timedelta(days=giorni))
-        ordini = q.order_by(Ordine.data.desc()).limit(max(1, min(int(limite or 10), 30))).all()
-        out = [{
-            "ordine_id": o.id,
-            "data": o.data.strftime("%d/%m/%Y") if o.data else "",
-            "stato": o.stato.value,
-            "totale": o.totale,
-            "righe": [{"descrizione": r.descrizione, "quantita": r.quantita,
-                       "unita": r.unita, "prezzo_unitario": r.prezzo_unitario} for r in o.righe],
-        } for o in ordini]
-        return {"n": len(out), "ordini": out}
-    finally:
-        db.close()
-
-
-@mcp.tool()
-@_loggato
-def invia_riepilogo_ordine(telefono: str, ordine_id: int = 0, tenant: str = "") -> dict:
-    """Invia via email al chiamante il riepilogo di un ordine (ordine_id, oppure l'ultimo).
-    Se il cliente non ha un'email salvata, lo segnala: chiedila e salvala con salva_contatto."""
-    _log_tool("invia_riepilogo_ordine", telefono=telefono, ordine_id=ordine_id)
-    db = SessionLocal()
-    try:
-        c = _contatto(db, telefono, tenant)
-        ordine = db.get(Ordine, ordine_id) if ordine_id else None
-        if not ordine:
-            ordine = (db.query(Ordine).filter(Ordine.contatto_id == c.id)
-                      .order_by(Ordine.data.desc()).first())
-        if not ordine:
-            return {"errore": "Nessun ordine da riepilogare."}
-        email = (c.email or "").strip()
-        if not email:
-            return {"email_mancante": True,
-                    "messaggio": "Chiedi l'email al cliente, salvala con salva_contatto e riprova."}
-        oggetto = f"Riepilogo ordine #{ordine.id} - {profilo.nome_azienda(db, _aid(tenant))}"
-        corpo = (f"Gentile {c.nome or c.nome_completo},\n\n"
-                 f"come da accordi telefonici, le confermiamo il suo ordine:\n\n"
-                 f"{crm.riepilogo_ordine(ordine)}\n\n"
-                 f"Cordiali saluti,\n{profilo.nome_azienda(db, _aid(tenant))}")
-        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo,
-                                            azienda_id=(c.azienda_id or _aid(tenant)))
-        return ({"inviato": True, "email": email, "ordine_id": ordine.id} if inviata
-                else {"errore": "Invio email non riuscito (verifica configurazione Gmail)."})
-    finally:
-        db.close()
 
 
 @mcp.tool()

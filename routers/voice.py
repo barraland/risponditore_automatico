@@ -102,24 +102,6 @@ REALTIME_TOOLS = [
     },
     {
         "type": "function",
-        "name": "aggiorna_locale",
-        "description": (
-            "Aggiorna l'anagrafica del LOCALE/azienda del chiamante (ristorante/bar/hotel): città, "
-            "indirizzo, ragione sociale, P.IVA, insegna. Usalo quando emerge un dato del locale prima "
-            "mancante (es. la CITTÀ). Passa solo i campi nuovi."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "citta": {"type": "string"}, "indirizzo": {"type": "string"},
-                "ragione_sociale": {"type": "string"}, "piva": {"type": "string"},
-                "insegna": {"type": "string"},
-            },
-            "required": [],
-        },
-    },
-    {
-        "type": "function",
         "name": "registra_entita",
         "description": (
             "Registra (o aggiorna) l'ENTITÀ collegata al cliente (es. animale, deceduto, società): "
@@ -628,116 +610,6 @@ async def media_stream(twilio_ws: WebSocket):
         """Ritorna il testo integrale dei documenti di una categoria (no LLM). Stessa logica MCP."""
         return mcp_server._leggi_categoria(categoria)
 
-    def _aggiorna_locale(args: dict) -> dict:
-        """Aggiorna l'anagrafica del locale/società del chiamante. Stessa logica del tool MCP."""
-        tel = stato.get("telefono") or ""
-        if not tel:
-            return {"errore": "Numero del chiamante non disponibile."}
-        # @mcp.tool() può ritornare la funzione grezza o un wrapper con .fn: gestiamo entrambi.
-        fn = getattr(mcp_server.aggiorna_locale, "fn", mcp_server.aggiorna_locale)
-        return fn(
-            telefono=tel,
-            citta=args.get("citta", ""), indirizzo=args.get("indirizzo", ""),
-            ragione_sociale=args.get("ragione_sociale", ""), piva=args.get("piva", ""),
-            insegna=args.get("insegna", ""),
-        )
-
-    def _registra_entita(args: dict) -> dict:
-        """Registra/aggiorna l'entità collegata al cliente (animale/deceduto/...). Logica MCP."""
-        tel = stato.get("telefono") or ""
-        if not tel:
-            return {"errore": "Numero del chiamante non disponibile."}
-        fn = getattr(mcp_server.registra_entita, "fn", mcp_server.registra_entita)
-        return fn(telefono=tel, valori=args.get("valori") or {}, entita_id=int(args.get("entita_id") or 0))
-
-    def _aggiorna_ordine(args: dict) -> dict:
-        """Aggiorna le note di un ordine già creato del chiamante. Stessa logica del tool MCP."""
-        tel = stato.get("telefono") or ""
-        if not tel:
-            return {"errore": "Numero del chiamante non disponibile."}
-        fn = getattr(mcp_server.aggiorna_ordine, "fn", mcp_server.aggiorna_ordine)
-        return fn(telefono=tel, note=args.get("note", ""), ordine_id=int(args.get("ordine_id") or 0))
-
-    def _storico_ordini(args: dict) -> dict:
-        """Storico ordini del cliente (per disambiguare prodotti o riordinare). Logica MCP."""
-        tel = stato.get("telefono") or ""
-        if not tel:
-            return {"errore": "Numero del chiamante non disponibile."}
-        fn = getattr(mcp_server.storico_ordini, "fn", mcp_server.storico_ordini)
-        return fn(telefono=tel, giorni=int(args.get("giorni") or 0), limite=int(args.get("limite") or 10))
-
-    def _registra_ordine(righe: list, note: str, conferma: bool) -> dict:
-        """Registra un ordine sulla società del chiamante (sincrona, gira in thread).
-        Lo stato (confermato/bozza) lo decide il modello via `conferma`."""
-        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
-        if not contatto:
-            return {"errore": "Contatto non disponibile."}
-        righe = [r for r in (righe or []) if (r.get("descrizione") or "").strip()]
-        if not righe:
-            return {"errore": "Nessun prodotto da registrare."}
-        societa = crm.societa_di_contatto(db, contatto) or crm.trova_o_crea_societa(db, insegna=contatto.nome_completo)
-        if not contatto.societa_id:
-            contatto.societa_id = societa.id
-            contatto.is_primario = True
-            db.commit()
-        ordine, creato = crm.registra_ordine_conversazione(
-            db, societa_id=societa.id, righe=righe, contatto_id=contatto.id,
-            origine=OrigineOrdine.CLIENTE, canale=CanaleOrdine.VOCE,
-            note=(note or "").strip() or None,
-            stato=StatoOrdine.CONFERMATO if conferma else StatoOrdine.BOZZA,
-        )
-        if not ordine:
-            return {"errore": "Non sono riuscito a registrare l'ordine."}
-        return {"registrato": True, "aggiornato": not creato, "ordine_id": ordine.id,
-                "stato": ordine.stato.value, "articoli": ordine.n_articoli, "totale": ordine.totale}
-
-    def _invia_mail(args: dict) -> dict:
-        """Invia un'email a testo libero al cliente, con allegato opzionale per categoria (in thread)."""
-        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
-        if not contatto:
-            return {"errore": "Contatto non disponibile."}
-        return documenti_service.invia_mail_contatto(
-            db, contatto, args.get("testo", ""), args.get("oggetto", ""),
-            args.get("categoria_allegato", ""), profilo.nome_azienda(db))
-
-    def _invia_riepilogo_ordine(ordine_id) -> dict:
-        """Invia al cliente via email il riepilogo dell'ordine (sincrona, gira in thread).
-        Se manca l'email del contatto, lo segnala così il modello può chiederla."""
-        contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
-        if not contatto:
-            return {"errore": "Contatto non disponibile."}
-        ordine = None
-        if ordine_id:
-            try:
-                ordine = db.get(Ordine, int(ordine_id))
-            except (ValueError, TypeError):
-                ordine = None
-        if not ordine:
-            ordine = (db.query(Ordine).filter(Ordine.contatto_id == contatto.id)
-                      .order_by(Ordine.data.desc()).first())
-        if not ordine:
-            return {"errore": "Nessun ordine da riepilogare."}
-        email = (contatto.email or "").strip()
-        if not email:
-            return {"email_mancante": True,
-                    "messaggio": "Il cliente non ha un'email salvata: chiedigliela e salvala con salva_contatto, poi riprova."}
-        oggetto = f"Riepilogo ordine #{ordine.id} - {profilo.nome_azienda(db)}"
-        corpo = (f"Gentile {contatto.nome or contatto.nome_completo},\n\n"
-                 f"come da accordi telefonici, le confermiamo il suo ordine:\n\n"
-                 f"{crm.riepilogo_ordine(ordine)}\n\n"
-                 f"Cordiali saluti,\n{profilo.nome_azienda(db)}")
-        inviata = email_service.invia_email(destinatario=email, oggetto=oggetto, corpo=corpo)
-        if not inviata:
-            return {"errore": "Invio email non riuscito (verifica la configurazione Gmail)."}
-        return {"inviato": True, "email": email, "ordine_id": ordine.id}
-
-    def _trascrizione_ordinata() -> list:
-        """Trascrizione riordinata per ordine di creazione degli item (cronologico)."""
-        ordine = stato["ordine_item"]
-        def _key(d):
-            return d["ord"] if "ord" in d else ordine.get(d.get("item"), 10**9)
-        return sorted(stato["trascrizione"], key=_key)
-
     def _lascia_promemoria(args: dict) -> dict:
         """[admin] Registra un promemoria per un cliente. Stessa logica del tool MCP (verifica admin)."""
         tel = stato.get("telefono") or ""
@@ -768,21 +640,6 @@ async def media_stream(twilio_ws: WebSocket):
         }
         if name in ("salva_contatto", "aggiorna_contatto"):
             result = await asyncio.to_thread(_salva_contatto, args)
-        elif name == "aggiorna_locale":
-            result = await asyncio.to_thread(_aggiorna_locale, args)
-        elif name == "registra_entita":
-            result = await asyncio.to_thread(_registra_entita, args)
-        elif name in _LEGGI:
-            result = await asyncio.to_thread(_leggi, _LEGGI[name])
-        elif name == "registra_ordine":
-            result = await asyncio.to_thread(
-                _registra_ordine, args.get("righe", []), args.get("note", ""), bool(args.get("conferma")))
-        elif name == "aggiorna_ordine":
-            result = await asyncio.to_thread(_aggiorna_ordine, args)
-        elif name == "storico_ordini":
-            result = await asyncio.to_thread(_storico_ordini, args)
-        elif name == "invia_riepilogo_ordine":
-            result = await asyncio.to_thread(_invia_riepilogo_ordine, args.get("ordine_id"))
         elif name == "invia_mail":
             result = await asyncio.to_thread(_invia_mail, args)
         elif name == "lascia_promemoria":

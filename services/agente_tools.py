@@ -42,11 +42,6 @@ SCHEMI = [
         "Registra o aggiorna l'anagrafica della PERSONA (nome, cognome, ruolo, email, titolo, note). "
         "Passa SOLO i campi detti dal cliente; non inventare. `note` si accumula.",
         _ANAGRAFICA_PROPS),
-    _fn("aggiorna_locale",
-        "Aggiorna i dati del LOCALE/azienda del contatto (città, indirizzo, ragione sociale, P.IVA, "
-        "insegna). Passa solo i campi nuovi.",
-        {"citta": {"type": "string"}, "indirizzo": {"type": "string"},
-         "ragione_sociale": {"type": "string"}, "piva": {"type": "string"}, "insegna": {"type": "string"}}),
     _fn("registra_entita",
         "Registra (o aggiorna) l'ENTITÀ collegata al cliente (es. animale, deceduto, società): il "
         "tipo e i campi da raccogliere sono nel contesto. `valori` = {chiave: valore} dei campi. Passa "
@@ -124,25 +119,9 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
                                        giorni_validita=int(a.get("giorni_validita", 0) or 0), tenant=tenant)
         if nome == "salva_contatto":
             return m.salva_contatto(telefono=telefono, tenant=tenant, **a)
-        if nome == "aggiorna_locale":
-            return m.aggiorna_locale(telefono=telefono, tenant=tenant, **a)
         if nome == "registra_entita":
             return m.registra_entita(telefono=telefono, valori=a.get("valori") or {},
                                      entita_id=int(a.get("entita_id", 0) or 0), tenant=tenant)
-        if nome == "registra_ordine":
-            righe = [m.RigaOrdineInput(**r) for r in (a.get("righe") or [])]
-            return m.registra_ordine(telefono=telefono, righe=righe,
-                                     note=a.get("note", ""), conferma=bool(a.get("conferma", False)),
-                                     tenant=tenant)
-        if nome == "aggiorna_ordine":
-            return m.aggiorna_ordine(telefono=telefono, note=a.get("note", ""),
-                                     ordine_id=int(a.get("ordine_id", 0) or 0), tenant=tenant)
-        if nome == "storico_ordini":
-            return m.storico_ordini(telefono=telefono, giorni=int(a.get("giorni", 0) or 0),
-                                    limite=int(a.get("limite", 10) or 10), tenant=tenant)
-        if nome == "invia_riepilogo_ordine":
-            return m.invia_riepilogo_ordine(telefono=telefono, ordine_id=int(a.get("ordine_id", 0) or 0),
-                                            tenant=tenant)
         if nome == "invia_mail":
             return m.invia_mail(telefono=telefono, testo=a.get("testo", ""), oggetto=a.get("oggetto", ""),
                                 categoria_allegato=a.get("categoria_allegato", ""), tenant=tenant)
