@@ -18,6 +18,7 @@ import Clienti from './pages/Clienti'
 import Prompt from './pages/Prompt'
 import EntitaConfig from './pages/EntitaConfig'
 import EntitaLista from './pages/EntitaLista'
+import ToolsMCP from './pages/ToolsMCP'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session, loading } = useAuth()
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/documenti/test" element={<RetrieverTest />} />
         <Route path="/documenti/:id" element={<DocumentoDetail />} />
         <Route path="/prompt" element={<Prompt />} />
+        <Route path="/tools" element={<ToolsMCP />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/clienti" element={<Clienti />} />
         <Route path="/promemoria" element={<PromemoriaList />} />

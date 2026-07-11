@@ -334,6 +334,17 @@ class ContattoEntita(Base):
     contatto = relationship("Contatto", back_populates="legami_entita")
 
 
+class ToolDescrizione(Base):
+    """Override (globale) della descrizione di un tool esposto all'assistente, editabile da dashboard.
+    Se presente, sostituisce la docstring del tool su tutti i canali (voce, WhatsApp, ElevenLabs)."""
+    __tablename__ = "tool_descrizione"
+
+    id = Column(Integer, primary_key=True)
+    tool_name = Column(String(80), unique=True, nullable=False, index=True)
+    descrizione = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 # ---------- HORECA: agenti, locali, ordini ----------
 
 class Agente(Base):

@@ -564,6 +564,7 @@ async def media_stream(twilio_ws: WebSocket):
     async def configura_sessione():
         """Identifica/crea il contatto, imposta audio/voce/VAD/tool/istruzioni, fa salutare.
         Se chiama un amministratore NON lo registra come contatto (usa il prompt admin dedicato)."""
+        _tool_meta.applica_realtime(REALTIME_TOOLS)   # riflette gli override di descrizione editati in dashboard
         from services import promemoria
         tel = stato.get("telefono") or ""
         admin_call = promemoria.is_admin(tel, db)

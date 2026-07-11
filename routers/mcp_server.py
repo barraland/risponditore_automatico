@@ -822,5 +822,34 @@ def prenota_meeting(titolo: str, data_ora: str, durata_minuti: int = 30, invitat
         db.close()
 
 
+# Override LIVE delle descrizioni (editabili da dashboard) su ciò che ElevenLabs riceve via MCP:
+# wrappiamo il list_tools del tool manager per sostituire la description quando c'è un override.
+# Guardato: se l'API interna cambiasse, si tiene il comportamento originale (descrizioni docstring).
+def _inventario_tools():
+    """Lista dei tool esposti dall'MCP: [{nome, descrizione, parametri}]. Usata da list_tools e dall'API."""
+    return list(mcp._tool_manager.list_tools())
+
+
+try:
+    from services import tool_meta as _tm
+    _orig_list_tools = mcp._tool_manager.list_tools
+
+    def _list_tools_con_override():
+        tools = _orig_list_tools()
+        try:
+            ov = _tm.overrides()
+            for t in tools:
+                nome = getattr(t, "name", None)
+                if nome in ov:
+                    t.description = ov[nome]
+        except Exception:
+            pass
+        return tools
+
+    mcp._tool_manager.list_tools = _list_tools_con_override
+except Exception:
+    pass
+
+
 # Inizializza l'app Streamable HTTP (crea il session_manager, usato nel lifespan dell'app).
 http_app = mcp.streamable_http_app()

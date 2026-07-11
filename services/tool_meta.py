@@ -7,11 +7,31 @@ dashboard (prossimo passo: `descrizione(nome, db, azienda_id)` guarderà prima u
 """
 
 import inspect
+import time
+
+_cache = {"t": 0.0, "d": {}}   # override DB, cache 5s (edit da dashboard visibili quasi subito)
 
 
-def descrizione(nome: str) -> str:
-    """Descrizione canonica del tool `nome` = docstring della funzione MCP. '' se non trovata
-    (in tal caso i toolset tengono la descrizione che avevano: nessun impatto sul tool-calling)."""
+def overrides() -> dict:
+    """Mappa {tool_name: descrizione} dagli override editati in dashboard. Cache 5s. Non solleva."""
+    now = time.time()
+    if now - _cache["t"] > 5:
+        try:
+            from database import SessionLocal, ToolDescrizione
+            db = SessionLocal()
+            try:
+                _cache["d"] = {r.tool_name: r.descrizione for r in db.query(ToolDescrizione).all()
+                               if (r.descrizione or "").strip()}
+            finally:
+                db.close()
+            _cache["t"] = now
+        except Exception:
+            pass
+    return _cache["d"]
+
+
+def docstring(nome: str) -> str:
+    """Descrizione di default del tool = docstring della funzione MCP. '' se non trovata."""
     try:
         from routers import mcp_server as m  # lazy: evita import circolari (mcp_server importa whatsapp_agent)
         fn = getattr(m, nome, None)
@@ -20,6 +40,12 @@ def descrizione(nome: str) -> str:
         return inspect.cleandoc(doc).strip() if doc else ""
     except Exception:
         return ""
+
+
+def descrizione(nome: str) -> str:
+    """Descrizione effettiva del tool: override da dashboard se c'è, altrimenti la docstring MCP."""
+    ov = overrides().get(nome)
+    return ov if ov else docstring(nome)
 
 
 def applica_realtime(tools: list) -> list:

@@ -18,7 +18,7 @@ from database import (
     TipoAttivita, StatoRelazione, CanaleOrdine, StatoOrdine, OrigineOrdine,
     MessaggioChat, DirezioneMessaggio, ChiamataVoce,
 )
-from routers import webhook, dashboard, voice, horeca, mcp_server, elevenlabs, api_documenti, google_calendar, api_prompt
+from routers import webhook, dashboard, voice, horeca, mcp_server, elevenlabs, api_documenti, google_calendar, api_prompt, api_tools
 
 # ---------- Logging ----------
 
@@ -61,6 +61,7 @@ app.include_router(elevenlabs.router)
 app.include_router(api_documenti.router)
 app.include_router(google_calendar.router)
 app.include_router(api_prompt.router)
+app.include_router(api_tools.router)
 
 # Server MCP per agenti vocali esterni (ElevenLabs): endpoint Streamable HTTP su /mcp.
 # NB: middleware ASGI puri (NON BaseHTTPMiddleware) per non bufferare lo streaming SSE.

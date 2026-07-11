@@ -299,3 +299,12 @@ do $$ declare t text; begin
                    'using (public.can_see_tenant(azienda_id)) with check (public.can_see_tenant(azienda_id))', t);
   end loop;
 end $$;
+
+-- Override (globale) delle descrizioni dei tool, editabile da dashboard (letto solo dal backend).
+create table if not exists public.tool_descrizione (
+  id          serial primary key,
+  tool_name   varchar(80) unique not null,
+  descrizione text,
+  updated_at  timestamptz default now()
+);
+alter table public.tool_descrizione enable row level security;  -- accesso solo via backend
