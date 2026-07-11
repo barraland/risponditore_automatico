@@ -20,6 +20,7 @@ import RetrieverTest from './pages/RetrieverTest'
 import TicketList from './pages/Ticket'
 import Clienti from './pages/Clienti'
 import Prompt from './pages/Prompt'
+import EntitaConfig from './pages/EntitaConfig'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session, loading } = useAuth()
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/societa" replace />} />
         <Route path="/societa" element={<SocietaList />} />
         <Route path="/societa/:id" element={<SocietaDetail />} />
+        <Route path="/entita" element={<EntitaConfig />} />
         <Route path="/ordini" element={<OrdiniList />} />
         <Route path="/ordini/:id" element={<OrdineDetail />} />
         <Route path="/agenti" element={<AgentiList />} />
