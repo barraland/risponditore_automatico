@@ -85,11 +85,23 @@ def _n_entita_del_contatto(db: Session, contatto_id: int, tipo_id: int) -> list[
             .filter(ContattoEntita.contatto_id == contatto_id, Entita.tipo_id == tipo_id).all())
 
 
+def _collega_se_serve(db: Session, azienda_id: int | None, contatto_id: int, entita_id: int,
+                      ruolo: str = "") -> None:
+    esiste = (db.query(ContattoEntita)
+              .filter(ContattoEntita.contatto_id == contatto_id, ContattoEntita.entita_id == entita_id).first())
+    if not esiste:
+        db.add(ContattoEntita(azienda_id=azienda_id, contatto_id=contatto_id,
+                              entita_id=entita_id, ruolo=(ruolo or "").strip() or None))
+
+
 def registra(db: Session, azienda_id: int | None, contatto_id: int, valori: dict,
-             ruolo: str = "") -> dict:
-    """Crea (o aggiorna, se cardinalità 1) un'entità del tipo attivo e la collega al contatto.
-    Rispetta max_per_contatto. Ritorna {ok, entita_id, etichetta, mancanti} o {ok: False, errore}.
-    Non solleva."""
+             ruolo: str = "", entita_id: int | None = None) -> dict:
+    """Primitivo FLUIDO (la decisione crea/aggiorna/chiedi la prende l'LLM, non il backend):
+    - se `entita_id` è passato → AGGIORNA quella istanza (l'LLM ha deciso che è la stessa);
+    - altrimenti, se la cardinalità è 1 e ce n'è già una → aggiorna l'unica (vincolo, non policy);
+    - altrimenti → CREA una nuova istanza.
+    NESSUN matching per nome nel codice: l'omonimia la disambigua l'LLM col contesto + prompt.
+    Ritorna {ok, entita_id, etichetta, aggiornato, mancanti} o {ok: False, errore}. Non solleva."""
     try:
         tipo = tipo_attivo(db, azienda_id)
         if not tipo:
@@ -97,28 +109,38 @@ def registra(db: Session, azienda_id: int | None, contatto_id: int, valori: dict
         c = db.get(Contatto, contatto_id)
         if not c:
             return {"ok": False, "errore": "Contatto inesistente."}
-
+        aid = azienda_id or c.azienda_id
         valori = {k: v for k, v in (valori or {}).items() if v not in (None, "")}
-        esistenti = _n_entita_del_contatto(db, contatto_id, tipo.id)
 
-        # Cardinalità 1: aggiorna l'entità già collegata invece di crearne un'altra.
-        if tipo.max_per_contatto == 1 and esistenti:
-            e = esistenti[0].entita
+        def _aggiorna(e: Entita) -> dict:
             v = _valori(e)
             v.update(valori)
             e.valori = json.dumps(v, ensure_ascii=False)
             e.etichetta = _etichetta(tipo, v)
+            _collega_se_serve(db, aid, contatto_id, e.id, ruolo)
             db.commit()
             return {"ok": True, "entita_id": e.id, "etichetta": e.etichetta,
                     "aggiornato": True, "mancanti": campi_mancanti(tipo, v)}
 
-        # Cardinalità N (o prima entità): crea nuova istanza + legame.
-        e = Entita(azienda_id=azienda_id or c.azienda_id, tipo_id=tipo.id,
-                   etichetta=_etichetta(tipo, valori), valori=json.dumps(valori, ensure_ascii=False))
+        # 1) L'LLM indica un'istanza esistente → aggiorna QUELLA (sua decisione).
+        if entita_id:
+            e = db.get(Entita, entita_id)
+            if e and e.tipo_id == tipo.id and e.azienda_id in (None, aid):
+                return _aggiorna(e)
+            # id non valido: prosegue come nuova
+
+        # 2) Cardinalità 1: un solo slot → aggiorna l'esistente (vincolo strutturale).
+        esistenti = _n_entita_del_contatto(db, contatto_id, tipo.id)
+        if tipo.max_per_contatto == 1 and esistenti:
+            return _aggiorna(esistenti[0].entita)
+
+        # 3) Crea nuova istanza + legame.
+        e = Entita(azienda_id=aid, tipo_id=tipo.id, etichetta=_etichetta(tipo, valori),
+                   valori=json.dumps(valori, ensure_ascii=False))
         db.add(e)
         db.flush()
-        db.add(ContattoEntita(azienda_id=azienda_id or c.azienda_id, contatto_id=contatto_id,
-                              entita_id=e.id, ruolo=(ruolo or "").strip() or None))
+        db.add(ContattoEntita(azienda_id=aid, contatto_id=contatto_id, entita_id=e.id,
+                              ruolo=(ruolo or "").strip() or None))
         db.commit()
         return {"ok": True, "entita_id": e.id, "etichetta": e.etichetta,
                 "aggiornato": False, "mancanti": campi_mancanti(tipo, valori)}
@@ -126,6 +148,28 @@ def registra(db: Session, azienda_id: int | None, contatto_id: int, valori: dict
         logger.error("Registrazione entità fallita (contatto %s): %s", contatto_id, ex)
         db.rollback()
         return {"ok": False, "errore": "Errore interno nella registrazione dell'entità."}
+
+
+def contesto_contatto(db: Session, contatto_id: int, azienda_id: int | None = None) -> str:
+    """Riga di contesto per il prompt: entità GIÀ NOTE del cliente con i loro id surrogati, così
+    l'LLM può decidere se una è nuova o riferirsi a una esistente (anti-omonimia). Vuoto se nessun
+    tipo configurato."""
+    tipo = tipo_attivo(db, azienda_id)
+    if not tipo:
+        return ""
+    righe = []
+    for l in (db.query(ContattoEntita).filter(ContattoEntita.contatto_id == contatto_id)
+              .order_by(ContattoEntita.id).all()):
+        e = l.entita
+        if not e or e.tipo_id != tipo.id:
+            continue
+        extra = ", ".join(f"{k}: {vv}" for k, vv in _valori(e).items() if vv)[:140]
+        righe.append(f"#{e.id} {e.etichetta or '—'}" + (f" ({extra})" if extra else ""))
+    etich = tipo.nome_plurale or tipo.nome_singolare
+    if not righe:
+        return f"{etich} già noti di questo cliente: nessuno."
+    return (f"{etich} già noti di questo cliente (usa l'id per aggiornarne uno, ometti l'id per "
+            f"crearne uno nuovo): " + "; ".join(righe))
 
 
 def blocco_prompt(db: Session, azienda_id: int | None) -> str:
