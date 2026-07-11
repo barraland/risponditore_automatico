@@ -19,12 +19,9 @@ export default function ContattoDetail() {
   const [edit, setEdit] = useState(false)
   const { aziendaId } = useTenant()
 
-  const [entLabel, setEntLabel] = useState<string>('Entità collegate')
-
   async function carica() {
     const { data, error } = await supabase.from('contatti').select(
       '*, locali(id, insegna, stato_relazione),' +
-      ' contatto_entita(entita(id, etichetta, tipo_id)),' +
       ' messaggi_chat(id, direzione, testo, timestamp),' +
       ' chiamate_voce(id, iniziata_at, durata_sec, riassunto, trascrizione),' +
       ' ticket(id, titolo, stato, priorita, canale, created_at)'
@@ -33,9 +30,6 @@ export default function ContattoDetail() {
   }
   useEffect(() => {
     supabase.from('locali').select('id, insegna').eq('azienda_id', aziendaId).order('insegna').then(({ data }) => setLocali(data || []))
-    supabase.from('entita_tipo').select('nome_singolare, nome_plurale').eq('azienda_id', aziendaId)
-      .eq('attivo', true).order('id', { ascending: false }).limit(1)
-      .then(({ data }) => { const t = (data || [])[0] as any; if (t) setEntLabel(t.nome_plurale || t.nome_singolare) })
     carica()
   }, [id])
 
@@ -88,25 +82,12 @@ export default function ContattoDetail() {
                 </div>
               )}
               <div>
-                <div className="pw-muted" style={{ fontSize: 12 }}>{entLabel}</div>
-                <div>
-                  {(() => {
-                    const ents = (c.contatto_entita || []).map((l: any) => l.entita).filter(Boolean)
-                    if (!ents.length) return '—'
-                    return ents.map((e: any, i: number) => (
-                      <span key={e.id}>{i > 0 ? ', ' : ''}
-                        <Link to={`/entita-lista?open=${e.id}`}>{e.etichetta || '(senza nome)'}</Link>
-                      </span>
-                    ))
-                  })()}
-                </div>
-              </div>
-              <div>
                 <div className="pw-muted" style={{ fontSize: 12 }}>Note</div>
                 <div style={{ color: 'var(--fg-2)', whiteSpace: 'pre-wrap' }}>{c.note || '—'}</div>
               </div>
             </div>
           </div>
+          <EntitaCollegate contattoId={c.id} />
           <Promemoria contattoId={c.id} />
         </div>
         <Conversazioni c={c} />
@@ -249,6 +230,99 @@ function Promemoria({ contattoId }: { contattoId: number }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function etichettaDa(tipo: any, v: any): string {
+  if (tipo.campo_etichetta && v?.[tipo.campo_etichetta]) return String(v[tipo.campo_etichetta])
+  for (const c of (tipo.campi || [])) if (v?.[c.chiave]) return String(v[c.chiave])
+  return tipo.nome_singolare
+}
+
+// Entità collegate al contatto (M:N su contatto_entita): mostra la lista cliccabile + aggiungi/scollega.
+function EntitaCollegate({ contattoId }: { contattoId: number }) {
+  const { aziendaId } = useTenant()
+  const [tipo, setTipo] = useState<any>(null)
+  const [ents, setEnts] = useState<any[]>([])
+  const [adding, setAdding] = useState(false)
+
+  async function carica() {
+    if (!aziendaId) return
+    const { data: tt } = await supabase.from('entita_tipo').select('*')
+      .eq('azienda_id', aziendaId).eq('attivo', true).order('id', { ascending: false }).limit(1)
+    const t = (tt || [])[0]
+    setTipo(t ? { ...t, campi: (() => { try { return JSON.parse(t.campi || '[]') } catch { return [] } })() } : null)
+    const { data } = await supabase.from('contatto_entita')
+      .select('id, entita(id, etichetta, valori)').eq('contatto_id', contattoId).order('id')
+    setEnts(data || [])
+  }
+  useEffect(() => { carica() }, [contattoId, aziendaId])
+
+  async function scollega(legameId: number) {
+    if (!confirm('Scollegare questa entità dal contatto? (l\'entità non viene eliminata)')) return
+    await supabase.from('contatto_entita').delete().eq('id', legameId); carica()
+  }
+
+  const label = tipo ? (tipo.nome_plurale || tipo.nome_singolare) : 'Entità collegate'
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head pw-between" style={{ alignItems: 'center' }}>
+        <h3>{label}</h3>
+        {tipo && <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setAdding(true)}>+ Aggiungi</button>}
+      </div>
+      <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
+        {!tipo && <div className="pw-muted" style={{ fontSize: 13 }}>Nessun tipo di entità attivo. <Link to="/entita">Configuralo</Link>.</div>}
+        {tipo && ents.length === 0 && <div className="pw-muted" style={{ fontSize: 13 }}>Nessun/a «{tipo.nome_singolare}» collegato/a.</div>}
+        {ents.map((l: any) => l.entita && (
+          <div key={l.id} className="pw-between" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+            <Link to={`/entita-lista?open=${l.entita.id}`}>{l.entita.etichetta || '(senza nome)'}</Link>
+            <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Scollega" onClick={() => scollega(l.id)}>✕</button>
+          </div>
+        ))}
+      </div>
+      {adding && tipo && <AddEntita tipo={tipo} contattoId={contattoId} aziendaId={aziendaId!}
+        onClose={() => setAdding(false)} onSaved={() => { setAdding(false); carica() }} />}
+    </div>
+  )
+}
+
+function AddEntita({ tipo, contattoId, aziendaId, onClose, onSaved }: {
+  tipo: any; contattoId: number; aziendaId: number; onClose: () => void; onSaved: () => void
+}) {
+  const [valori, setValori] = useState<any>({})
+  const [err, setErr] = useState<string | null>(null)
+  const set = (k: string, v: any) => setValori((o: any) => ({ ...o, [k]: v }))
+
+  async function salva() {
+    const v = Object.fromEntries(Object.entries(valori).filter(([, x]) => x !== '' && x != null))
+    const { data: e, error } = await supabase.from('entita')
+      .insert({ azienda_id: aziendaId, tipo_id: tipo.id, etichetta: etichettaDa(tipo, v), valori: JSON.stringify(v) })
+      .select('id').single()
+    if (error) { setErr(error.message); return }
+    const { error: e2 } = await supabase.from('contatto_entita')
+      .insert({ azienda_id: aziendaId, contatto_id: contattoId, entita_id: (e as any).id })
+    if (e2) { setErr(e2.message); return }
+    onSaved()
+  }
+
+  return (
+    <Modal title={`Nuovo/a ${tipo.nome_singolare}`} width={560} onClose={onClose}
+      footer={<><button className="pw-btn pw-btn-ghost" onClick={onClose}>Annulla</button>
+               <button className="pw-btn pw-btn-primary" onClick={salva}>Aggiungi e collega</button></>}>
+      {err && <div className="pw-error">{err}</div>}
+      {(tipo.campi || []).map((c: any) => (
+        <div key={c.chiave} className="pw-field">
+          <label>{c.label}{c.obbligatorio ? ' *' : ''}</label>
+          {c.tipo === 'scelta'
+            ? <select className="pw-select" value={valori[c.chiave] ?? ''} onChange={e => set(c.chiave, e.target.value)}>
+                <option value="">—</option>
+                {(c.opzioni || []).map((o: string) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            : <input className="pw-input" type={c.tipo === 'numero' ? 'number' : c.tipo === 'data' ? 'date' : 'text'}
+                value={valori[c.chiave] ?? ''} onChange={e => set(c.chiave, e.target.value)} />}
+        </div>
+      ))}
+    </Modal>
   )
 }
 

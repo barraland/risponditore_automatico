@@ -60,28 +60,6 @@ SCHEMI = [
         {"valori": {"type": "object", "description": "Campi dell'entità {chiave: valore}."},
          "entita_id": {"type": "integer", "description": "Solo per aggiornare un'entità già nota."}},
         ["valori"]),
-    _fn("registra_ordine",
-        "Registra un ordine del cliente. `conferma`=false lo lascia in BOZZA (default consigliato: "
-        "la conferma la dà il cliente via email). Se esiste già una bozza per la trattativa, la "
-        "aggiorna.",
-        {"righe": {"type": "array", "items": {"type": "object", "properties": {
-            "descrizione": {"type": "string"}, "quantita": {"type": "number"},
-            "unita": {"type": "string"}, "prezzo_unitario": {"type": "number"}},
-            "required": ["descrizione"]}},
-         "note": {"type": "string"}, "conferma": {"type": "boolean"}},
-        ["righe"]),
-    _fn("aggiorna_ordine",
-        "Aggiorna le NOTE di un ordine già registrato (0/omesso = l'ultimo). Le note sostituiscono "
-        "le precedenti.",
-        {"note": {"type": "string"}, "ordine_id": {"type": "integer"}}, ["note"]),
-    _fn("storico_ordini",
-        "Ultimi ordini del cliente (per disambiguare prodotti / riordinare). `giorni`: 7=ultima "
-        "settimana, 30=ultimo mese, 0=tutti.",
-        {"giorni": {"type": "integer"}, "limite": {"type": "integer"}}),
-    _fn("invia_riepilogo_ordine",
-        "Invia al cliente via email il riepilogo di un ordine (0/omesso = l'ultimo). Serve l'email "
-        "del contatto.",
-        {"ordine_id": {"type": "integer"}}),
     _fn("invia_mail",
         "Invia un'email a testo libero al cliente. `testo` obbligatorio (lo scrivi tu). "
         "`categoria_allegato` opzionale per allegare documenti di quella categoria.",

@@ -4,10 +4,6 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import SocietaList from './pages/SocietaList'
 import SocietaDetail from './pages/SocietaDetail'
-import OrdiniList from './pages/OrdiniList'
-import OrdineDetail from './pages/OrdineDetail'
-import AgentiList from './pages/AgentiList'
-import AgenteDetail from './pages/AgenteDetail'
 import ContattiList from './pages/ContattiList'
 import ContattoDetail from './pages/ContattoDetail'
 import Admin from './pages/Admin'
@@ -40,10 +36,6 @@ export default function App() {
         <Route path="/societa/:id" element={<SocietaDetail />} />
         <Route path="/entita" element={<EntitaConfig />} />
         <Route path="/entita-lista" element={<EntitaLista />} />
-        <Route path="/ordini" element={<OrdiniList />} />
-        <Route path="/ordini/:id" element={<OrdineDetail />} />
-        <Route path="/agenti" element={<AgentiList />} />
-        <Route path="/agenti/:id" element={<AgenteDetail />} />
         <Route path="/contatti" element={<ContattiList />} />
         <Route path="/contatti/:id" element={<ContattoDetail />} />
         <Route path="/ticket" element={<TicketList />} />

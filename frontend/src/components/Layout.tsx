@@ -104,7 +104,6 @@ export default function Layout() {
   }, [aziendaId])
 
   const VOCI: [string, string, boolean][] = [
-    ['/ordini', 'Ordini', mostra('mostra_ordini')],
     ['/ticket', 'Ticket', true],
     ['/documenti', 'Base di Conoscenza', true],
     ['/promemoria', 'Promemoria', true],
