@@ -125,18 +125,18 @@ export default function Layout() {
 
         <div className="pw-side-foot">
           <TenantSwitcher />
-          <div className="pw-side-actions">
-            <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setGoogle(true)}
-              title="Collega l'account Google del cliente (Calendar + invio email)">🔗 Google</button>
-            <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
-              onClick={() => setConfig(true)} style={{ fontSize: 15, lineHeight: 1 }}>⚙️</button>
-          </div>
-          <div className="pw-side-email" title={session?.user?.email || ''}>{session?.user?.email}</div>
-          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => signOut()}>Esci</button>
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
+            onClick={() => setConfig(true)}>⚙️ Personalizza</button>
         </div>
       </aside>
 
       <div className="pw-main">
+        <header className="pw-topbar">
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setGoogle(true)}
+            title="Collega l'account Google del cliente (Calendar + invio email)">🔗 Google account</button>
+          <span className="pw-topbar-email" title={session?.user?.email || ''}>{session?.user?.email}</span>
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => signOut()}>Esci</button>
+        </header>
         <main className="pw-container">
           <Outlet key={aziendaId ?? 'none'} />
         </main>

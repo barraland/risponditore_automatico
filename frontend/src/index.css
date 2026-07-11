@@ -93,6 +93,15 @@ code { font-family: var(--font-mono); color: var(--acc-2); background: var(--bg-
 .pw-side-email { font-size: 12px; color: var(--fg-4); word-break: break-all; line-height: 1.35; }
 .pw-main { flex: 1 1 auto; min-width: 0; }
 
+/* Topbar (in alto a destra): account Google + utente + Esci */
+.pw-topbar {
+  position: sticky; top: 0; z-index: 12; min-height: 52px;
+  display: flex; justify-content: flex-end; align-items: center; gap: 12px;
+  padding: 10px 30px; border-bottom: 1px solid var(--border);
+  background: rgba(10,11,15,.55); backdrop-filter: blur(12px) saturate(140%);
+}
+.pw-topbar-email { font-size: 13px; color: var(--fg-3); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Hamburger + backdrop (mobile) */
 .pw-burger {
   display: none; position: fixed; top: 12px; left: 12px; z-index: 40;
@@ -110,7 +119,8 @@ code { font-family: var(--font-mono); color: var(--acc-2); background: var(--bg-
   }
   .pw-side.open { transform: translateX(0); }
   .pw-side-backdrop.show { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 15; }
-  .pw-container { padding: 64px 18px 56px; }
+  .pw-topbar { padding-left: 62px; }   /* spazio per l'hamburger fisso */
+  .pw-container { padding: 24px 18px 56px; }
 }
 
 .pw-row { display: flex; align-items: center; gap: 12px; }
