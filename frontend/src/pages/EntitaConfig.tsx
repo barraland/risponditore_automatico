@@ -20,9 +20,11 @@ const slug = (s: string) =>
 // riporta al parent l'array parsato. Il valore mostrato non viene ri-derivato dall'array a ogni tasto.
 function OpzioniInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [txt, setTxt] = useState((value || []).join(', '))
+  // Consenti SOLO lettere (anche accentate), numeri, spazio e virgola: scarta altra punteggiatura.
+  const pulisci = (s: string) => s.replace(/[^\p{L}\p{N} ,]/gu, '')
   return (
     <input className="pw-input" value={txt} placeholder="Es. cane, gatto, coniglio"
-      onChange={e => { setTxt(e.target.value); onChange(e.target.value.split(',').map(s => s.trim()).filter(Boolean)) }} />
+      onChange={e => { const v = pulisci(e.target.value); setTxt(v); onChange(v.split(',').map(s => s.trim()).filter(Boolean)) }} />
   )
 }
 
