@@ -301,6 +301,23 @@ DEFAULT_MODULI = [
         ),
     },
     {
+        "chiave": "registra_entita", "ordine": 56, "titolo": "Registrazione entità collegata",
+        "audience": "cliente",
+        "canali": ["voce", "whatsapp"],
+        "testo": (
+            "REGISTRAZIONE DELL'ENTITÀ COLLEGATA AL CLIENTE\n"
+            "Se nel contesto compare un'entità collegata (es. animale, deceduto, società), raccogli i "
+            "campi indicati come OBBLIGATORI e registrala con lo strumento registra_entita (un record "
+            "per entità).\n"
+            "- Guarda l'elenco delle entità GIÀ NOTE del cliente (con id) nel contesto. Se quella di cui "
+            "parlate NON è tra le note → registrala come NUOVA (ometti entita_id).\n"
+            "- Se il nome coincide con una già nota → NON dare per scontato che sia la stessa: chiedi "
+            "conferma (es. «È lo stesso Fido del 2025 o un altro?») prima di decidere se aggiornare "
+            "quella (passa il suo entita_id) o crearne una nuova.\n"
+            "- Non inventare: registra solo ciò che il cliente ti dice."
+        ),
+    },
+    {
         "chiave": "qualificare_lead", "ordine": 52, "titolo": "Come qualificare il lead",
         "audience": "cliente",
         "canali": ["voce", "whatsapp"],

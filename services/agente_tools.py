@@ -52,6 +52,14 @@ SCHEMI = [
         "insegna). Passa solo i campi nuovi.",
         {"citta": {"type": "string"}, "indirizzo": {"type": "string"},
          "ragione_sociale": {"type": "string"}, "piva": {"type": "string"}, "insegna": {"type": "string"}}),
+    _fn("registra_entita",
+        "Registra (o aggiorna) l'ENTITÀ collegata al cliente (es. animale, deceduto, società): il "
+        "tipo e i campi da raccogliere sono nel contesto. `valori` = {chiave: valore} dei campi. Passa "
+        "`entita_id` SOLO per aggiornare una delle entità GIÀ NOTE elencate nel contesto; ometti per "
+        "crearne una nuova. Non dare per scontato che due omonimi siano la stessa: se dubbi, chiedi.",
+        {"valori": {"type": "object", "description": "Campi dell'entità {chiave: valore}."},
+         "entita_id": {"type": "integer", "description": "Solo per aggiornare un'entità già nota."}},
+        ["valori"]),
     _fn("registra_ordine",
         "Registra un ordine del cliente. `conferma`=false lo lascia in BOZZA (default consigliato: "
         "la conferma la dà il cliente via email). Se esiste già una bozza per la trattativa, la "
@@ -147,6 +155,9 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
             return m.aggiorna_contatto(telefono=telefono, tenant=tenant, **a)
         if nome == "aggiorna_locale":
             return m.aggiorna_locale(telefono=telefono, tenant=tenant, **a)
+        if nome == "registra_entita":
+            return m.registra_entita(telefono=telefono, valori=a.get("valori") or {},
+                                     entita_id=int(a.get("entita_id", 0) or 0), tenant=tenant)
         if nome == "registra_ordine":
             righe = [m.RigaOrdineInput(**r) for r in (a.get("righe") or [])]
             return m.registra_ordine(telefono=telefono, righe=righe,

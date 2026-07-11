@@ -25,6 +25,7 @@ from database import (
     Documento, StatoDocumento, TestoCategoria,
 )
 from services import crm
+from services import entita as entita_service
 from services import promemoria
 from services import inoltri
 from services import telefonia
@@ -584,6 +585,25 @@ def lascia_promemoria(nome_cliente: str, testo: str, societa: str = "",
             return {"ok": False, "errore": "Testo del promemoria mancante."}
         return {"ok": True, "promemoria_id": p.id, "cliente": c.nome_completo,
                 "scade_il": p.scade_il.strftime("%d/%m/%Y") if p.scade_il else None}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
+def registra_entita(telefono: str = "", valori: dict | None = None, entita_id: int = 0,
+                    tenant: str = "") -> dict:
+    """Registra (o aggiorna) l'ENTITÀ collegata al cliente — es. un animale, un deceduto, una società:
+    il TIPO e i campi da raccogliere te li dico nel contesto. `valori` = dizionario {chiave: valore}
+    dei campi (usa le chiavi indicate nel contesto). Passa `entita_id` SOLO se stai aggiornando una
+    delle entità GIÀ NOTE elencate nel contesto (quel record specifico); OMETTILO per crearne una
+    nuova. Non dedurre da solo che due con lo stesso nome siano la stessa: se hai dubbi, chiedi."""
+    _log_tool("registra_entita", telefono=telefono, valori=valori, entita_id=entita_id)
+    db = SessionLocal()
+    try:
+        c = _contatto(db, telefono, tenant)
+        return entita_service.registra(db, _aid(tenant), c.id, valori or {},
+                                       entita_id=(int(entita_id) or None))
     finally:
         db.close()
 

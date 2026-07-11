@@ -40,6 +40,7 @@ from services import retriever
 from services import crm
 from services import email as email_service
 from services import documenti as documenti_service
+from services import entita as entita_service
 from services.contesto import contesto_temporale
 
 logger = logging.getLogger(__name__)
@@ -502,6 +503,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             + istruzioni.blocco_regole(db)
             + documenti_service.catalogo_prompt(db)
             + documenti_service.testo_sempre_presente(db)
+            + entita_service.blocco_prompt(db, None)
             + promemoria.blocco_prompt(db, contatto.id)
         )
         _soc = crm.societa_di_contatto(db, contatto)
@@ -527,6 +529,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         user = (
             f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo_da_ultimo(db, contatto.id)}\n\n"
             f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
+            f"{entita_service.contesto_contatto(db, contatto.id)}\n\n"
             f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
             f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
             f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"

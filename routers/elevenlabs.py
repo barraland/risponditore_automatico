@@ -25,6 +25,7 @@ from services import profilo
 from services import istruzioni
 from services import prompt_moduli
 from services import documenti as documenti_service
+from services import entita as entita_service
 from services import promemoria
 from services import inoltri
 from services import telefonia
@@ -196,9 +197,13 @@ async def init_conversazione(request: Request):
                                     + istruzioni.blocco_regole(db, azienda_id=aid)
                                     + documenti_service.catalogo_prompt(db, azienda_id=aid)
                                     + documenti_service.testo_sempre_presente(db, azienda_id=aid)
+                                    + entita_service.blocco_prompt(db, aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
                 dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)
+                _cxe = entita_service.contesto_contatto(db, contatto.id, azienda_id=aid)
+                if _cxe:
+                    dv["configurazione"] += "\n\n" + _cxe
         # ElevenLabs sostituisce {{configurazione}} ma NON i {{segnaposto}} contenuti dentro:
         # li risolviamo qui, così {{telefono_chiamante}}, {{cliente_conosciuto}}, ecc. arrivano
         # già valorizzati ai tool e nel prompt (altrimenti i tool ricevono il testo letterale).

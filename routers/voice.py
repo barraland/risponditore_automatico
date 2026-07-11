@@ -42,6 +42,7 @@ from services import profilo
 from services import crm
 from services import email as email_service
 from services import documenti as documenti_service
+from services import entita as entita_service
 from services import telefonia
 from services.contesto import contesto_temporale
 # Riusa la STESSA logica dei tool MCP (ElevenLabs) per i documenti e l'anagrafica locale,
@@ -139,6 +140,25 @@ REALTIME_TOOLS = [
                 "insegna": {"type": "string"},
             },
             "required": [],
+        },
+    },
+    {
+        "type": "function",
+        "name": "registra_entita",
+        "description": (
+            "Registra (o aggiorna) l'ENTITÀ collegata al cliente (es. animale, deceduto, società): "
+            "il tipo e i campi da raccogliere sono nel contesto. Passa `valori` = {chiave: valore} "
+            "dei campi. Usa `entita_id` SOLO per aggiornare una delle entità GIÀ NOTE elencate nel "
+            "contesto; omettilo per crearne una nuova. Non dare per scontato che due omonimi siano la "
+            "stessa entità: se hai dubbi, chiedi al cliente."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "valori": {"type": "object", "description": "Campi dell'entità {chiave: valore}."},
+                "entita_id": {"type": "integer", "description": "Solo per aggiornare un'entità già nota."},
+            },
+            "required": ["valori"],
         },
     },
     {"type": "function", "name": "leggi_listini_prezzi",
@@ -338,10 +358,14 @@ def _build_voice_instructions(db, contatto: Contatto, telefono: str = "") -> str
                       + istruzioni.blocco_regole(db)
                       + documenti_service.catalogo_prompt(db)
                       + documenti_service.testo_sempre_presente(db)
+                      + entita_service.blocco_prompt(db, None)
                       + inoltri.blocco_prompt(db)).strip()
     if contatto:  # promemoria mirati dell'amministratore per questo cliente
         from services import promemoria
         configurazione += promemoria.blocco_prompt(db, contatto.id)
+        _cxe = entita_service.contesto_contatto(db, contatto.id)
+        if _cxe:
+            configurazione += "\n\n" + _cxe
 
     nome = (contatto.nome or "").strip() if contatto else ""
     cognome = (contatto.cognome or "").strip() if contatto else ""
@@ -737,6 +761,14 @@ async def media_stream(twilio_ws: WebSocket):
             insegna=args.get("insegna", ""),
         )
 
+    def _registra_entita(args: dict) -> dict:
+        """Registra/aggiorna l'entità collegata al cliente (animale/deceduto/...). Logica MCP."""
+        tel = stato.get("telefono") or ""
+        if not tel:
+            return {"errore": "Numero del chiamante non disponibile."}
+        fn = getattr(mcp_server.registra_entita, "fn", mcp_server.registra_entita)
+        return fn(telefono=tel, valori=args.get("valori") or {}, entita_id=int(args.get("entita_id") or 0))
+
     def _aggiorna_ordine(args: dict) -> dict:
         """Aggiorna le note di un ordine già creato del chiamante. Stessa logica del tool MCP."""
         tel = stato.get("telefono") or ""
@@ -857,6 +889,8 @@ async def media_stream(twilio_ws: WebSocket):
             result = await asyncio.to_thread(_salva_contatto, args)
         elif name == "aggiorna_locale":
             result = await asyncio.to_thread(_aggiorna_locale, args)
+        elif name == "registra_entita":
+            result = await asyncio.to_thread(_registra_entita, args)
         elif name in _LEGGI:
             result = await asyncio.to_thread(_leggi, _LEGGI[name])
         elif name == "registra_ordine":
