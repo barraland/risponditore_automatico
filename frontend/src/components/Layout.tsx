@@ -1,10 +1,32 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
 import { supabase } from '../lib/supabase'
 import Modal from './Modal'
 import GoogleConnect from './GoogleConnect'
+
+// Icona SVG (stile Feather, eredita currentColor).
+function Ic({ children }: { children: ReactNode }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
+  )
+}
+
+const ICON: Record<string, ReactNode> = {
+  contatti: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  societa: <><path d="M3 21h18" /><path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16" /><path d="M15 21V9h4a2 2 0 0 1 2 2v10" /><path d="M9 7h2M9 11h2M9 15h2" /></>,
+  agenti: <><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>,
+  ordini: <><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></>,
+  ticket: <><path d="M2 9a3 3 0 0 0 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 0 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z" /><path d="M13 5v2M13 11v2M13 17v2" /></>,
+  documenti: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>,
+  promemoria: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>,
+  inoltri: <><polyline points="17 1 21 5 17 9" /><line x1="13" y1="5" x2="21" y2="5" /><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></>,
+  calendario: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></>,
+  assistente: <><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z" /></>,
+  clienti: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /></>,
+}
 
 function TenantSwitcher() {
   const { isSuperAdmin, aziende, aziendaId, setAziendaId } = useTenant()
@@ -64,40 +86,62 @@ export default function Layout() {
   const { isSuperAdmin, aziendaId, aziende } = useTenant()
   const [config, setConfig] = useState(false)
   const [google, setGoogle] = useState(false)
+  const [menu, setMenu] = useState(false)   // drawer aperto (mobile)
   const attiva = aziende.find(a => a.id === aziendaId)
   const mostra = (campo: string) => (attiva as any)?.[campo] !== false  // default: visibile
+
+  const VOCI: [string, string, boolean][] = [
+    ['/contatti', 'Contatti', true],
+    ['/societa', 'Società', true],
+    ['/agenti', 'Agenti', mostra('mostra_agenti')],
+    ['/ordini', 'Ordini', mostra('mostra_ordini')],
+    ['/ticket', 'Ticket', true],
+    ['/documenti', 'Base di Conoscenza', true],
+    ['/promemoria', 'Promemoria', true],
+    ['/inoltri', 'Inoltra & Admin', true],
+    ['/calendario', 'Calendario', mostra('mostra_calendario')],
+  ]
+  const key = (path: string) => path.replace('/', '')
+
   return (
-    <>
-      <nav className="pw-nav">
+    <div className="pw-app">
+      <button className="pw-burger" onClick={() => setMenu(true)} aria-label="Apri menù">
+        <Ic><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></Ic>
+      </button>
+      <div className={`pw-side-backdrop ${menu ? 'show' : ''}`} onClick={() => setMenu(false)} />
+
+      <aside className={`pw-side ${menu ? 'open' : ''}`}>
         <a href="https://pipework.it/" target="_blank" rel="noreferrer" className="pw-brand">
           <img src="/pipework-mark.svg" alt="Pipework" /> Pipework
         </a>
-        <div className="pw-nav-links">
-          <NavLink to="/contatti">Contatti</NavLink>
-          <NavLink to="/societa">Società</NavLink>
-          {mostra('mostra_agenti') && <NavLink to="/agenti">Agenti</NavLink>}
-          {mostra('mostra_ordini') && <NavLink to="/ordini">Ordini</NavLink>}
-          <NavLink to="/ticket">Ticket</NavLink>
-          <NavLink to="/documenti">Base di Conoscenza</NavLink>
-          <NavLink to="/promemoria">Promemoria</NavLink>
-          <NavLink to="/inoltri">Inoltra & Admin</NavLink>
-          {mostra('mostra_calendario') && <NavLink to="/calendario">Calendario</NavLink>}
-        </div>
-        <div className="pw-nav-right">
+        <nav className="pw-side-nav" onClick={() => setMenu(false)}>
+          {VOCI.filter(([, , show]) => show).map(([to, label]) => (
+            <NavLink key={to} to={to}><Ic>{ICON[key(to)]}</Ic><span>{label}</span></NavLink>
+          ))}
+          <div className="pw-side-sep" />
+          <NavLink to="/prompt"><Ic>{ICON.assistente}</Ic><span>Assistente</span></NavLink>
+          {isSuperAdmin && <NavLink to="/clienti"><Ic>{ICON.clienti}</Ic><span>Clienti</span></NavLink>}
+        </nav>
+
+        <div className="pw-side-foot">
           <TenantSwitcher />
-          {isSuperAdmin && <NavLink to="/clienti">Clienti</NavLink>}
-          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setGoogle(true)}
-            title="Collega l'account Google del cliente (Calendar + invio email)">Google account</button>
-          <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
-            onClick={() => setConfig(true)} style={{ fontSize: 16, lineHeight: 1 }}>⚙️</button>
-          <NavLink to="/prompt">Assistente</NavLink>
-          <span className="pw-muted" style={{ fontSize: 13 }}>{session?.user?.email}</span>
+          <div className="pw-side-actions">
+            <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setGoogle(true)}
+              title="Collega l'account Google del cliente (Calendar + invio email)">🔗 Google</button>
+            <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
+              onClick={() => setConfig(true)} style={{ fontSize: 15, lineHeight: 1 }}>⚙️</button>
+          </div>
+          <div className="pw-side-email" title={session?.user?.email || ''}>{session?.user?.email}</div>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => signOut()}>Esci</button>
         </div>
-      </nav>
-      <main className="pw-container">
-        <Outlet key={aziendaId ?? 'none'} />
-      </main>
+      </aside>
+
+      <div className="pw-main">
+        <main className="pw-container">
+          <Outlet key={aziendaId ?? 'none'} />
+        </main>
+      </div>
+
       {config && <GuiConfig onClose={() => setConfig(false)} />}
       {google && (
         <Modal title="Google account del cliente" onClose={() => setGoogle(false)}>
@@ -108,6 +152,6 @@ export default function Layout() {
           <GoogleConnect bare />
         </Modal>
       )}
-    </>
+    </div>
   )
 }
