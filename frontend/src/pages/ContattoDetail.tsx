@@ -269,17 +269,34 @@ function EntitaCollegate({ contattoId }: { contattoId: number }) {
         ))}
       </div>
       {adding && tipo && <AddEntita tipo={tipo} contattoId={contattoId} aziendaId={aziendaId!}
+        giaLegati={ents.map((l: any) => l.entita?.id).filter(Boolean)}
         onClose={() => setAdding(false)} onSaved={() => { setAdding(false); carica() }} />}
     </div>
   )
 }
 
-function AddEntita({ tipo, contattoId, aziendaId, onClose, onSaved }: {
-  tipo: any; contattoId: number; aziendaId: number; onClose: () => void; onSaved: () => void
+function AddEntita({ tipo, contattoId, aziendaId, giaLegati, onClose, onSaved }: {
+  tipo: any; contattoId: number; aziendaId: number; giaLegati: number[]; onClose: () => void; onSaved: () => void
 }) {
   const [valori, setValori] = useState<any>({})
   const [err, setErr] = useState<string | null>(null)
+  const [esistenti, setEsistenti] = useState<any[]>([])
+  const [sel, setSel] = useState('')
   const set = (k: string, v: any) => setValori((o: any) => ({ ...o, [k]: v }))
+
+  // Entità già esistenti dello stesso tipo, non ancora collegate a QUESTO contatto (per il M:N).
+  useEffect(() => {
+    supabase.from('entita').select('id, etichetta').eq('azienda_id', aziendaId).eq('tipo_id', tipo.id)
+      .order('id', { ascending: false })
+      .then(({ data }) => setEsistenti((data || []).filter((e: any) => !giaLegati.includes(e.id))))
+  }, [])
+
+  async function collega(entitaId: number) {
+    const { error } = await supabase.from('contatto_entita')
+      .insert({ azienda_id: aziendaId, contatto_id: contattoId, entita_id: entitaId })
+    if (error) { setErr(error.message); return }
+    onSaved()
+  }
 
   async function salva() {
     const v = Object.fromEntries(Object.entries(valori).filter(([, x]) => x !== '' && x != null))
@@ -294,10 +311,27 @@ function AddEntita({ tipo, contattoId, aziendaId, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={`Nuovo/a ${tipo.nome_singolare}`} width={560} onClose={onClose}
+    <Modal title={`Collega ${tipo.nome_singolare}`} width={560} onClose={onClose}
       footer={<><button className="pw-btn pw-btn-ghost" onClick={onClose}>Annulla</button>
-               <button className="pw-btn pw-btn-primary" onClick={salva}>Aggiungi e collega</button></>}>
+               <button className="pw-btn pw-btn-primary" onClick={salva}>Crea nuovo/a e collega</button></>}>
       {err && <div className="pw-error">{err}</div>}
+
+      {esistenti.length > 0 && (
+        <>
+          <div className="pw-field">
+            <label>Collega un/una «{tipo.nome_singolare}» già esistente</label>
+            <div className="pw-row" style={{ gap: 8 }}>
+              <select className="pw-select" value={sel} onChange={e => setSel(e.target.value)} style={{ flex: 1 }}>
+                <option value="">— scegli —</option>
+                {esistenti.map(e => <option key={e.id} value={e.id}>{e.etichetta || `#${e.id}`}</option>)}
+              </select>
+              <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={!sel} onClick={() => collega(Number(sel))}>Collega</button>
+            </div>
+          </div>
+          <div className="pw-muted" style={{ fontSize: 12, textAlign: 'center', margin: '4px 0' }}>— oppure crea nuovo/a —</div>
+        </>
+      )}
+
       {(tipo.campi || []).map((c: any) => (
         <div key={c.chiave} className="pw-field">
           <label>{c.label}{c.obbligatorio ? ' *' : ''}</label>
