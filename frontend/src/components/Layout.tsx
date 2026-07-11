@@ -94,7 +94,6 @@ export default function Layout() {
   const VOCI: [string, string, boolean][] = [
     ['/contatti', 'Contatti', true],
     ['/societa', 'Società', true],
-    ['/agenti', 'Agenti', mostra('mostra_agenti')],
     ['/ordini', 'Ordini', mostra('mostra_ordini')],
     ['/ticket', 'Ticket', true],
     ['/documenti', 'Base di Conoscenza', true],

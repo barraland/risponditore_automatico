@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase'
 import { useTenant } from '../lib/tenant'
 
 type Campo = { chiave: string; label: string; tipo: string; obbligatorio: boolean; opzioni: string[] }
+type Tipo = {
+  id?: number; nome_singolare: string; nome_plurale: string; max_per_contatto: number
+  condivisibile: boolean; campo_etichetta: string; campi: Campo[]; attivo: boolean
+}
 
 const TIPI: [string, string][] = [
   ['testo', 'Testo'], ['numero', 'Numero'], ['data', 'Data'], ['scelta', 'Scelta (lista)'],
@@ -12,91 +16,176 @@ const slug = (s: string) =>
   (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'campo'
 
+const vuoto = (): Tipo => ({
+  nome_singolare: '', nome_plurale: '', max_per_contatto: 0, condivisibile: true,
+  campo_etichetta: '', campi: [], attivo: true,
+})
+
+const templateSocieta = (): Tipo => ({
+  nome_singolare: 'Società', nome_plurale: 'Società', max_per_contatto: 1, condivisibile: true,
+  campo_etichetta: 'insegna', attivo: true,
+  campi: [
+    { chiave: 'insegna', label: 'Insegna', tipo: 'testo', obbligatorio: true, opzioni: [] },
+    { chiave: 'ragione_sociale', label: 'Ragione sociale', tipo: 'testo', obbligatorio: false, opzioni: [] },
+    { chiave: 'citta', label: 'Città', tipo: 'testo', obbligatorio: false, opzioni: [] },
+    { chiave: 'piva', label: 'Partita IVA', tipo: 'testo', obbligatorio: false, opzioni: [] },
+  ],
+})
+
 export default function EntitaConfig() {
   const { aziendaId } = useTenant()
-  const [id, setId] = useState<number | null>(null)
-  const [nomeSing, setNomeSing] = useState('')
-  const [nomePlur, setNomePlur] = useState('')
-  const [maxPer, setMaxPer] = useState(0)            // 0 = illimitato (N), 1 = una sola
-  const [condiv, setCondiv] = useState(true)
-  const [campoEtichetta, setCampoEtichetta] = useState('')
-  const [campi, setCampi] = useState<Campo[]>([])
+  const [tipi, setTipi] = useState<Tipo[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
+  const [editing, setEditing] = useState<Tipo | null>(null)
 
   async function carica() {
     if (!aziendaId) { setLoading(false); return }
     setLoading(true); setErr(null)
     const { data, error } = await supabase.from('entita_tipo')
-      .select('*').eq('azienda_id', aziendaId).eq('attivo', true)
-      .order('id', { ascending: false }).limit(1)
+      .select('*').eq('azienda_id', aziendaId).order('id', { ascending: true })
     if (error) { setErr(error.message); setLoading(false); return }
-    const t = (data || [])[0]
-    if (t) {
-      setId(t.id); setNomeSing(t.nome_singolare || ''); setNomePlur(t.nome_plurale || '')
-      setMaxPer(t.max_per_contatto ?? 0); setCondiv(t.condivisibile !== false)
-      setCampoEtichetta(t.campo_etichetta || '')
-      try { setCampi(JSON.parse(t.campi || '[]')) } catch { setCampi([]) }
-    }
+    setTipi((data || []).map((t: any) => ({
+      id: t.id, nome_singolare: t.nome_singolare || '', nome_plurale: t.nome_plurale || '',
+      max_per_contatto: t.max_per_contatto ?? 0, condivisibile: t.condivisibile !== false,
+      campo_etichetta: t.campo_etichetta || '', attivo: !!t.attivo,
+      campi: (() => { try { return JSON.parse(t.campi || '[]') } catch { return [] } })(),
+    })))
     setLoading(false)
   }
   useEffect(() => { carica() }, [aziendaId])
 
-  function patchCampo(i: number, p: Partial<Campo>) {
-    setCampi(cs => cs.map((c, j) => j === i ? { ...c, ...p } : c))
+  async function attiva(t: Tipo) {
+    if (!aziendaId || !t.id) return
+    await supabase.from('entita_tipo').update({ attivo: false }).eq('azienda_id', aziendaId)
+    await supabase.from('entita_tipo').update({ attivo: true }).eq('id', t.id)
+    carica()
   }
-  function addCampo() {
-    setCampi(cs => [...cs, { chiave: '', label: '', tipo: 'testo', obbligatorio: false, opzioni: [] }])
-  }
-  function delCampo(i: number) {
-    setCampi(cs => cs.filter((_, j) => j !== i))
+  async function elimina(t: Tipo) {
+    if (!t.id) return
+    if (!confirm(`Eliminare il tipo «${t.nome_singolare}»? Verranno rimosse anche le entità di questo tipo già registrate.`)) return
+    const { error } = await supabase.from('entita_tipo').delete().eq('id', t.id)
+    if (error) setErr(error.message); else carica()
   }
 
+  if (loading) return <div className="pw-spinner">Caricamento…</div>
+
+  if (editing) {
+    return <Editor tipo={editing} aziendaId={aziendaId!} onClose={() => setEditing(null)}
+      onSaved={() => { setEditing(null); carica() }} />
+  }
+
+  return (
+    <div className="pw-stack" style={{ maxWidth: 860 }}>
+      <div className="pw-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div className="pw-eyebrow">CRM · configurazione admin</div>
+          <h1 style={{ fontSize: 28, marginTop: 6 }}>Entità</h1>
+          <div className="pw-muted" style={{ marginTop: 6, fontSize: 14, maxWidth: 640 }}>
+            Cosa si lega a un contatto in questo contesto: <em>società</em> (horeca), <em>animale</em> (vet),
+            <em> deceduto</em> (onoranze)… Definisci i tipi e i campi. L'assistente usa il tipo
+            <strong> Attivo</strong> per chiedere e registrare i dati.
+          </div>
+        </div>
+        <div className="pw-row" style={{ gap: 8 }}>
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setEditing(templateSocieta())}>+ Società (predefinito)</button>
+          <button className="pw-btn pw-btn-primary pw-btn-sm" onClick={() => setEditing(vuoto())}>+ Nuovo tipo</button>
+        </div>
+      </div>
+
+      {err && <div className="pw-error">{err}</div>}
+
+      <div className="pw-card">
+        {tipi.length === 0
+          ? <div className="pw-empty">Nessun tipo di entità. Aggiungine uno (es. «Società» o «Animale»).</div>
+          : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="pw-table">
+                <thead><tr><th>Tipo</th><th>Campi</th><th>Per contatto</th><th>Attivo</th><th></th></tr></thead>
+                <tbody>
+                  {tipi.map(t => (
+                    <tr key={t.id}>
+                      <td style={{ fontWeight: 600, color: 'var(--fg)' }}>{t.nome_singolare}
+                        {t.nome_plurale ? <span className="pw-muted" style={{ fontWeight: 400 }}> / {t.nome_plurale}</span> : null}</td>
+                      <td>{t.campi.length} {t.campi.some(c => c.obbligatorio) ? `(${t.campi.filter(c => c.obbligatorio).length} obbl.)` : ''}</td>
+                      <td>{t.max_per_contatto === 1 ? 'una sola' : 'più di una'}</td>
+                      <td>
+                        {t.attivo
+                          ? <span className="pw-badge ok">Attivo</span>
+                          : <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => attiva(t)}>Attiva</button>}
+                      </td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setEditing(t)}>Modifica</button>{' '}
+                        <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(t)}>Elimina</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </div>
+      <div className="pw-muted" style={{ fontSize: 12 }}>
+        Un solo tipo <strong>Attivo</strong> alla volta (è quello che l'assistente chiede/registra). Attivarne uno disattiva gli altri.
+      </div>
+    </div>
+  )
+}
+
+function Editor({ tipo, aziendaId, onClose, onSaved }: {
+  tipo: Tipo; aziendaId: number; onClose: () => void; onSaved: () => void
+}) {
+  const [nomeSing, setNomeSing] = useState(tipo.nome_singolare)
+  const [nomePlur, setNomePlur] = useState(tipo.nome_plurale)
+  const [maxPer, setMaxPer] = useState(tipo.max_per_contatto)
+  const [condiv, setCondiv] = useState(tipo.condivisibile)
+  const [campoEtichetta, setCampoEtichetta] = useState(tipo.campo_etichetta)
+  const [campi, setCampi] = useState<Campo[]>(tipo.campi)
+  const [err, setErr] = useState<string | null>(null)
+
+  function patchCampo(i: number, p: Partial<Campo>) { setCampi(cs => cs.map((c, j) => j === i ? { ...c, ...p } : c)) }
+  function addCampo() { setCampi(cs => [...cs, { chiave: '', label: '', tipo: 'testo', obbligatorio: false, opzioni: [] }]) }
+  function delCampo(i: number) { setCampi(cs => cs.filter((_, j) => j !== i)) }
+
   async function salva() {
-    if (!aziendaId) return
     if (!nomeSing.trim()) { setErr('Dai un nome all\'entità (singolare).'); return }
-    setErr(null); setSaved(false)
-    // normalizza le chiavi (dal label se vuote) e garantisci univocità
+    setErr(null)
     const usate = new Set<string>()
     const campiNorm = campi.filter(c => (c.label || '').trim()).map(c => {
       let k = (c.chiave || slug(c.label)).trim() || slug(c.label)
       while (usate.has(k)) k = k + '_2'
       usate.add(k)
-      return { chiave: k, label: c.label.trim(), tipo: c.tipo,
-               obbligatorio: !!c.obbligatorio,
-               opzioni: c.tipo === 'scelta' ? (c.opzioni || []).filter(Boolean) : [] }
+      return {
+        chiave: k, label: c.label.trim(), tipo: c.tipo, obbligatorio: !!c.obbligatorio,
+        opzioni: c.tipo === 'scelta' ? (c.opzioni || []).filter(Boolean) : [],
+      }
     })
     const etich = campiNorm.find(c => c.chiave === campoEtichetta) ? campoEtichetta : (campiNorm[0]?.chiave || '')
     const payload = {
       azienda_id: aziendaId, nome_singolare: nomeSing.trim(), nome_plurale: nomePlur.trim() || null,
       max_per_contatto: maxPer, condivisibile: condiv, campo_etichetta: etich || null,
-      campi: JSON.stringify(campiNorm), attivo: true,
+      campi: JSON.stringify(campiNorm), attivo: tipo.attivo,
     }
-    const res = id
-      ? await supabase.from('entita_tipo').update(payload).eq('id', id)
+    const res = tipo.id
+      ? await supabase.from('entita_tipo').update(payload).eq('id', tipo.id)
       : await supabase.from('entita_tipo').insert(payload).select('id').single()
     if (res.error) { setErr(res.error.message); return }
-    await carica()                       // ricarica dal DB: conferma persistenza e stato attivo
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    // se questo tipo è attivo, disattiva gli altri (uno solo attivo per tenant)
+    if (payload.attivo) {
+      const idNew = tipo.id || (res as any).data?.id
+      if (idNew) await supabase.from('entita_tipo').update({ attivo: false }).eq('azienda_id', aziendaId).neq('id', idNew)
+    }
+    onSaved()
   }
-
-  if (loading) return <div className="pw-spinner">Caricamento…</div>
 
   return (
     <div className="pw-stack" style={{ maxWidth: 860 }}>
-      <div>
-        <div className="pw-row" style={{ gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="pw-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div>
           <div className="pw-eyebrow">CRM · configurazione admin</div>
-          {id && <span className="pw-badge ok">Attivo: {nomeSing || '—'}{campi.length ? ` · ${campi.length} campi` : ''}</span>}
+          <h1 style={{ fontSize: 26, marginTop: 6 }}>{tipo.id ? 'Modifica tipo' : 'Nuovo tipo di entità'}</h1>
         </div>
-        <h1 style={{ fontSize: 28, marginTop: 6 }}>Entità collegata al contatto</h1>
-        <div className="pw-muted" style={{ marginTop: 6, fontSize: 14, maxWidth: 680 }}>
-          Definisci <strong>cosa</strong> si lega a un contatto in questo contesto: un <em>animale</em> (vet),
-          un <em>deceduto</em> (onoranze), una <em>società</em> (horeca)… Dai un nome, aggiungi i campi e
-          scegli quali chiedere <strong>sempre</strong> in fase di registrazione. L'assistente lo leggerà.
-        </div>
+        <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={onClose}>‹ Torna alla lista</button>
       </div>
 
       {err && <div className="pw-error">{err}</div>}
@@ -107,16 +196,13 @@ export default function EntitaConfig() {
           <div className="pw-row" style={{ gap: 12, flexWrap: 'wrap' }}>
             <div className="pw-field" style={{ flex: 1, minWidth: 200 }}>
               <label>Nome (singolare)</label>
-              <input className="pw-input" value={nomeSing} placeholder="Es. Animale"
-                onChange={e => setNomeSing(e.target.value)} />
+              <input className="pw-input" value={nomeSing} placeholder="Es. Animale" onChange={e => setNomeSing(e.target.value)} />
             </div>
             <div className="pw-field" style={{ flex: 1, minWidth: 200 }}>
               <label>Nome (plurale)</label>
-              <input className="pw-input" value={nomePlur} placeholder="Es. Animali"
-                onChange={e => setNomePlur(e.target.value)} />
+              <input className="pw-input" value={nomePlur} placeholder="Es. Animali" onChange={e => setNomePlur(e.target.value)} />
             </div>
           </div>
-
           <div className="pw-row" style={{ gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             <div className="pw-field" style={{ minWidth: 260 }}>
               <label>Quante per contatto</label>
@@ -126,7 +212,7 @@ export default function EntitaConfig() {
               </select>
             </div>
             <label className="pw-row" style={{ gap: 8, cursor: 'pointer', marginTop: 18 }}
-              title="Se attivo, la stessa entità può essere collegata a più contatti (es. un locale con più referenti, o due padroni dello stesso animale)">
+              title="Se attivo, la stessa entità può essere collegata a più contatti (es. locale con più referenti, o due padroni dello stesso animale)">
               <input type="checkbox" checked={condiv} onChange={e => setCondiv(e.target.checked)} />
               Condivisibile tra più contatti
             </label>
@@ -172,7 +258,6 @@ export default function EntitaConfig() {
               <div className="pw-muted" style={{ fontSize: 11 }}>chiave: <code>{c.chiave || slug(c.label)}</code></div>
             </div>
           ))}
-
           {campi.length > 0 && (
             <div className="pw-field" style={{ maxWidth: 340 }}>
               <label>Campo che fa da “nome” dell'entità</label>
@@ -188,13 +273,8 @@ export default function EntitaConfig() {
       </div>
 
       <div className="pw-row" style={{ gap: 10 }}>
-        <button className="pw-btn pw-btn-primary" onClick={salva}>Salva configurazione</button>
-        {saved && <span className="pw-badge ok">Salvato ✓</span>}
-      </div>
-
-      <div className="pw-muted" style={{ fontSize: 12 }}>
-        Nota: per ora questa entità <strong>affianca</strong> la Società HORECA esistente. L'assistente inizierà a
-        chiederla/registrarla quando collegheremo il tool di registrazione (prossimo step).
+        <button className="pw-btn pw-btn-primary" onClick={salva}>Salva</button>
+        <button className="pw-btn pw-btn-ghost" onClick={onClose}>Annulla</button>
       </div>
     </div>
   )
