@@ -36,6 +36,7 @@ from services import profilo
 from services import prompt_moduli
 from services import promemoria
 from services import agente_tools
+from services import tool_meta
 from services import retriever
 from services import crm
 from services import email as email_service
@@ -492,7 +493,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             system = system.replace("{{" + _k + "}}", _v or "")
         user = ("Stai parlando con l'AMMINISTRATORE (canale WhatsApp).\n\n"
                 f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}")
-        tools_set = agente_tools.SCHEMI_ADMIN
+        tools_set = tool_meta.applica_chat(agente_tools.SCHEMI_ADMIN)
     else:
         # Prompt WhatsApp MODULARE (moduli 'whatsapp') + conoscenza tenant + regole + catalogo + promemoria.
         system = (
@@ -534,7 +535,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
             f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"
         )
-        tools_set = agente_tools.SCHEMI
+        tools_set = tool_meta.applica_chat(agente_tools.SCHEMI)
 
     traccia = [{
         "fase": "Identificazione contatto", "modello": "—",

@@ -240,6 +240,10 @@ REALTIME_TOOLS = [
     },
 ]
 
+# Descrizioni dei tool = fonte UNICA (docstring MCP): niente più testo duplicato qui.
+from services import tool_meta as _tool_meta   # noqa: E402
+_tool_meta.applica_realtime(REALTIME_TOOLS)
+
 
 # ---------- Istruzioni vocali ----------
 
