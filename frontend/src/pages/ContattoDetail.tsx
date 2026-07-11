@@ -19,9 +19,12 @@ export default function ContattoDetail() {
   const [edit, setEdit] = useState(false)
   const { aziendaId } = useTenant()
 
+  const [entLabel, setEntLabel] = useState<string>('Entità collegate')
+
   async function carica() {
     const { data, error } = await supabase.from('contatti').select(
       '*, locali(id, insegna, stato_relazione),' +
+      ' contatto_entita(entita(id, etichetta, tipo_id)),' +
       ' messaggi_chat(id, direzione, testo, timestamp),' +
       ' chiamate_voce(id, iniziata_at, durata_sec, riassunto, trascrizione),' +
       ' ticket(id, titolo, stato, priorita, canale, created_at)'
@@ -30,6 +33,9 @@ export default function ContattoDetail() {
   }
   useEffect(() => {
     supabase.from('locali').select('id, insegna').eq('azienda_id', aziendaId).order('insegna').then(({ data }) => setLocali(data || []))
+    supabase.from('entita_tipo').select('nome_singolare, nome_plurale').eq('azienda_id', aziendaId)
+      .eq('attivo', true).order('id', { ascending: false }).limit(1)
+      .then(({ data }) => { const t = (data || [])[0] as any; if (t) setEntLabel(t.nome_plurale || t.nome_singolare) })
     carica()
   }, [id])
 
@@ -75,9 +81,25 @@ export default function ContattoDetail() {
             <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
               <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
               <Kv k="Ruolo" v={c.ruolo} />
+              {c.locali && (
+                <div>
+                  <div className="pw-muted" style={{ fontSize: 12 }}>Società (legacy)</div>
+                  <div><Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link></div>
+                </div>
+              )}
               <div>
-                <div className="pw-muted" style={{ fontSize: 12 }}>Società</div>
-                <div>{c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : '—'}</div>
+                <div className="pw-muted" style={{ fontSize: 12 }}>{entLabel}</div>
+                <div>
+                  {(() => {
+                    const ents = (c.contatto_entita || []).map((l: any) => l.entita).filter(Boolean)
+                    if (!ents.length) return '—'
+                    return ents.map((e: any, i: number) => (
+                      <span key={e.id}>{i > 0 ? ', ' : ''}
+                        <Link to={`/entita-lista?open=${e.id}`}>{e.etichetta || '(senza nome)'}</Link>
+                      </span>
+                    ))
+                  })()}
+                </div>
               </div>
               <div>
                 <div className="pw-muted" style={{ fontSize: 12 }}>Note</div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTenant } from '../lib/tenant'
 import { dataOra, nomeContatto } from '../lib/format'
@@ -21,6 +21,16 @@ export default function EntitaLista() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [edit, setEdit] = useState<any | null>(null)
+  const [params] = useSearchParams()
+
+  // Arrivando da un contatto con ?open=<id>, apre direttamente quell'entità.
+  useEffect(() => {
+    const openId = params.get('open')
+    if (openId && righe.length) {
+      const r = righe.find(x => String(x.id) === openId)
+      if (r) setEdit(r)
+    }
+  }, [righe])   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carica() {
     if (!aziendaId) { setLoading(false); return }
