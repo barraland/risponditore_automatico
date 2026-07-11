@@ -178,8 +178,14 @@ async def elimina_contatto(
     c = db.get(Contatto, contatto_id)
     if not c:
         return {"ok": True}
-    db.query(Ordine).filter(Ordine.contatto_id == contatto_id).update({Ordine.contatto_id: None})
-    db.delete(c)  # cascade: messaggi_chat, chiamate_voce, ticket
+    # Ordini (in dismissione): se la tabella esiste ancora, scollega; se è stata droppata, ignora.
+    try:
+        db.query(Ordine).filter(Ordine.contatto_id == contatto_id).update({Ordine.contatto_id: None})
+        db.flush()
+    except Exception:
+        db.rollback()
+        c = db.get(Contatto, contatto_id)
+    db.delete(c)  # cascade ORM: messaggi_chat, chiamate_voce, ticket, contatto_entita
     db.commit()
     return {"ok": True}
 

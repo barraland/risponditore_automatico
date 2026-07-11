@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { badgePriorita, badgeStato, badgeTicket, dataBreve, dataOra, lower, nomeContatto } from '../lib/format'
+import { badgePriorita, badgeTicket, dataBreve, dataOra, lower, nomeContatto } from '../lib/format'
 import { useTenant } from '../lib/tenant'
 import Modal from '../components/Modal'
 
@@ -13,7 +13,6 @@ export default function ContattoDetail() {
   const nav = useNavigate()
   const { session } = useAuth()
   const [c, setC] = useState<any>(null)
-  const [locali, setLocali] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [edit, setEdit] = useState(false)
@@ -28,10 +27,7 @@ export default function ContattoDetail() {
     ).eq('id', id).single()
     if (error) setErr(error.message); else setC(data); setLoading(false)
   }
-  useEffect(() => {
-    supabase.from('locali').select('id, insegna').eq('azienda_id', aziendaId).order('insegna').then(({ data }) => setLocali(data || []))
-    carica()
-  }, [id])
+  useEffect(() => { carica() }, [id])
 
   async function elimina() {
     if (!confirm('Eliminare questo contatto? La sua storia (messaggi, chiamate, ticket) verrà rimossa; gli ordini restano ma scollegati.')) return
@@ -57,10 +53,8 @@ export default function ContattoDetail() {
       <Link to="/contatti" className="pw-btn pw-btn-ghost pw-btn-sm" style={{ width: 'fit-content' }}>← Contatti</Link>
       <div className="pw-between">
         <div>
-          <h1 style={{ fontSize: 26 }}>{nomeContatto(c)}{c.locali && <span className={`pw-badge ${badgeStato(c.locali.stato_relazione)}`} style={{ verticalAlign: 'middle', marginLeft: 8 }}>{lower(c.locali.stato_relazione)}</span>}</h1>
-          <div className="pw-muted" style={{ marginTop: 4 }}>
-            {c.locali ? <Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link> : 'Nessuna società'}{c.ruolo ? ` · ${c.ruolo}` : ''}
-          </div>
+          <h1 style={{ fontSize: 26 }}>{nomeContatto(c)}</h1>
+          {c.ruolo && <div className="pw-muted" style={{ marginTop: 4 }}>{c.ruolo}</div>}
         </div>
         <div className="pw-row">
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setEdit(true)}>Modifica</button>
@@ -75,12 +69,6 @@ export default function ContattoDetail() {
             <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
               <Kv k="Email" v={c.email} /><Kv k="Telefono" v={c.telefono} />
               <Kv k="Ruolo" v={c.ruolo} />
-              {c.locali && (
-                <div>
-                  <div className="pw-muted" style={{ fontSize: 12 }}>Società (legacy)</div>
-                  <div><Link to={`/societa/${c.locali.id}`}>{c.locali.insegna}</Link></div>
-                </div>
-              )}
               <div>
                 <div className="pw-muted" style={{ fontSize: 12 }}>Note</div>
                 <div style={{ color: 'var(--fg-2)', whiteSpace: 'pre-wrap' }}>{c.note || '—'}</div>
@@ -93,7 +81,7 @@ export default function ContattoDetail() {
         <Conversazioni c={c} />
       </div>
 
-      {edit && <EditContatto c={c} locali={locali} onClose={() => setEdit(false)} onSalvato={() => { setEdit(false); carica() }} />}
+      {edit && <EditContatto c={c} onClose={() => setEdit(false)} onSalvato={() => { setEdit(false); carica() }} />}
     </div>
   )
 }
@@ -330,20 +318,18 @@ function Kv({ k, v }: { k: string; v?: string | null }) {
   return <div><div className="pw-muted" style={{ fontSize: 12 }}>{k}</div><div style={{ color: 'var(--fg-2)' }}>{v || '—'}</div></div>
 }
 
-function EditContatto({ c, locali, onClose, onSalvato }: any) {
+function EditContatto({ c, onClose, onSalvato }: any) {
   const [f, setF] = useState({
     nome: c.nome || '', cognome: c.cognome || '', ruolo: c.ruolo || '', telefono: c.telefono || '',
-    email: c.email || '', locale_id: c.locale_id ? String(c.locale_id) : '', note: c.note || '',
+    email: c.email || '', note: c.note || '',
   })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
   async function salva() {
     setBusy(true); setErr(null)
-    // lo stato cliente/prospect è ereditato dalla società (sola lettura): non si scrive qui.
     const { error } = await supabase.from('contatti').update({
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
-      telefono: f.telefono.trim() || null, email: f.email.trim() || null,
-      locale_id: f.locale_id ? Number(f.locale_id) : null, note: f.note.trim() || null,
+      telefono: f.telefono.trim() || null, email: f.email.trim() || null, note: f.note.trim() || null,
     }).eq('id', c.id)
     setBusy(false); if (error) setErr(error.message); else onSalvato()
   }
@@ -354,9 +340,6 @@ function EditContatto({ c, locali, onClose, onSalvato }: any) {
         <div className="pw-field" style={{ flex: 1 }}><label>Nome</label><input className="pw-input" value={f.nome} onChange={e => set('nome', e.target.value)} /></div>
         <div className="pw-field" style={{ flex: 1 }}><label>Cognome</label><input className="pw-input" value={f.cognome} onChange={e => set('cognome', e.target.value)} /></div>
       </div>
-      <div className="pw-field"><label>Società</label>
-        <select className="pw-select" value={f.locale_id} onChange={e => set('locale_id', e.target.value)}>
-          <option value="">— nessuna —</option>{locali.map((l: any) => <option key={l.id} value={l.id}>{l.insegna}</option>)}</select></div>
       <div className="pw-field"><label>Ruolo</label><input className="pw-input" value={f.ruolo} onChange={e => set('ruolo', e.target.value)} /></div>
       <div className="pw-row" style={{ gap: 12 }}>
         <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={f.telefono} onChange={e => set('telefono', e.target.value)} /></div>

@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { badgeStato, lower, nomeContatto } from '../lib/format'
+import { lower, nomeContatto } from '../lib/format'
 import { useTenant } from '../lib/tenant'
 import Modal from '../components/Modal'
+
+const entita = (c: any) => (c.contatto_entita || []).map((l: any) => l.entita).filter(Boolean)
 
 export default function ContattiList() {
   const nav = useNavigate()
   const [righe, setRighe] = useState<any[]>([])
-  const [locali, setLocali] = useState<any[]>([])
+  const [entLabel, setEntLabel] = useState('Entità')
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -18,19 +20,22 @@ export default function ContattiList() {
   async function carica() {
     if (!aziendaId) { setLoading(false); return }
     const { data, error } = await supabase.from('contatti')
-      .select('id, nome, cognome, ruolo, telefono, email, locali(id, insegna, stato_relazione)')
+      .select('id, nome, cognome, ruolo, telefono, email, stato, contatto_entita(entita(id, etichetta))')
       .eq('azienda_id', aziendaId)
       .order('created_at', { ascending: false })
     if (error) setErr(error.message); else setRighe(data || []); setLoading(false)
   }
   useEffect(() => {
-    supabase.from('locali').select('id, insegna').eq('azienda_id', aziendaId).order('insegna').then(({ data }) => setLocali(data || []))
+    supabase.from('entita_tipo').select('nome_plurale, nome_singolare').eq('azienda_id', aziendaId)
+      .eq('attivo', true).order('id', { ascending: false }).limit(1)
+      .then(({ data }) => { const t = (data || [])[0] as any; if (t) setEntLabel(t.nome_plurale || t.nome_singolare) })
     carica()
   }, [])
 
   const filtrate = righe.filter(r => {
     if (!q) return true
-    return `${nomeContatto(r)} ${r.telefono || ''} ${r.email || ''} ${r.locali?.insegna || ''}`.toLowerCase().includes(q.toLowerCase())
+    const et = entita(r).map((e: any) => e.etichetta).join(' ')
+    return `${nomeContatto(r)} ${r.telefono || ''} ${r.email || ''} ${et}`.toLowerCase().includes(q.toLowerCase())
   })
 
   return (
@@ -49,32 +54,36 @@ export default function ContattiList() {
           : (
           <div style={{ overflowX: 'auto' }}>
             <table className="pw-table">
-              <thead><tr><th>Nome</th><th>Società</th><th>Ruolo</th><th>Telefono</th><th>Email</th><th>Stato</th></tr></thead>
+              <thead><tr><th>Nome</th><th>{entLabel}</th><th>Ruolo</th><th>Telefono</th><th>Email</th><th>Stato</th></tr></thead>
               <tbody>
-                {filtrate.map(c => (
-                  <tr key={c.id} onClick={() => nav(`/contatti/${c.id}`)}>
-                    <td style={{ fontWeight: 600, color: 'var(--fg)' }}>{nomeContatto(c)}</td>
-                    <td>{c.locali
-                      ? <Link to={`/societa/${c.locali.id}`} onClick={e => e.stopPropagation()}>{c.locali.insegna}</Link>
-                      : '—'}</td>
-                    <td>{c.ruolo || '—'}</td><td>{c.telefono || '—'}</td><td>{c.email || '—'}</td>
-                    <td>{c.locali
-                      ? <span className={`pw-badge ${badgeStato(c.locali.stato_relazione)}`}>{lower(c.locali.stato_relazione)}</span>
-                      : <span className="pw-muted">—</span>}</td>
-                  </tr>
-                ))}
+                {filtrate.map(c => {
+                  const ents = entita(c)
+                  return (
+                    <tr key={c.id} onClick={() => nav(`/contatti/${c.id}`)}>
+                      <td style={{ fontWeight: 600, color: 'var(--fg)' }}>{nomeContatto(c)}</td>
+                      <td>{ents.length
+                        ? ents.map((e: any, i: number) => (
+                          <span key={e.id}>{i > 0 ? ', ' : ''}
+                            <Link to={`/entita-lista?open=${e.id}`} onClick={ev => ev.stopPropagation()}>{e.etichetta || '—'}</Link>
+                          </span>))
+                        : '—'}</td>
+                      <td>{c.ruolo || '—'}</td><td>{c.telefono || '—'}</td><td>{c.email || '—'}</td>
+                      <td><span className="pw-badge mute">{lower(c.stato) || '—'}</span></td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-      {nuovo && <NuovoContatto locali={locali} onClose={() => setNuovo(false)} onCreato={(id) => nav(`/contatti/${id}`)} />}
+      {nuovo && <NuovoContatto onClose={() => setNuovo(false)} onCreato={(id) => nav(`/contatti/${id}`)} />}
     </div>
   )
 }
 
-function NuovoContatto({ locali, onClose, onCreato }: { locali: any[]; onClose: () => void; onCreato: (id: number) => void }) {
-  const [f, setF] = useState({ nome: '', cognome: '', ruolo: '', telefono: '', email: '', locale_id: '', stato: 'PROSPECT' })
+function NuovoContatto({ onClose, onCreato }: { onClose: () => void; onCreato: (id: number) => void }) {
+  const [f, setF] = useState({ nome: '', cognome: '', ruolo: '', telefono: '', email: '', stato: 'PROSPECT' })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const { aziendaId } = useTenant()
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
@@ -82,8 +91,7 @@ function NuovoContatto({ locali, onClose, onCreato }: { locali: any[]; onClose: 
     setBusy(true); setErr(null)
     const { data, error } = await supabase.from('contatti').insert({
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
-      telefono: f.telefono.trim() || null, email: f.email.trim() || null,
-      locale_id: f.locale_id ? Number(f.locale_id) : null, stato: f.stato,
+      telefono: f.telefono.trim() || null, email: f.email.trim() || null, stato: f.stato,
       azienda_id: aziendaId,
     }).select('id').single()
     setBusy(false); if (error) setErr(error.message); else onCreato(data!.id)
@@ -95,14 +103,12 @@ function NuovoContatto({ locali, onClose, onCreato }: { locali: any[]; onClose: 
         <div className="pw-field" style={{ flex: 1 }}><label>Nome</label><input className="pw-input" value={f.nome} onChange={e => set('nome', e.target.value)} /></div>
         <div className="pw-field" style={{ flex: 1 }}><label>Cognome</label><input className="pw-input" value={f.cognome} onChange={e => set('cognome', e.target.value)} /></div>
       </div>
-      <div className="pw-field"><label>Società</label>
-        <select className="pw-select" value={f.locale_id} onChange={e => set('locale_id', e.target.value)}>
-          <option value="">— nessuna —</option>{locali.map(l => <option key={l.id} value={l.id}>{l.insegna}</option>)}</select></div>
       <div className="pw-field"><label>Ruolo</label><input className="pw-input" placeholder="Titolare, Chef…" value={f.ruolo} onChange={e => set('ruolo', e.target.value)} /></div>
       <div className="pw-row" style={{ gap: 12 }}>
         <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={f.telefono} onChange={e => set('telefono', e.target.value)} /></div>
         <div className="pw-field" style={{ flex: 1 }}><label>Email</label><input className="pw-input" value={f.email} onChange={e => set('email', e.target.value)} /></div>
       </div>
+      <div className="pw-muted" style={{ fontSize: 12 }}>Le entità (società, animali…) le colleghi dalla scheda del contatto, dopo averlo creato.</div>
       {err && <div className="pw-error">{err}</div>}
     </Modal>
   )
