@@ -77,8 +77,8 @@ export default function EntitaConfig() {
       ? await supabase.from('entita_tipo').update(payload).eq('id', id)
       : await supabase.from('entita_tipo').insert(payload).select('id').single()
     if (res.error) { setErr(res.error.message); return }
-    if (!id && (res as any).data?.id) setId((res as any).data.id)
-    setCampi(campiNorm); setSaved(true)
+    await carica()                       // ricarica dal DB: conferma persistenza e stato attivo
+    setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
@@ -87,7 +87,10 @@ export default function EntitaConfig() {
   return (
     <div className="pw-stack" style={{ maxWidth: 860 }}>
       <div>
-        <div className="pw-eyebrow">CRM</div>
+        <div className="pw-row" style={{ gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="pw-eyebrow">CRM · configurazione admin</div>
+          {id && <span className="pw-badge ok">Attivo: {nomeSing || '—'}{campi.length ? ` · ${campi.length} campi` : ''}</span>}
+        </div>
         <h1 style={{ fontSize: 28, marginTop: 6 }}>Entità collegata al contatto</h1>
         <div className="pw-muted" style={{ marginTop: 6, fontSize: 14, maxWidth: 680 }}>
           Definisci <strong>cosa</strong> si lega a un contatto in questo contesto: un <em>animale</em> (vet),

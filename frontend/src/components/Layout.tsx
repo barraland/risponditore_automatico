@@ -94,7 +94,6 @@ export default function Layout() {
   const VOCI: [string, string, boolean][] = [
     ['/contatti', 'Contatti', true],
     ['/societa', 'Società', true],
-    ['/entita', 'Entità', true],
     ['/agenti', 'Agenti', mostra('mostra_agenti')],
     ['/ordini', 'Ordini', mostra('mostra_ordini')],
     ['/ticket', 'Ticket', true],
@@ -121,6 +120,7 @@ export default function Layout() {
             <NavLink key={to} to={to}><Ic>{ICON[key(to)]}</Ic><span>{label}</span></NavLink>
           ))}
           <div className="pw-side-sep" />
+          <NavLink to="/entita"><Ic>{ICON.entita}</Ic><span>Entità</span></NavLink>
           <NavLink to="/prompt"><Ic>{ICON.assistente}</Ic><span>Assistente</span></NavLink>
           {isSuperAdmin && <NavLink to="/clienti"><Ic>{ICON.clienti}</Ic><span>Clienti</span></NavLink>}
         </nav>
