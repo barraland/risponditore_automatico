@@ -324,10 +324,10 @@ DEFAULT_MODULI = [
         "testo": (
             "COME QUALIFICARE IL LEAD (informazioni da raccogliere durante la conversazione)\n"
             "Raccogli, in modo naturale e senza interrogatori, almeno:\n"
-            "- nome e cognome della persona;\n"
-            "- ragione sociale della società e ruolo (es. titolare, ufficio acquisti);\n"
+            "- nome e cognome della persona e il suo ruolo;\n"
             "- email e telefono per essere ricontattati;\n"
-            "- sede / località;\n"
+            "- i dati dell'ENTITÀ collegata (vedi il modulo dedicato: es. animale, società, ...): "
+            "registrali con registra_entita, non nell'anagrafica della persona;\n"
             "- di cosa ha bisogno (prodotto/servizio), quantità/volumi se rilevanti, tempistiche e, "
             "se emerge, budget."
         ),

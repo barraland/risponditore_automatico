@@ -18,12 +18,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 _ANAGRAFICA_PROPS = {
-    "nome": {"type": "string"}, "cognome": {"type": "string"},
-    "ragione_sociale": {"type": "string"}, "ruolo": {"type": "string"},
-    "email": {"type": "string"}, "sede": {"type": "string"},
+    "nome": {"type": "string"}, "cognome": {"type": "string"}, "ruolo": {"type": "string"},
+    "email": {"type": "string"},
     "titolo": {"type": "string", "description": "«Signore»/«Signora», solo se certo del genere."},
-    "note": {"type": "string", "description": "Contesto libero sul contatto (si accumula, non sovrascrive)."},
-    "stato": {"type": "string", "enum": ["cliente", "prospect"]},
+    "note": {"type": "string", "description": "Contesto libero sulla persona (si accumula, non sovrascrive)."},
 }
 
 
@@ -41,11 +39,8 @@ SCHEMI = [
         "grezzi con la fonte: leggili e formula tu la risposta.",
         {"domanda": {"type": "string"}}, ["domanda"]),
     _fn("salva_contatto",
-        "Registra un nuovo contatto in anagrafica. Passa SOLO i campi detti dal cliente; non "
-        "inventare. Usalo alla prima registrazione, appena hai almeno il nome.",
-        _ANAGRAFICA_PROPS),
-    _fn("aggiorna_contatto",
-        "Aggiorna i dati anagrafici della PERSONA quando emergono info nuove. `note` si accumula.",
+        "Registra o aggiorna l'anagrafica della PERSONA (nome, cognome, ruolo, email, titolo, note). "
+        "Passa SOLO i campi detti dal cliente; non inventare. `note` si accumula.",
         _ANAGRAFICA_PROPS),
     _fn("aggiorna_locale",
         "Aggiorna i dati del LOCALE/azienda del contatto (città, indirizzo, ragione sociale, P.IVA, "
@@ -129,8 +124,6 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
                                        giorni_validita=int(a.get("giorni_validita", 0) or 0), tenant=tenant)
         if nome == "salva_contatto":
             return m.salva_contatto(telefono=telefono, tenant=tenant, **a)
-        if nome == "aggiorna_contatto":
-            return m.aggiorna_contatto(telefono=telefono, tenant=tenant, **a)
         if nome == "aggiorna_locale":
             return m.aggiorna_locale(telefono=telefono, tenant=tenant, **a)
         if nome == "registra_entita":

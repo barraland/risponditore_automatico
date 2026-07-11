@@ -233,16 +233,13 @@ def invia_documento(email: str, documento_id: int, testo: str = "", tenant: str 
 #     return _leggi_categoria("altro")
 
 
-def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: str,
-                      ruolo: str, email: str, sede: str, stato: str, titolo: str = "",
-                      note: str = "", tenant: str = "") -> dict:
-    """Crea/aggiorna il contatto identificato da `telefono`, scrivendo solo i campi non vuoti.
-    Logica condivisa da salva_contatto (prima registrazione) e aggiorna_contatto (info nuove)."""
+def _applica_contatto(telefono: str, nome: str, cognome: str, ruolo: str, email: str,
+                      titolo: str = "", note: str = "", tenant: str = "") -> dict:
+    """Crea/aggiorna la PERSONA (contatto) identificata da `telefono`, scrivendo solo i campi non vuoti."""
     db = SessionLocal()
     try:
         c = _contatto(db, telefono, tenant)
-        campi = {"titolo": titolo, "nome": nome, "cognome": cognome, "ragione_sociale": ragione_sociale,
-                 "ruolo": ruolo, "email": email, "sede": sede}
+        campi = {"titolo": titolo, "nome": nome, "cognome": cognome, "ruolo": ruolo, "email": email}
         cambiato = False
         for k, v in campi.items():
             v = (v or "").strip()
@@ -254,54 +251,24 @@ def _applica_contatto(telefono: str, nome: str, cognome: str, ragione_sociale: s
         if n and n not in (c.note or ""):
             c.note = ((c.note + "\n") if (c.note or "").strip() else "") + n
             cambiato = True
-        st = (stato or "").strip().lower()
-        if st in (ContattoStato.CLIENTE.value, ContattoStato.PROSPECT.value):
-            nuovo = ContattoStato(st)
-            if c.stato != nuovo:
-                c.stato = nuovo
-                cambiato = True
         if cambiato:
             db.commit()
-        societa = crm.societa_di_contatto(db, c)
-        return {"ok": True, "contatto_id": c.id, "aggiornato": cambiato,
-                "societa": societa.nome if societa else None}
+        return {"ok": True, "contatto_id": c.id, "aggiornato": cambiato}
     finally:
         db.close()
 
 
 @mcp.tool()
 @_loggato
-def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                   ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "",
-                   note: str = "", tenant: str = "") -> dict:
-    """Registra in anagrafica il chiamante (identificato da `telefono`): usalo SUBITO alla prima
-    registrazione di un prospect non ancora in rubrica, appena hai almeno il nome.
-    Passa SOLO i campi che il cliente ha detto esplicitamente; quelli omessi restano invariati.
-    NON inventare né dedurre valori: se un dato (es. città/sede, email, ruolo) non è stato
-    dichiarato, ometti del tutto il campo. `titolo` = "Signore" o "Signora": impostalo SOLO se sei
-    certo del genere (dal modo in cui si presenta), altrimenti OMETTILO — meglio nessun titolo che
-    sbagliarlo. `note` = testo libero di contesto sul contatto (si accumula, non sovrascrive): usalo
-    per dettagli utili specifici del business (es. per un veterinario: nome dell'animale, patologie,
-    allergie). Tutti i campi tranne `telefono` sono opzionali. Se emerge la ragione sociale,
-    crea/aggancia automaticamente la società del cliente."""
-    _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ragione_sociale=ragione_sociale)
-    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo, note, tenant)
-
-
-@mcp.tool()
-@_loggato
-def aggiorna_contatto(telefono: str, nome: str = "", cognome: str = "", ragione_sociale: str = "",
-                      ruolo: str = "", email: str = "", sede: str = "", stato: str = "", titolo: str = "",
-                      note: str = "", tenant: str = "") -> dict:
-    """Aggiorna i dati ANAGRAFICI DELLA PERSONA (contatto, identificato da `telefono`) quando emergono
-    informazioni nuove: email, ruolo, cognome, oppure `titolo` ("Signore"/"Signora") se diventa chiaro
-    il genere. Per i dati del LOCALE/azienda (città, indirizzo, P.IVA) usa invece aggiorna_locale.
-    `note` = testo libero di contesto sul contatto che si ACCUMULA (non sovrascrive): aggiungici i
-    dettagli utili specifici del business emersi in conversazione (es. per un veterinario: nome
-    dell'animale, patologie, allergie). Passa SOLO i campi nuovi appena appresi; gli altri restano
-    invariati. NON inventare valori."""
-    _log_tool("aggiorna_contatto", telefono=telefono, email=email, ruolo=ruolo, titolo=titolo)
-    return _applica_contatto(telefono, nome, cognome, ragione_sociale, ruolo, email, sede, stato, titolo, note, tenant)
+def salva_contatto(telefono: str, nome: str = "", cognome: str = "", ruolo: str = "",
+                   email: str = "", titolo: str = "", note: str = "", tenant: str = "") -> dict:
+    """Registra o aggiorna in anagrafica la PERSONA identificata da `telefono`: nome, cognome, ruolo,
+    email, appellativo `titolo` («Signore»/«Signora») e `note` di contesto libero. I campi omessi
+    restano invariati; `note` si accumula (non sovrascrive). Imposta `titolo` solo se il genere è
+    certo. NON inventare valori: passa solo ciò che è stato detto esplicitamente. Per i dati
+    dell'ENTITÀ collegata (animale, società, deceduto, ...) usa `registra_entita`, non questo tool."""
+    _log_tool("salva_contatto", telefono=telefono, nome=nome, email=email, ruolo=ruolo)
+    return _applica_contatto(telefono, nome, cognome, ruolo, email, titolo, note, tenant)
 
 
 @mcp.tool()
@@ -498,7 +465,7 @@ def invia_mail(telefono: str, testo: str, oggetto: str = "", categoria_allegato:
     se vuoi ALLEGARE dei documenti indica la loro categoria — usa SOLO le categorie elencate in
     "DOCUMENTI DISPONIBILI" nel tuo contesto; lascia vuoto se non c'è nulla da allegare (la mail va
     comunque col solo testo). Se il cliente non ha un'email salvata lo segnala: chiedila, salvala con
-    aggiorna_contatto e riprova."""
+    salva_contatto e riprova."""
     _log_tool("invia_mail", telefono=telefono, categoria_allegato=categoria_allegato)
     db = SessionLocal()
     try:

@@ -91,35 +91,11 @@ REALTIME_TOOLS = [
             "properties": {
                 "nome": {"type": "string", "description": "Nome della persona."},
                 "cognome": {"type": "string", "description": "Cognome della persona."},
-                "ragione_sociale": {"type": "string", "description": "Ragione sociale della società."},
-                "ruolo": {"type": "string", "description": "Ruolo della persona nella società."},
+                "ruolo": {"type": "string", "description": "Ruolo della persona."},
                 "email": {"type": "string", "description": "Email di contatto."},
                 "telefono": {"type": "string", "description": "Telefono, se diverso da quello della chiamata."},
-                "sede": {"type": "string", "description": "Sede / località."},
-                "stato": {"type": "string", "enum": ["cliente", "prospect"],
-                          "description": "cliente se è già cliente, prospect se potenziale."},
                 "titolo": {"type": "string", "enum": ["Signore", "Signora"],
                            "description": "Appellativo: imposta SOLO se sei certo del genere, altrimenti OMETTI."},
-            },
-            "required": [],
-        },
-    },
-    {
-        "type": "function",
-        "name": "aggiorna_contatto",
-        "description": (
-            "Aggiorna i dati ANAGRAFICI DELLA PERSONA quando emergono info nuove (email, ruolo, "
-            "cognome, oppure titolo se diventa chiaro il genere). Passa solo i campi nuovi. "
-            "Equivale a salva_contatto: usalo per gli aggiornamenti in corso di chiamata."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "nome": {"type": "string"}, "cognome": {"type": "string"},
-                "ragione_sociale": {"type": "string"}, "ruolo": {"type": "string"},
-                "email": {"type": "string"}, "sede": {"type": "string"},
-                "titolo": {"type": "string", "enum": ["Signore", "Signora"],
-                           "description": "Imposta SOLO se certo del genere."},
             },
             "required": [],
         },
@@ -185,7 +161,7 @@ REALTIME_TOOLS = [
             "`categoria_allegato` opzionale: se vuoi ALLEGARE documenti indica la categoria, usando "
             "SOLO quelle elencate in DOCUMENTI DISPONIBILI; lascia vuoto se non c'è nulla da allegare "
             "(la mail parte col solo testo). Se manca l'email del cliente te lo segnala: chiedigliela, "
-            "salvala con aggiorna_contatto e riprova."
+            "salvala con salva_contatto e riprova."
         ),
         "parameters": {
             "type": "object",
@@ -634,32 +610,19 @@ async def media_stream(twilio_ws: WebSocket):
             await openai_ws.send(json.dumps({"type": "response.create"}))
 
     def _salva_contatto(args: dict) -> dict:
-        """Crea/aggiorna l'anagrafica del contatto (sincrona, gira in thread)."""
+        """Crea/aggiorna l'anagrafica della PERSONA (sincrona, gira in thread)."""
         contatto = db.get(Contatto, stato["contatto_id"]) if stato.get("contatto_id") else None
         if not contatto:
             return {"errore": "Contatto non disponibile."}
-        campi = ["titolo", "nome", "cognome", "ragione_sociale", "ruolo", "email", "telefono", "sede"]
         cambiato = False
-        for c in campi:
+        for c in ["titolo", "nome", "cognome", "ruolo", "email", "telefono"]:
             val = (args.get(c) or "").strip()
             if val and getattr(contatto, c) != val:
                 setattr(contatto, c, val)
                 cambiato = True
-        st = (args.get("stato") or "").strip()
-        if st in (ContattoStato.CLIENTE.value, ContattoStato.PROSPECT.value):
-            nuovo = ContattoStato(st)
-            if contatto.stato != nuovo:
-                contatto.stato = nuovo
-                cambiato = True
         if cambiato:
             db.commit()
-        # Registrazione prospect: crea/aggancia la società corrispondente (find-or-create,
-        # niente duplicati). Avviene solo quando si conosce la ragione sociale.
-        societa = crm.societa_di_contatto(db, contatto)
-        risultato = {"salvato": True, "contatto_id": contatto.id}
-        if societa:
-            risultato["societa"] = societa.nome
-        return risultato
+        return {"salvato": True, "contatto_id": contatto.id}
 
     def _leggi(categoria: str) -> dict:
         """Ritorna il testo integrale dei documenti di una categoria (no LLM). Stessa logica MCP."""
