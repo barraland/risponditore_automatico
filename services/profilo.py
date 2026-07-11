@@ -48,11 +48,26 @@ _CONTATTO_OBBL_DEFAULT = ["nome", "telefono"]
 
 
 def contatto_obbligatori(db: Session, azienda_id: int | None = None) -> list[str]:
-    """Chiavi dei campi persona obbligatori per il tenant (config), o il default."""
+    """Chiavi dei campi persona obbligatori per il tenant (config), o il default. La colonna
+    `azienda.contatto_obbligatori` NON è mappata sull'ORM: la leggiamo con SQL grezzo in una sessione
+    separata, così se la migrazione non è ancora girata (colonna assente) NON rompiamo nulla."""
     import json
+    from sqlalchemy import text
+    from database import SessionLocal
     az = get_azienda(db, azienda_id)
-    raw = (getattr(az, "contatto_obbligatori", None) or "").strip() if az else ""
-    if raw:
+    aid = az.id if az else None
+    raw = None
+    s = SessionLocal()
+    try:
+        if aid:
+            raw = s.execute(text("select contatto_obbligatori from azienda where id = :id"), {"id": aid}).scalar()
+        else:
+            raw = s.execute(text("select contatto_obbligatori from azienda limit 1")).scalar()
+    except Exception:
+        raw = None                      # colonna assente (migrazione non ancora fatta) → default
+    finally:
+        s.close()
+    if raw and str(raw).strip():
         try:
             val = json.loads(raw)
             if isinstance(val, list):

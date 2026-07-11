@@ -117,9 +117,9 @@ class Azienda(Base):
     saluto = Column(Text, nullable=True)                 # chiamante riconosciuto (usa {nome}/{cognome})
     saluto_sconosciuto = Column(Text, nullable=True)     # chiamante non riconosciuto (no nome)
     saluto_admin = Column(Text, nullable=True)           # amministratore (init voce admin; usa {azienda})
-    # Quali campi della PERSONA (contatto) l'assistente deve chiedere SEMPRE (obbligatori).
-    # JSON list di chiavi tra: nome, cognome, telefono, email, ruolo. None = default (nome, telefono).
-    contatto_obbligatori = Column(Text, nullable=True)
+    # NB: `contatto_obbligatori` (JSON list dei campi persona obbligatori) NON è mappato qui apposta:
+    # si legge/scrive via SQL grezzo / Supabase, così l'app non si rompe se la migrazione non è ancora
+    # girata (colonna aggiunta con: alter table azienda add column contatto_obbligatori text).
     # Numeri abilitati come amministratore (possono lasciare promemoria via voce). Editabile da dashboard.
     admin_telefoni = Column(Text, nullable=True)         # separati da virgola/spazio/a-capo
 
