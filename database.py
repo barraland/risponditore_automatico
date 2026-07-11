@@ -182,6 +182,7 @@ class Contatto(Base):
     is_primario = Column(Boolean, default=False)   # referente principale della società
 
     societa = relationship("Societa", back_populates="contatti")
+    legami_entita = relationship("ContattoEntita", back_populates="contatto", cascade="all, delete-orphan")
 
     messaggi = relationship(
         "MessaggioChat",
@@ -280,6 +281,57 @@ class RispostaTicket(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ticket = relationship("Ticket", back_populates="risposte")
+
+
+# ---------- Entità generiche customizzabili (vet=animale, onoranze=deceduto, ...) ----------
+# Sistema generico che affianca (e in futuro sostituisce) la Società HORECA: ogni tenant definisce
+# UN tipo di entità con i suoi campi; i contatti si collegano a 0..N istanze (N:N, chiavi surrogate).
+
+class EntitaTipo(Base):
+    """Config del tipo di entità collegabile ai contatti, definita dall'admin da GUI.
+    Es. «Animale» (vet), «Deceduto» (onoranze), «Società» (horeca). Uno attivo per tenant."""
+    __tablename__ = "entita_tipo"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
+
+    id = Column(Integer, primary_key=True)   # PK già indicizzata (niente index= per non collidere)
+    nome_singolare = Column(String(80), nullable=False)   # "Animale"
+    nome_plurale = Column(String(80), nullable=True)      # "Animali"
+    max_per_contatto = Column(Integer, default=0)         # 0 = illimitato; 1 = uno solo
+    condivisibile = Column(Boolean, default=True)         # un'entità può stare su più contatti?
+    campo_etichetta = Column(String(60), nullable=True)   # chiave del campo che fa da "nome"
+    campi = Column(Text, nullable=True)                   # JSON: [{chiave,label,tipo,obbligatorio,opzioni}]
+    attivo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Entita(Base):
+    """Istanza di entità (chiave surrogate: due «Fido» sono righe diverse). Valori dei campi in JSON."""
+    __tablename__ = "entita"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
+
+    id = Column(Integer, primary_key=True, index=True)
+    tipo_id = Column(Integer, ForeignKey("entita_tipo.id"), nullable=False, index=True)
+    etichetta = Column(String(200), nullable=True)        # nome visualizzato (dal campo_etichetta)
+    valori = Column(Text, nullable=True)                  # JSON {chiave: valore}
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    legami = relationship("ContattoEntita", back_populates="entita", cascade="all, delete-orphan")
+
+
+class ContattoEntita(Base):
+    """Legame N:N contatto <-> entità. Chiavi surrogate: nessuna omonimia, un contatto può avere
+    più entità e un'entità può appartenere a più contatti (referenti/padroni)."""
+    __tablename__ = "contatto_entita"
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
+
+    id = Column(Integer, primary_key=True, index=True)
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False, index=True)
+    entita_id = Column(Integer, ForeignKey("entita.id"), nullable=False, index=True)
+    ruolo = Column(String(60), nullable=True)             # es. "padrone", "referente" (opzionale)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    entita = relationship("Entita", back_populates="legami")
+    contatto = relationship("Contatto", back_populates="legami_entita")
 
 
 # ---------- HORECA: agenti, locali, ordini ----------

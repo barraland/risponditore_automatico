@@ -249,3 +249,53 @@ alter table public.azienda add column if not exists saluto_admin text;
 
 -- Documenti "Sempre presente": fuori dal retriever, iniettati per intero e sempre nel prompt.
 alter table public.documenti add column if not exists sempre_contesto boolean default false;
+
+-- ============================================================
+-- Entità generiche customizzabili (vet=animale, onoranze=deceduto...). N:N, chiavi surrogate.
+-- entita_tipo = config per tenant; entita = istanze; contatto_entita = legame N:N.
+-- ============================================================
+create table if not exists public.entita_tipo (
+  id                serial primary key,
+  azienda_id        integer references public.azienda(id) on delete cascade,
+  nome_singolare    varchar(80) not null,
+  nome_plurale      varchar(80),
+  max_per_contatto  integer default 0,          -- 0 = illimitato; 1 = uno solo
+  condivisibile     boolean default true,       -- un'entità può stare su più contatti?
+  campo_etichetta   varchar(60),                -- chiave del campo che fa da "nome"
+  campi             text,                        -- JSON [{chiave,label,tipo,obbligatorio,opzioni}]
+  attivo            boolean default true,
+  created_at        timestamptz default now()
+);
+create index if not exists ix_entita_tipo_azienda on public.entita_tipo(azienda_id);
+
+create table if not exists public.entita (
+  id          serial primary key,
+  azienda_id  integer references public.azienda(id) on delete cascade,
+  tipo_id     integer references public.entita_tipo(id) on delete cascade,
+  etichetta   varchar(200),
+  valori      text,                              -- JSON {chiave: valore}
+  created_at  timestamptz default now()
+);
+create index if not exists ix_entita_azienda on public.entita(azienda_id);
+create index if not exists ix_entita_tipo    on public.entita(tipo_id);
+
+create table if not exists public.contatto_entita (
+  id          serial primary key,
+  azienda_id  integer references public.azienda(id) on delete cascade,
+  contatto_id integer references public.contatti(id) on delete cascade,
+  entita_id   integer references public.entita(id) on delete cascade,
+  ruolo       varchar(60),
+  created_at  timestamptz default now()
+);
+create index if not exists ix_contatto_entita_azienda  on public.contatto_entita(azienda_id);
+create index if not exists ix_contatto_entita_contatto on public.contatto_entita(contatto_id);
+create index if not exists ix_contatto_entita_entita   on public.contatto_entita(entita_id);
+
+do $$ declare t text; begin
+  foreach t in array array['entita_tipo','entita','contatto_entita'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists tenant_all on public.%I', t);
+    execute format('create policy tenant_all on public.%I for all to authenticated '
+                   'using (public.can_see_tenant(azienda_id)) with check (public.can_see_tenant(azienda_id))', t);
+  end loop;
+end $$;
