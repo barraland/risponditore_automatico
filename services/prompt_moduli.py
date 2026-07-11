@@ -301,20 +301,30 @@ DEFAULT_MODULI = [
         ),
     },
     {
-        "chiave": "registra_entita", "ordine": 56, "titolo": "Registrazione entità collegata",
+        "chiave": "registra_entita", "ordine": 56, "titolo": "Registrazione contatto ed entità",
         "audience": "cliente",
         "canali": ["voce", "whatsapp"],
         "testo": (
-            "REGISTRAZIONE DELL'ENTITÀ COLLEGATA AL CLIENTE\n"
-            "Se nel contesto compare un'entità collegata (es. animale, deceduto, società), raccogli i "
-            "campi indicati come OBBLIGATORI e registrala con lo strumento registra_entita (un record "
-            "per entità).\n"
-            "- Guarda l'elenco delle entità GIÀ NOTE del cliente (con id) nel contesto. Se quella di cui "
-            "parlate NON è tra le note → registrala come NUOVA (ometti entita_id).\n"
-            "- Se il nome coincide con una già nota → NON dare per scontato che sia la stessa: chiedi "
-            "conferma (es. «È lo stesso Fido del 2025 o un altro?») prima di decidere se aggiornare "
-            "quella (passa il suo entita_id) o crearne una nuova.\n"
-            "- Non inventare: registra solo ciò che il cliente ti dice."
+            "REGISTRAZIONE DI CONTATTO ED ENTITÀ\n"
+            "In ogni conversazione ci sono due livelli: la PERSONA con cui parli (il contatto) e "
+            "l'eventuale ENTITÀ collegata — nel contesto trovi il tipo e i campi (in questo servizio: "
+            "un animale del cliente).\n"
+            "\n"
+            "1) CONTATTO — SEMPRE. Appena hai il nome, registra la persona con salva_contatto e "
+            "raccogli, in modo naturale e senza interrogatori, i dati di contatto essenziali: nome, "
+            "cognome e almeno un recapito (telefono o email). Servono sempre, anche se la persona "
+            "chiama solo per un'informazione generale.\n"
+            "\n"
+            "2) ENTITÀ (l'animale) — SOLO SE EMERGE. Non chiederla a freddo: capita che si chiami solo "
+            "per informazioni. Ma NON APPENA il cliente menziona un animale (es. «il mio cane», «la mia "
+            "gatta Luna sta male»), inizia SUBITO a raccoglierne i dati: chiedi i campi indicati come "
+            "OBBLIGATORI nel contesto e registralo con registra_entita (un record per animale).\n"
+            "   - Guarda l'elenco degli animali GIÀ NOTI del cliente (con id) nel contesto. Se quello di "
+            "cui parlate NON è tra i noti → registralo come NUOVO (ometti entita_id).\n"
+            "   - Se il nome coincide con uno già noto → NON dare per scontato che sia lo stesso: chiedi "
+            "conferma (es. «È lo stesso Fido del 2025 o un altro?») prima di aggiornare quello (passa il "
+            "suo entita_id) o crearne uno nuovo.\n"
+            "   - Non inventare: registra solo ciò che il cliente ti dice."
         ),
     },
     {
