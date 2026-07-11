@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, Form, Header, HTTPException, BackgroundTasks, Body
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto, Ordine
+from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto, Ordine, Promemoria
 from services import documenti as documenti_service
 from services import ingestion
 from services import tenant as tenant_service
@@ -185,6 +185,8 @@ async def elimina_contatto(
     except Exception:
         db.rollback()
         c = db.get(Contatto, contatto_id)
+    # I promemoria hanno una FK a contatti NON gestita da cascade ORM: rimuovili esplicitamente.
+    db.query(Promemoria).filter(Promemoria.contatto_id == contatto_id).delete()
     db.delete(c)  # cascade ORM: messaggi_chat, chiamate_voce, ticket, contatto_entita
     db.commit()
     return {"ok": True}

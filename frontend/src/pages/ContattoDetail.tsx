@@ -30,18 +30,23 @@ export default function ContattoDetail() {
   useEffect(() => { carica() }, [id])
 
   async function elimina() {
-    if (!confirm('Eliminare questo contatto? La sua storia (messaggi, chiamate, ticket) verrà rimossa; gli ordini restano ma scollegati.')) return
-    if (!API) { setErr('VITE_API_BASE non configurato: serve il backend per eliminare un contatto con storico.'); return }
-    const res = await fetch(`${API}/api/contatti/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${session?.access_token}` },
-    })
-    if (!res.ok) {
-      const t = await res.text().catch(() => '')
-      setErr(`Eliminazione fallita (${res.status}): ${t.slice(0, 200)}`)
-      return
+    if (!confirm('Eliminare questo contatto? Verranno rimossi anche la sua storia (messaggi, chiamate, ticket, promemoria) e i collegamenti alle entità (le entità restano).')) return
+    if (!API) { setErr('VITE_API_BASE non configurato: serve il backend per eliminare un contatto.'); return }
+    setErr(null)
+    try {
+      const res = await fetch(`${API}/api/contatti/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      if (!res.ok) {
+        const t = await res.text().catch(() => '')
+        setErr(`Eliminazione fallita (${res.status}): ${t.slice(0, 200)}`)
+        return
+      }
+      nav('/contatti')
+    } catch (e: any) {
+      setErr('Eliminazione fallita: ' + (e?.message || 'errore di rete'))
     }
-    nav('/contatti')
   }
 
   if (loading) return <div className="pw-spinner">Caricamento…</div>
