@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
@@ -88,12 +88,22 @@ export default function Layout() {
   const [config, setConfig] = useState(false)
   const [google, setGoogle] = useState(false)
   const [menu, setMenu] = useState(false)   // drawer aperto (mobile)
+  const [entTipo, setEntTipo] = useState<{ singolare: string; plurale: string } | null>(null)
   const attiva = aziende.find(a => a.id === aziendaId)
   const mostra = (campo: string) => (attiva as any)?.[campo] !== false  // default: visibile
 
+  // Tipo-entità ATTIVO del tenant → diventa una voce di menù dinamica (es. "Animali", "Società").
+  useEffect(() => {
+    if (!aziendaId) { setEntTipo(null); return }
+    supabase.from('entita_tipo').select('nome_singolare, nome_plurale')
+      .eq('azienda_id', aziendaId).eq('attivo', true).order('id', { ascending: false }).limit(1)
+      .then(({ data }) => {
+        const t = (data || [])[0] as any
+        setEntTipo(t ? { singolare: t.nome_singolare, plurale: t.nome_plurale || t.nome_singolare } : null)
+      })
+  }, [aziendaId])
+
   const VOCI: [string, string, boolean][] = [
-    ['/contatti', 'Contatti', true],
-    ['/societa', 'Società', true],
     ['/ordini', 'Ordini', mostra('mostra_ordini')],
     ['/ticket', 'Ticket', true],
     ['/documenti', 'Base di Conoscenza', true],
@@ -115,6 +125,8 @@ export default function Layout() {
           <img src="/pipework-mark.svg" alt="Pipework" /> Pipework
         </a>
         <nav className="pw-side-nav" onClick={() => setMenu(false)}>
+          <NavLink to="/contatti"><Ic>{ICON.contatti}</Ic><span>Contatti</span></NavLink>
+          {entTipo && <NavLink to="/entita-lista"><Ic>{ICON.entita}</Ic><span>{entTipo.plurale}</span></NavLink>}
           {VOCI.filter(([, , show]) => show).map(([to, label]) => (
             <NavLink key={to} to={to}><Ic>{ICON[key(to)]}</Ic><span>{label}</span></NavLink>
           ))}
