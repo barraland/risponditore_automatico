@@ -528,8 +528,23 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         for _k, _v in _dv.items():
             system = system.replace("{{" + _k + "}}", _v or "")
         ticket_esistente = _ticket_aperto(db, contatto.id)
+        # Saluto d'apertura su WhatsApp: guida la PRIMA risposta, solo al primo messaggio del thread
+        # e solo se il canale è flaggato in dashboard (azienda.saluto_canali). WhatsApp è reattivo:
+        # non un messaggio proattivo, ma l'incipit della prima risposta al cliente.
+        _apertura = ""
+        _tempo = _tempo_da_ultimo(db, contatto.id)
+        if _tempo == "primo messaggio in assoluto" and profilo.saluto_attivo(db, "whatsapp"):
+            _az = profilo.get_azienda(db)
+            _tmpl = (((_az.saluto if _known else _az.saluto_sconosciuto) or "").strip()) if _az else ""
+            if _tmpl:
+                _apertura = elevenlabs._componi_saluto(
+                    _tmpl, contatto if _known else None, (_az.nome if _az else "") or "")
+        _riga_apertura = (
+            f"PRIMO MESSAGGIO DELLA CONVERSAZIONE: apri la tua PRIMA risposta con questo saluto e "
+            f"poi prosegui: «{_apertura}»\n\n" if _apertura else "")
         user = (
-            f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo_da_ultimo(db, contatto.id)}\n\n"
+            _riga_apertura
+            + f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo}\n\n"
             f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
             f"{entita_service.contesto_contatto(db, contatto.id)}\n\n"
             f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"

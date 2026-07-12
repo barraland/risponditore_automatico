@@ -1,12 +1,77 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
+import { supabase } from '../lib/supabase'
 import CampoAzienda from '../components/CampoAzienda'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
 const CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp'], ['mail', 'Mail']]
 const AUDIENCES: [string, string][] = [['cliente', 'Quando parli con un CLIENTE'], ['admin', 'Quando parli con un ADMIN']]
+
+// Su quali canali usare il saluto d'apertura qui sotto. Voce = prima frase della telefonata;
+// WhatsApp = incipit della prima risposta del bot. Default (mai salvato): solo WhatsApp.
+const SALUTO_CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp']]
+
+function SalutoCanali() {
+  const { aziendaId } = useTenant()
+  const [sel, setSel] = useState<string[]>(['whatsapp'])
+  const [busy, setBusy] = useState(false)
+  const [ok, setOk] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!aziendaId) return
+    supabase.from('azienda').select('saluto_canali').eq('id', aziendaId).maybeSingle().then(({ data }) => {
+      const raw = data?.saluto_canali as string | null
+      if (!raw) { setSel(['whatsapp']); return }        // default: solo WhatsApp
+      try {
+        const v = JSON.parse(raw)
+        setSel(Array.isArray(v) ? v.filter((c: string) => c === 'voce' || c === 'whatsapp') : ['whatsapp'])
+      } catch { setSel(['whatsapp']) }
+    })
+  }, [aziendaId])
+
+  function toggle(c: string) {
+    setOk(false)
+    setSel(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+  }
+
+  async function salva() {
+    if (!aziendaId) return
+    setBusy(true); setErr(null); setOk(false)
+    const ordered = SALUTO_CANALI.map(([k]) => k).filter(k => sel.includes(k))
+    const { error } = await supabase.from('azienda').update({ saluto_canali: JSON.stringify(ordered) }).eq('id', aziendaId)
+    setBusy(false)
+    if (error) setErr(error.message); else setOk(true)
+  }
+
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head pw-between" style={{ alignItems: 'center' }}>
+        <h3>Su quali canali usare il saluto</h3>
+        <div className="pw-row" style={{ gap: 8, alignItems: 'center' }}>
+          {ok && <span className="pw-badge ok">salvato ✓</span>}
+          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={salva}>{busy ? 'Salvo…' : 'Salva'}</button>
+        </div>
+      </div>
+      <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
+        <div className="pw-muted" style={{ fontSize: 13 }}>
+          <b>Voce</b>: prima frase della telefonata. <b>WhatsApp</b>: incipit della prima risposta del bot al
+          primo messaggio del cliente. Se un canale è deflaggato usa il saluto di sistema di default.
+        </div>
+        <div className="pw-row" style={{ gap: 16 }}>
+          {SALUTO_CANALI.map(([k, lab]) => (
+            <label key={k} className="pw-row" style={{ gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sel.includes(k)} onChange={() => toggle(k)} /> {lab}
+            </label>
+          ))}
+        </div>
+        {err && <div className="pw-error">{err}</div>}
+      </div>
+    </div>
+  )
+}
 
 type Modulo = {
   chiave: string; titolo: string; ordine: number; attivo: boolean; testo: string
@@ -186,6 +251,8 @@ export default function Prompt() {
       </div>
 
       {err && <div className="pw-error">{err}</div>}
+
+      <SalutoCanali />
 
       {audience === 'cliente' && <>
         <CampoAzienda campo="saluto" titolo="Primo saluto (cliente riconosciuto)" rows={2}

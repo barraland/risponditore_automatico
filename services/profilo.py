@@ -91,6 +91,47 @@ def contatto_campi_prompt(db: Session, azienda_id: int | None = None) -> str:
     return "\n".join(righe)
 
 
+# Canali su cui il SALUTO d'apertura (azienda.saluto*) è attivo. Default: solo WhatsApp
+# (la voce, se deflaggata, usa comunque il saluto di sistema di default).
+_SALUTO_CANALI_VALIDI = ("voce", "whatsapp")
+_SALUTO_CANALI_DEFAULT = ["whatsapp"]
+
+
+def saluto_canali(db: Session, azienda_id: int | None = None) -> list[str]:
+    """Canali su cui il saluto d'apertura è attivo (config del tenant), o il default. La colonna
+    `azienda.saluto_canali` NON è mappata sull'ORM: la leggiamo con SQL grezzo in una sessione
+    separata, così se la migrazione non è ancora girata (colonna assente) NON rompiamo nulla."""
+    import json
+    from sqlalchemy import text
+    from database import SessionLocal
+    az = get_azienda(db, azienda_id)
+    aid = az.id if az else None
+    raw = None
+    s = SessionLocal()
+    try:
+        if aid:
+            raw = s.execute(text("select saluto_canali from azienda where id = :id"), {"id": aid}).scalar()
+        else:
+            raw = s.execute(text("select saluto_canali from azienda limit 1")).scalar()
+    except Exception:
+        raw = None                      # colonna assente (migrazione non ancora fatta) → default
+    finally:
+        s.close()
+    if raw and str(raw).strip():
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list):
+                return [c for c in val if c in _SALUTO_CANALI_VALIDI]
+        except Exception:
+            pass
+    return list(_SALUTO_CANALI_DEFAULT)
+
+
+def saluto_attivo(db: Session, canale: str, azienda_id: int | None = None) -> bool:
+    """True se il saluto d'apertura configurabile è attivo per questo canale ('voce'/'whatsapp')."""
+    return canale in saluto_canali(db, azienda_id)
+
+
 def _sezione(titolo: str, corpo: str) -> str:
     corpo = (corpo or "").strip()
     if not corpo:

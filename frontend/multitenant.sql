@@ -311,3 +311,6 @@ alter table public.tool_descrizione enable row level security;  -- accesso solo 
 
 -- Campi della PERSONA (contatto) che l'assistente chiede SEMPRE: JSON list (nome/cognome/telefono/email/ruolo).
 alter table public.azienda add column if not exists contatto_obbligatori text;
+-- Canali su cui il saluto d'apertura (azienda.saluto*) è attivo. JSON array, es. ["whatsapp"].
+-- NULL/assente => default applicativo (solo WhatsApp).
+alter table public.azienda add column if not exists saluto_canali text;
