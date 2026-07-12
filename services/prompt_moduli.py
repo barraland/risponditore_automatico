@@ -283,7 +283,11 @@ DEFAULT_MODULI = [
             "   - Se il nome coincide con uno già noto → NON dare per scontato che sia lo stesso: chiedi "
             "conferma (es. «È lo stesso Fido del 2025 o un altro?») prima di aggiornare quello (passa il "
             "suo entita_id) o crearne uno nuovo.\n"
-            "   - Non inventare: registra solo ciò che il cliente ti dice."
+            "   - Non inventare: registra solo ciò che il cliente ti dice.\n"
+            "   - NON far confermare l'ovvio: se il cliente ha già detto specie e nome (es. «il mio "
+            "gatto Rocky»), REGISTRALI così come sono, senza chiedere «è un gatto?». La conferma serve "
+            "solo per sciogliere un'omonimia o per un dato critico dettato, non per ripetere ciò che ha "
+            "appena detto."
         ),
     },
     {
@@ -294,11 +298,13 @@ DEFAULT_MODULI = [
             "COME QUALIFICARE IL LEAD (informazioni da raccogliere durante la conversazione)\n"
             "Raccogli, in modo naturale e senza interrogatori, almeno:\n"
             "- nome e cognome della persona e il suo ruolo;\n"
-            "- email e telefono per essere ricontattati;\n"
-            "- i dati dell'ENTITÀ collegata (vedi il modulo dedicato: es. animale, società, ...): "
-            "registrali con registra_entita, non nell'anagrafica della persona;\n"
-            "- di cosa ha bisogno (prodotto/servizio), quantità/volumi se rilevanti, tempistiche e, "
-            "se emerge, budget."
+            "- email per essere ricontattati (il numero da cui ti contatta è GIÀ NOTO dal canale: "
+            "non chiederlo né farlo confermare);\n"
+            "- i dati dell'ENTITÀ collegata (vedi il modulo dedicato: es. animale): registrali con "
+            "registra_entita, non nell'anagrafica della persona;\n"
+            "- di cosa ha bisogno, tempistiche e urgenza.\n"
+            "Non far confermare al cliente ciò che ha appena detto o che già sai: registralo e "
+            "prosegui. Chiedi conferma SOLO per email/numeri dettati o per sciogliere un'omonimia."
         ),
     },
     {

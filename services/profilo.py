@@ -77,17 +77,24 @@ def contatto_obbligatori(db: Session, azienda_id: int | None = None) -> list[str
     return list(_CONTATTO_OBBL_DEFAULT)
 
 
+# Il telefono è l'identificativo del canale (caller-id / numero WhatsApp): è SEMPRE già noto,
+# quindi non va mai chiesto né fatto confermare.
+_CONTATTO_GIA_NOTO = {"telefono"}
+
+
 def contatto_campi_prompt(db: Session, azienda_id: int | None = None) -> str:
     """Blocco da iniettare: dati della PERSONA da raccogliere, con gli OBBLIGATORI (da config).
     Dinamico come quello dell'entità: nel prompt non si scrivono i campi a mano."""
     obb_keys = contatto_obbligatori(db, azienda_id)
-    obb = [lab for k, lab in CONTATTO_CAMPI if k in obb_keys]
-    opz = [lab for k, lab in CONTATTO_CAMPI if k not in obb_keys]
+    obb = [lab for k, lab in CONTATTO_CAMPI if k in obb_keys and k not in _CONTATTO_GIA_NOTO]
+    opz = [lab for k, lab in CONTATTO_CAMPI if k not in obb_keys and k not in _CONTATTO_GIA_NOTO]
     righe = ["\n\n=== DATI DELLA PERSONA (contatto) — da raccogliere e registrare con salva_contatto ==="]
     if obb:
         righe.append("Chiedi SEMPRE (obbligatori): " + ", ".join(obb) + ".")
     if opz:
         righe.append("Raccogli se emergono (opzionali): " + ", ".join(opz) + ".")
+    righe.append("Il numero da cui il cliente ti contatta è GIÀ NOTO (dal canale): usalo così com'è, "
+                 "NON chiederlo e NON farlo confermare.")
     return "\n".join(righe)
 
 
