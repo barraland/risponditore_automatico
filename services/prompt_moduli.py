@@ -162,32 +162,6 @@ DEFAULT_MODULI = [
         ),
     },
     {
-        "chiave": "ordini", "ordine": 70, "titolo": "Ordini (sempre bozza)",
-        "audience": "cliente",
-        "canali": ["voce", "whatsapp"],
-        "testo": (
-            "ORDINI (SEMPRE come BOZZA — non li confermi MAI tu)\n"
-            "1) CAPIRE COSA VUOLE: se nomina un prodotto generico con più formati (es. «la Peroni»), "
-            "o dice «il solito» / «riordina l'ultimo ordine con le birre», consulta storico_ordini "
-            "(giorni=7 ultima settimana, 30 ultimo mese; 0 = tutti). Se ha sempre preso un formato "
-            "usa quello; se ne ha presi più di uno, CHIEDI quale. Per riordinare, riprendi le righe "
-            "dell'ordine giusto.\n"
-            "2) CONFERMA DEL CONTENUTO: RIPETI a voce l'elenco (prodotto + quantità) e fatti dare "
-            "l'ok prima di registrare.\n"
-            "3) NOTE DELL'ORDINE: quando registri, compila le NOTE se utili (orario consegna, "
-            "richieste particolari, sconti). Se dopo emergono nuove indicazioni sullo stesso ordine, "
-            "aggiornale con aggiorna_ordine — senza re-inviare le righe.\n"
-            "4) REGISTRAZIONE (sempre provvisoria): registra con registra_ordine SEMPRE come BOZZA "
-            "(conferma=false). Tu NON confermi mai un ordine: la conferma la dà il cliente via "
-            "email. Dillo CHIARAMENTE: «Le registro l'ordine come provvisorio e le invio il "
-            "riepilogo via email. Diventa definitivo solo dopo la sua conferma rispondendo alla "
-            "mail.»\n"
-            "5) RIEPILOGO VIA EMAIL: invia con invia_riepilogo_ordine. Per l'email applica la regola "
-            "«EMAIL DEL CLIENTE». Se l'invio non riesce, dillo e rassicura che un collega "
-            "ricontatterà il cliente."
-        ),
-    },
-    {
         "chiave": "invii_email", "ordine": 80, "titolo": "Invii al cliente via email",
         "audience": "cliente",
         "canali": ["voce", "whatsapp"],
