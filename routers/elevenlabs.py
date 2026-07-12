@@ -137,16 +137,16 @@ async def init_conversazione(request: Request):
         telefonia.segna_admin(caller, admin, aid)
         contatto = whatsapp_agent.trova_contatto(db, caller, azienda_id=aid) if (caller and not admin) else None
         az = azienda or profilo.get_azienda(db)
-        # Saluto configurabile attivo per la voce? (dashboard: azienda.saluto_canali). Se no, template
-        # vuoti → si usano i saluti di sistema di default.
-        _saluto_voce_on = profilo.saluto_attivo(db, "voce", aid)
-        template_noto = ((az.saluto or "").strip() if (az and _saluto_voce_on) else "")
-        template_sconosciuto = ((az.saluto_sconosciuto or "").strip() if (az and _saluto_voce_on) else "")
+        # Saluto voce: variante di canale (dashboard: azienda.saluto_varianti) se impostata, altrimenti
+        # il testo base della colonna azienda.saluto*; vuoto → saluto di sistema di default.
+        template_noto = profilo.saluto_testo(db, "saluto", "voce", (az.saluto or "") if az else "", aid)
+        template_sconosciuto = profilo.saluto_testo(db, "saluto_sconosciuto", "voce",
+                                                    (az.saluto_sconosciuto or "") if az else "", aid)
         az_nome = (az.nome if az else "") or ""
         if admin:
             dv = dict(_VARS_VUOTE)
-            # Saluto admin: editabile in dashboard (azienda.saluto_admin), fallback al default.
-            template_admin = ((az.saluto_admin or "").strip() if (az and _saluto_voce_on) else "")
+            # Saluto admin: variante voce se impostata, altrimenti base (azienda.saluto_admin), poi default.
+            template_admin = profilo.saluto_testo(db, "saluto_admin", "voce", (az.saluto_admin or "") if az else "", aid)
             dv["saluto"] = (_componi_saluto(template_admin, None, az_nome) if template_admin
                             else _SALUTO_ADMIN_DEFAULT)
             first = dv["saluto"]

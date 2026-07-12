@@ -294,9 +294,9 @@ def _saluto_voce(db, contatto) -> str:
     from routers import elevenlabs
     az = profilo.get_azienda(db)
     known = bool(contatto and (contatto.nome or contatto.cognome or contatto.ragione_sociale))
-    template = (((az.saluto if known else az.saluto_sconosciuto) or "").strip()) if az else ""
-    if not profilo.saluto_attivo(db, "voce"):
-        template = ""                    # saluto disattivato per la voce in dashboard → default
+    slot = "saluto" if known else "saluto_sconosciuto"
+    base = (((az.saluto if known else az.saluto_sconosciuto) or "").strip()) if az else ""
+    template = profilo.saluto_testo(db, slot, "voce", base)   # variante voce se c'è, altrimenti base
     az_nome = (az.nome if az else "") or ""
     if template:
         return elevenlabs._componi_saluto(template, contatto if known else None, az_nome)
@@ -311,9 +311,8 @@ def _saluto_admin_voce(db) -> str:
     fallback al default. Segnaposto {azienda} sostituito."""
     from routers import elevenlabs
     az = profilo.get_azienda(db)
-    template = ((az.saluto_admin or "").strip() if az else "")
-    if not profilo.saluto_attivo(db, "voce"):
-        template = ""                    # saluto disattivato per la voce in dashboard → default
+    base = ((az.saluto_admin or "").strip() if az else "")
+    template = profilo.saluto_testo(db, "saluto_admin", "voce", base)   # variante voce se c'è, altrimenti base
     az_nome = (az.nome if az else "") or ""
     if template:
         return elevenlabs._componi_saluto(template, None, az_nome)

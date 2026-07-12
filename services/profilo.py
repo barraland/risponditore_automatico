@@ -91,16 +91,18 @@ def contatto_campi_prompt(db: Session, azienda_id: int | None = None) -> str:
     return "\n".join(righe)
 
 
-# Canali su cui il SALUTO d'apertura (azienda.saluto*) è attivo. Default: solo WhatsApp
-# (la voce, se deflaggata, usa comunque il saluto di sistema di default).
-_SALUTO_CANALI_VALIDI = ("voce", "whatsapp")
-_SALUTO_CANALI_DEFAULT = ["whatsapp"]
+# Slot del saluto d'apertura (colonne base) e canali con variante dedicata.
+SALUTO_SLOT = ("saluto", "saluto_sconosciuto", "saluto_admin")
+SALUTO_CANALI_VARIANTE = ("voce", "whatsapp")
 
 
-def saluto_canali(db: Session, azienda_id: int | None = None) -> list[str]:
-    """Canali su cui il saluto d'apertura è attivo (config del tenant), o il default. La colonna
-    `azienda.saluto_canali` NON è mappata sull'ORM: la leggiamo con SQL grezzo in una sessione
-    separata, così se la migrazione non è ancora girata (colonna assente) NON rompiamo nulla."""
+def saluto_variante(db: Session, slot: str, canale: str, azienda_id: int | None = None) -> str:
+    """Testo del saluto specifico per un canale (override), da `azienda.saluto_varianti`
+    (JSON: {slot: {canale: testo}}). Ritorna '' se non impostato: in tal caso il chiamante usa il
+    testo BASE della colonna `azienda.<slot>` (come i moduli: variante vuota = usa il base).
+
+    La colonna `azienda.saluto_varianti` NON è mappata sull'ORM: la leggiamo con SQL grezzo in una
+    sessione separata, così se la migrazione non è ancora girata NON rompiamo nulla."""
     import json
     from sqlalchemy import text
     from database import SessionLocal
@@ -110,26 +112,26 @@ def saluto_canali(db: Session, azienda_id: int | None = None) -> list[str]:
     s = SessionLocal()
     try:
         if aid:
-            raw = s.execute(text("select saluto_canali from azienda where id = :id"), {"id": aid}).scalar()
+            raw = s.execute(text("select saluto_varianti from azienda where id = :id"), {"id": aid}).scalar()
         else:
-            raw = s.execute(text("select saluto_canali from azienda limit 1")).scalar()
+            raw = s.execute(text("select saluto_varianti from azienda limit 1")).scalar()
     except Exception:
-        raw = None                      # colonna assente (migrazione non ancora fatta) → default
+        raw = None                      # colonna assente (migrazione non ancora fatta) → nessuna variante
     finally:
         s.close()
     if raw and str(raw).strip():
         try:
-            val = json.loads(raw)
-            if isinstance(val, list):
-                return [c for c in val if c in _SALUTO_CANALI_VALIDI]
+            v = json.loads(raw)
+            if isinstance(v, dict):
+                return ((v.get(slot) or {}).get(canale) or "").strip()
         except Exception:
             pass
-    return list(_SALUTO_CANALI_DEFAULT)
+    return ""
 
 
-def saluto_attivo(db: Session, canale: str, azienda_id: int | None = None) -> bool:
-    """True se il saluto d'apertura configurabile è attivo per questo canale ('voce'/'whatsapp')."""
-    return canale in saluto_canali(db, azienda_id)
+def saluto_testo(db: Session, slot: str, canale: str, base: str = "", azienda_id: int | None = None) -> str:
+    """Saluto risolto per (slot, canale): la variante di canale se impostata, altrimenti il testo base."""
+    return saluto_variante(db, slot, canale, azienda_id) or (base or "").strip()
 
 
 def _sezione(titolo: str, corpo: str) -> str:

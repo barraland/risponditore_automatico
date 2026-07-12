@@ -533,9 +533,12 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         # non un messaggio proattivo, ma l'incipit della prima risposta al cliente.
         _apertura = ""
         _tempo = _tempo_da_ultimo(db, contatto.id)
-        if _tempo == "primo messaggio in assoluto" and profilo.saluto_attivo(db, "whatsapp"):
+        if _tempo == "primo messaggio in assoluto":
             _az = profilo.get_azienda(db)
-            _tmpl = (((_az.saluto if _known else _az.saluto_sconosciuto) or "").strip()) if _az else ""
+            _slot = "saluto" if _known else "saluto_sconosciuto"
+            _base = (((_az.saluto if _known else _az.saluto_sconosciuto) or "").strip()) if _az else ""
+            # Variante WhatsApp se impostata in dashboard, altrimenti il testo base. Vuoto → niente saluto.
+            _tmpl = profilo.saluto_testo(db, _slot, "whatsapp", _base)
             if _tmpl:
                 _apertura = elevenlabs._componi_saluto(
                     _tmpl, contatto if _known else None, (_az.nome if _az else "") or "")

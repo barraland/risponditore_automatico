@@ -2,75 +2,150 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTenant } from '../lib/tenant'
 import { supabase } from '../lib/supabase'
-import CampoAzienda from '../components/CampoAzienda'
 
 const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
 
 const CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp'], ['mail', 'Mail']]
 const AUDIENCES: [string, string][] = [['cliente', 'Quando parli con un CLIENTE'], ['admin', 'Quando parli con un ADMIN']]
 
-// Su quali canali usare il saluto d'apertura qui sotto. Voce = prima frase della telefonata;
-// WhatsApp = incipit della prima risposta del bot. Default (mai salvato): solo WhatsApp.
-const SALUTO_CANALI: [string, string][] = [['voce', 'Voce'], ['whatsapp', 'WhatsApp']]
+// Saluto d'apertura: testo BASE (colonna azienda.<slot>) + varianti per canale (azienda.saluto_varianti).
+// Voce = prima frase della telefonata; WhatsApp = incipit della prima risposta del bot. Variante vuota
+// su un canale => si usa il testo base (come i moduli).
+const SALUTO_CANALI: [string, string][] = [['whatsapp', 'WhatsApp'], ['voce', 'Voce']]
 
-function SalutoCanali() {
-  const { aziendaId } = useTenant()
-  const [sel, setSel] = useState<string[]>(['whatsapp'])
-  const [busy, setBusy] = useState(false)
-  const [ok, setOk] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+type SlotSaluto = { slot: string; titolo: string; hint: string; ph: string }
+const SALUTI_SLOT: Record<string, SlotSaluto[]> = {
+  cliente: [
+    { slot: 'saluto', titolo: 'Primo saluto (cliente riconosciuto)',
+      hint: 'Segnaposto: {nome} {cognome} {azienda}. Vuoto = saluto predefinito.',
+      ph: 'Es. Buongiorno {cognome}, sono l\'assistente della clinica, come posso aiutarla?' },
+    { slot: 'saluto_sconosciuto', titolo: 'Primo saluto (contatto sconosciuto)',
+      hint: 'Qui {nome} è vuoto: non usarlo.',
+      ph: 'Es. Buongiorno, sono l\'assistente della clinica, come posso aiutarla?' },
+  ],
+  admin: [
+    { slot: 'saluto_admin', titolo: 'Primo saluto (amministratore)',
+      hint: 'Segnaposto: {azienda}. Vuoto = saluto predefinito.',
+      ph: 'Es. Buongiorno, sono l\'assistente. Vuole lasciare un promemoria per un cliente?' },
+  ],
+}
 
-  useEffect(() => {
-    if (!aziendaId) return
-    supabase.from('azienda').select('saluto_canali').eq('id', aziendaId).maybeSingle().then(({ data }) => {
-      const raw = data?.saluto_canali as string | null
-      if (!raw) { setSel(['whatsapp']); return }        // default: solo WhatsApp
-      try {
-        const v = JSON.parse(raw)
-        setSel(Array.isArray(v) ? v.filter((c: string) => c === 'voce' || c === 'whatsapp') : ['whatsapp'])
-      } catch { setSel(['whatsapp']) }
-    })
-  }, [aziendaId])
+type VariantiSaluto = Record<string, Record<string, string>>
 
-  function toggle(c: string) {
-    setOk(false)
-    setSel(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
-  }
-
-  async function salva() {
-    if (!aziendaId) return
-    setBusy(true); setErr(null); setOk(false)
-    const ordered = SALUTO_CANALI.map(([k]) => k).filter(k => sel.includes(k))
-    const { error } = await supabase.from('azienda').update({ saluto_canali: JSON.stringify(ordered) }).eq('id', aziendaId)
-    setBusy(false)
-    if (error) setErr(error.message); else setOk(true)
-  }
+function CardSaluto({ meta, base, setBase, varianti, setVarianti, onSalva, busy, ok }: {
+  meta: SlotSaluto
+  base: Record<string, string>; setBase: (f: (b: Record<string, string>) => Record<string, string>) => void
+  varianti: VariantiSaluto; setVarianti: (f: (v: VariantiSaluto) => VariantiSaluto) => void
+  onSalva: (slot: string) => void; busy: boolean; ok: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState('whatsapp')
+  const slot = meta.slot
+  const vslot = varianti[slot] || {}
+  const nVar = SALUTO_CANALI.filter(([c]) => (vslot[c] || '').trim()).length
 
   return (
     <div className="pw-card">
       <div className="pw-card-head pw-between" style={{ alignItems: 'center' }}>
-        <h3>Su quali canali usare il saluto</h3>
+        <h3>{meta.titolo}</h3>
         <div className="pw-row" style={{ gap: 8, alignItems: 'center' }}>
           {ok && <span className="pw-badge ok">salvato ✓</span>}
-          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={salva}>{busy ? 'Salvo…' : 'Salva'}</button>
+          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={() => onSalva(slot)}>{busy ? 'Salvo…' : 'Salva'}</button>
         </div>
       </div>
       <div className="pw-card-body pw-stack" style={{ gap: 8 }}>
-        <div className="pw-muted" style={{ fontSize: 13 }}>
-          <b>Voce</b>: prima frase della telefonata. <b>WhatsApp</b>: incipit della prima risposta del bot al
-          primo messaggio del cliente. Se un canale è deflaggato usa il saluto di sistema di default.
-        </div>
-        <div className="pw-row" style={{ gap: 16 }}>
-          {SALUTO_CANALI.map(([k, lab]) => (
-            <label key={k} className="pw-row" style={{ gap: 6, alignItems: 'center', cursor: 'pointer' }}>
-              <input type="checkbox" checked={sel.includes(k)} onChange={() => toggle(k)} /> {lab}
-            </label>
-          ))}
-        </div>
-        {err && <div className="pw-error">{err}</div>}
+        <div className="pw-muted" style={{ fontSize: 13 }}>{meta.hint}</div>
+        <textarea className="pw-input" rows={2} placeholder={meta.ph}
+          style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+          value={base[slot] || ''} onChange={e => setBase(b => ({ ...b, [slot]: e.target.value }))} />
+
+        <button className="pw-btn pw-btn-ghost pw-btn-sm" style={{ alignSelf: 'flex-start' }}
+          onClick={() => setOpen(o => !o)}>
+          {open ? '▾' : '▸'} Varianti per canale{nVar ? ` (${nVar})` : ''}
+        </button>
+        {open && (
+          <div className="pw-stack" style={{ gap: 6, borderLeft: '2px solid var(--border, #333)', paddingLeft: 12 }}>
+            <div className="pw-row" style={{ gap: 6 }}>
+              {SALUTO_CANALI.map(([c, lab]) => (
+                <button key={c} className={`pw-btn pw-btn-sm ${tab === c ? 'pw-btn-primary' : 'pw-btn-ghost'}`}
+                  onClick={() => setTab(c)}>{lab}{(vslot[c] || '').trim() ? ' •' : ''}</button>
+              ))}
+            </div>
+            <textarea className="pw-input" rows={2} placeholder="(vuoto = usa il testo base qui sopra)"
+              style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+              value={vslot[tab] || ''}
+              onChange={e => setVarianti(v => ({ ...v, [slot]: { ...(v[slot] || {}), [tab]: e.target.value } }))} />
+            <div className="pw-muted" style={{ fontSize: 12 }}>
+              La variante sostituisce il saluto base solo su quel canale. Su <b>WhatsApp</b> è l'incipit
+              della prima risposta del bot: evita "come posso aiutarla?" se il cliente ha già scritto.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+function SezioneSaluti({ audience, aziendaId }: { audience: string; aziendaId: number | null }) {
+  const [base, setBase] = useState<Record<string, string>>({})
+  const [varianti, setVarianti] = useState<VariantiSaluto>({})
+  const [busy, setBusy] = useState<string | null>(null)
+  const [ok, setOk] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!aziendaId) return
+    ;(async () => {
+      // Prova col campo varianti; se la colonna non esiste ancora (migrazione non lanciata) ricadi
+      // sui soli saluti base, così l'editor resta comunque utilizzabile.
+      let data: any = null
+      const full = await supabase.from('azienda')
+        .select('saluto,saluto_sconosciuto,saluto_admin,saluto_varianti').eq('id', aziendaId).maybeSingle()
+      if (full.error) {
+        setErr('Colonna «saluto_varianti» assente: lancia la migrazione per usare le varianti per canale.')
+        const b = await supabase.from('azienda')
+          .select('saluto,saluto_sconosciuto,saluto_admin').eq('id', aziendaId).maybeSingle()
+        data = b.data
+      } else {
+        data = full.data
+      }
+      setBase({
+        saluto: (data?.saluto as string) || '',
+        saluto_sconosciuto: (data?.saluto_sconosciuto as string) || '',
+        saluto_admin: (data?.saluto_admin as string) || '',
+      })
+      let v: VariantiSaluto = {}
+      try { v = data?.saluto_varianti ? JSON.parse(data.saluto_varianti as string) : {} } catch { v = {} }
+      setVarianti(v && typeof v === 'object' ? v : {})
+    })()
+  }, [aziendaId])
+
+  async function salva(slot: string) {
+    if (!aziendaId) return
+    setBusy(slot); setErr(null); setOk(null)
+    // Ripulisci le varianti vuote prima di salvare (nessun canale vuoto nel JSON).
+    const vClean: VariantiSaluto = {}
+    for (const [sl, canali] of Object.entries(varianti)) {
+      const inner: Record<string, string> = {}
+      for (const [c, t] of Object.entries(canali || {})) if ((t || '').trim()) inner[c] = (t as string).trim()
+      if (Object.keys(inner).length) vClean[sl] = inner
+    }
+    const { error } = await supabase.from('azienda').update({
+      [slot]: (base[slot] || '').trim() || null,
+      saluto_varianti: Object.keys(vClean).length ? JSON.stringify(vClean) : null,
+    }).eq('id', aziendaId)
+    setBusy(null)
+    if (error) setErr(error.message); else setOk(slot)
+  }
+
+  return <>
+    {(SALUTI_SLOT[audience] || []).map(m => (
+      <CardSaluto key={m.slot} meta={m} base={base} setBase={setBase}
+        varianti={varianti} setVarianti={setVarianti} onSalva={salva}
+        busy={busy === m.slot} ok={ok === m.slot} />
+    ))}
+    {err && <div className="pw-error">{err}</div>}
+  </>
 }
 
 type Modulo = {
@@ -252,21 +327,7 @@ export default function Prompt() {
 
       {err && <div className="pw-error">{err}</div>}
 
-      <SalutoCanali />
-
-      {audience === 'cliente' && <>
-        <CampoAzienda campo="saluto" titolo="Primo saluto (cliente riconosciuto)" rows={2}
-          hint="Il primo messaggio all'apertura quando il chiamante è riconosciuto. Segnaposto: {nome} {cognome} {azienda}. Vuoto = saluto predefinito."
-          placeholder="Es. Buongiorno {cognome}, sono Margherita di {azienda}, come posso aiutarla?" />
-        <CampoAzienda campo="saluto_sconosciuto" titolo="Primo saluto (chiamante sconosciuto)" rows={2}
-          hint="Primo messaggio quando il numero non è riconosciuto. Qui {nome} è vuoto: non usarlo."
-          placeholder="Es. Buongiorno, sono Margherita di {azienda}, come posso aiutarla?" />
-      </>}
-
-      {audience === 'admin' &&
-        <CampoAzienda campo="saluto_admin" titolo="Primo saluto (amministratore)" rows={2}
-          hint="Prima frase quando chiama un amministratore (letta dall'init voce). Segnaposto: {azienda}. Vuoto = saluto predefinito."
-          placeholder="Es. Buongiorno, sono l'assistente di {azienda}. Vuole lasciare un promemoria per un cliente?" />}
+      <SezioneSaluti audience={audience} aziendaId={aziendaId} />
 
       {showPreview && (
         <div className="pw-card">
