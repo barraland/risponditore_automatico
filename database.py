@@ -47,6 +47,12 @@ class ContattoStato(str, enum.Enum):
     PROSPECT = "prospect"
 
 
+class TipoRecapito(str, enum.Enum):
+    """Tipo di recapito di un contatto. Estendibile a canali futuri (es. altri messaggistici)."""
+    TELEFONO = "telefono"
+    EMAIL = "email"
+
+
 class StatoRelazione(str, enum.Enum):
     """Stato commerciale della SOCIETÀ (non della persona): è la società a essere
     prospect finché non arriva il primo ordine, poi diventa cliente."""
@@ -186,6 +192,11 @@ class Contatto(Base):
 
     societa = relationship("Societa", back_populates="contatti")
     legami_entita = relationship("ContattoEntita", back_populates="contatto", cascade="all, delete-orphan")
+    # Recapiti 1:N (telefoni ed email multipli). Le colonne telefono/email qui sopra restano come
+    # CACHE del recapito "principale" di ciascun tipo (display/ricerca/invii), ma la fonte di verità
+    # per l'identità (lookup del contatto da un numero/una mail in arrivo) è la tabella recapito.
+    recapiti = relationship("Recapito", back_populates="contatto", cascade="all, delete-orphan",
+                            order_by="Recapito.id")
 
     messaggi = relationship(
         "MessaggioChat",
@@ -210,6 +221,26 @@ class Contatto(Base):
     def nome_completo(self) -> str:
         n = f"{self.nome or ''} {self.cognome or ''}".strip()
         return n or (self.ragione_sociale or "Contatto senza nome")
+
+
+class Recapito(Base):
+    """Un recapito del contatto: telefono o email. Un contatto ne ha 0..N per tipo (cardinalità 1:N).
+
+    `valore_norm` è la forma normalizzata usata per il MATCH in ingresso (telefono → ultime 10 cifre,
+    email → minuscolo/trim): è la chiave con cui un numero/una mail in arrivo risolve il contatto.
+    `principale` marca il recapito di default del suo tipo (mostrato in scheda e usato per gli invii)."""
+    __tablename__ = "recapito"
+
+    id = Column(Integer, primary_key=True, index=True)
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False, index=True)
+    tipo = Column(Enum(TipoRecapito), nullable=False)
+    valore = Column(String(200), nullable=False)          # come inserito/detto
+    valore_norm = Column(String(200), nullable=False, index=True)  # normalizzato per il match
+    principale = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    contatto = relationship("Contatto", back_populates="recapiti")
 
 
 class MessaggioChat(Base):

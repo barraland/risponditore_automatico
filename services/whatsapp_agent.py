@@ -73,12 +73,19 @@ def _tenant_id(db: Session, azienda_id: int | None) -> int | None:
 
 
 def trova_contatto(db: Session, telefono: str, azienda_id: int | None = None) -> Contatto | None:
-    """Trova il contatto (NEL TENANT) il cui numero corrisponde (match sulle ultime cifre).
-    Lo scoping per tenant è essenziale: lo stesso numero può esistere per aziende diverse."""
+    """Trova il contatto (NEL TENANT) il cui numero corrisponde. Identità via tabella `recapito`
+    (un contatto può avere PIÙ numeri); fallback alla colonna cache `contatti.telefono` se la tabella
+    non c'è ancora o il numero non è stato backfillato. Scoping per tenant essenziale."""
     chiave = _chiave_tel(telefono)
     if not chiave:
         return None
     aid = _tenant_id(db, azienda_id)
+    from services import recapiti
+    from database import TipoRecapito
+    c = recapiti.trova_contatto(db, TipoRecapito.TELEFONO, telefono, azienda_id=aid)
+    if c:
+        return c
+    # Fallback legacy: scansione sulla colonna cache (pre-migrazione / recapito non ancora creato).
     for c in db.query(Contatto).filter(Contatto.telefono.isnot(None),
                                        Contatto.azienda_id == aid).all():
         if _chiave_tel(c.telefono) == chiave:
@@ -96,6 +103,10 @@ def trova_o_crea_contatto(db: Session, telefono: str, azienda_id: int | None = N
     db.add(c)
     db.commit()
     db.refresh(c)
+    # Registra il numero come recapito (principale). No-op se la tabella non esiste ancora.
+    from services import recapiti
+    from database import TipoRecapito
+    recapiti.aggiungi(db, c, TipoRecapito.TELEFONO, telefono, principale=True, commit=True)
     logger.info("Nuovo lead creato dal numero %s (id %s, tenant %s)", telefono, c.id, aid)
     return c
 

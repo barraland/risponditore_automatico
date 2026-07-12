@@ -229,13 +229,22 @@ def _applica_contatto(telefono: str, nome: str, cognome: str, ruolo: str, email:
     db = SessionLocal()
     try:
         c = _contatto(db, telefono, tenant)
-        campi = {"titolo": titolo, "nome": nome, "cognome": cognome, "ruolo": ruolo, "email": email}
+        campi = {"titolo": titolo, "nome": nome, "cognome": cognome, "ruolo": ruolo}
         cambiato = False
         for k, v in campi.items():
             v = (v or "").strip()
             if v and getattr(c, k) != v:
                 setattr(c, k, v)
                 cambiato = True
+        # Email → recapito (un contatto può averne più d'una). aggiungi() aggiorna anche la cache
+        # contatti.email; se la tabella recapito non esiste ancora, fallback sulla colonna.
+        em = (email or "").strip()
+        if em:
+            from services import recapiti
+            from database import TipoRecapito
+            if recapiti.aggiungi(db, c, TipoRecapito.EMAIL, em) is None and c.email != em:
+                c.email = em
+            cambiato = True
         # Note: testo libero che si ACCUMULA (non sovrascrive). Aggiunge solo se non già presente.
         n = (note or "").strip()
         if n and n not in (c.note or ""):

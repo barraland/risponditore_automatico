@@ -82,6 +82,15 @@ export default function ContattiList() {
   )
 }
 
+// Normalizza un recapito come il backend (telefono: ultime 10 cifre; email: minuscolo/trim).
+function normRec(tipo: string, val: string): string {
+  const v = (val || '').trim()
+  if (tipo === 'EMAIL') return v.toLowerCase()
+  let d = v.replace(/\D/g, '')
+  if (d.startsWith('00')) d = d.slice(2)
+  return d.length >= 10 ? d.slice(-10) : d
+}
+
 function NuovoContatto({ onClose, onCreato }: { onClose: () => void; onCreato: (id: number) => void }) {
   const [f, setF] = useState({ nome: '', cognome: '', ruolo: '', telefono: '', email: '', stato: 'PROSPECT' })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
@@ -94,7 +103,15 @@ function NuovoContatto({ onClose, onCreato }: { onClose: () => void; onCreato: (
       telefono: f.telefono.trim() || null, email: f.email.trim() || null, stato: f.stato,
       azienda_id: aziendaId,
     }).select('id').single()
-    setBusy(false); if (error) setErr(error.message); else onCreato(data!.id)
+    if (error) { setBusy(false); setErr(error.message); return }
+    const cid = data!.id
+    // Recapiti principali (best-effort: se la tabella non esiste ancora, i valori restano sulle colonne).
+    const recs: any[] = []
+    const tel = f.telefono.trim(), em = f.email.trim()
+    if (tel) recs.push({ azienda_id: aziendaId, contatto_id: cid, tipo: 'TELEFONO', valore: tel, valore_norm: normRec('TELEFONO', tel), principale: true })
+    if (em) recs.push({ azienda_id: aziendaId, contatto_id: cid, tipo: 'EMAIL', valore: em, valore_norm: normRec('EMAIL', em), principale: true })
+    if (recs.length) await supabase.from('recapito').insert(recs)
+    setBusy(false); onCreato(cid)
   }
   return (
     <Modal title="Nuovo contatto" onClose={onClose}

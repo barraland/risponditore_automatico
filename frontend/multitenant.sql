@@ -315,3 +315,63 @@ alter table public.azienda add column if not exists contatto_obbligatori text;
 -- {"saluto": {"whatsapp": "Buongiorno {cognome}, sono l'assistente della clinica."}}.
 -- Variante vuota/assente per un canale => si usa il testo base della colonna azienda.<slot>.
 alter table public.azienda add column if not exists saluto_varianti text;
+
+-- ===================================================================================================
+-- RECAPITI DEI CONTATTI (telefoni ed email multipli, cardinalità 1:N).
+-- La tabella `recapito` e il tipo enum `tiporecapito` li crea SQLAlchemy (create_all) al deploy: qui
+-- aggiungiamo SOLO RLS + backfill dai valori esistenti + trigger che mantiene allineate le colonne
+-- cache contatti.telefono/email al recapito «principale». Idempotente: si può rilanciare.
+-- I valori dell'enum sono i NOMI dei membri Python: 'TELEFONO' / 'EMAIL' (come per gli altri enum).
+-- ===================================================================================================
+do $$ begin
+  if to_regclass('public.recapito') is null then
+    raise notice 'Tabella public.recapito assente: deploya prima il backend (create_all la crea), poi rilancia.';
+    return;
+  end if;
+
+  -- RLS tenant come le altre tabelle-tenant dirette.
+  execute 'alter table public.recapito enable row level security';
+  execute 'drop policy if exists tenant_all on public.recapito';
+  execute 'create policy tenant_all on public.recapito for all to authenticated '
+       || 'using (public.can_see_tenant(azienda_id)) with check (public.can_see_tenant(azienda_id))';
+  create index if not exists ix_recapito_contatto on public.recapito(contatto_id);
+  create index if not exists ix_recapito_lookup   on public.recapito(azienda_id, tipo, valore_norm);
+
+  -- Backfill: crea un recapito «principale» dai valori già presenti su contatti (se non già presente).
+  insert into public.recapito (azienda_id, contatto_id, tipo, valore, valore_norm, principale, created_at)
+  select c.azienda_id, c.id, 'TELEFONO', trim(c.telefono),
+         right(regexp_replace(c.telefono, '\D', '', 'g'), 10), true, now()
+  from public.contatti c
+  where c.telefono is not null and length(trim(c.telefono)) > 0
+    and not exists (select 1 from public.recapito r where r.contatto_id = c.id and r.tipo = 'TELEFONO');
+
+  insert into public.recapito (azienda_id, contatto_id, tipo, valore, valore_norm, principale, created_at)
+  select c.azienda_id, c.id, 'EMAIL', trim(c.email), lower(trim(c.email)), true, now()
+  from public.contatti c
+  where c.email is not null and length(trim(c.email)) > 0
+    and not exists (select 1 from public.recapito r where r.contatto_id = c.id and r.tipo = 'EMAIL');
+end $$;
+
+-- Trigger: mantiene contatti.telefono/email allineate al recapito principale di ciascun tipo.
+create or replace function public.sync_recapito_cache() returns trigger as $$
+declare cid integer;
+begin
+  cid := coalesce(new.contatto_id, old.contatto_id);
+  update public.contatti c set
+    telefono = (select r.valore from public.recapito r
+                where r.contatto_id = cid and r.tipo = 'TELEFONO'
+                order by r.principale desc, r.id limit 1),
+    email    = (select r.valore from public.recapito r
+                where r.contatto_id = cid and r.tipo = 'EMAIL'
+                order by r.principale desc, r.id limit 1)
+  where c.id = cid;
+  return null;
+end $$ language plpgsql security definer;
+
+do $$ begin
+  if to_regclass('public.recapito') is not null then
+    drop trigger if exists trg_recapito_cache on public.recapito;
+    create trigger trg_recapito_cache after insert or update or delete on public.recapito
+      for each row execute function public.sync_recapito_cache();
+  end if;
+end $$;

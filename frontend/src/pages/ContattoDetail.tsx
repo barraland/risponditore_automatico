@@ -80,6 +80,7 @@ export default function ContattoDetail() {
               </div>
             </div>
           </div>
+          <Recapiti contattoId={c.id} aziendaId={aziendaId} onChange={carica} />
           <EntitaCollegate contattoId={c.id} />
           <Promemoria contattoId={c.id} />
         </div>
@@ -87,6 +88,112 @@ export default function ContattoDetail() {
       </div>
 
       {edit && <EditContatto c={c} onClose={() => setEdit(false)} onSalvato={() => { setEdit(false); carica() }} />}
+    </div>
+  )
+}
+
+// Normalizza un recapito come fa il backend (telefono: ultime 10 cifre; email: minuscolo/trim).
+function normRecapito(tipo: string, val: string): string {
+  const v = (val || '').trim()
+  if (tipo === 'EMAIL') return v.toLowerCase()
+  let d = v.replace(/\D/g, '')
+  if (d.startsWith('00')) d = d.slice(2)
+  return d.length >= 10 ? d.slice(-10) : d
+}
+
+function Recapiti({ contattoId, aziendaId, onChange }: {
+  contattoId: number; aziendaId: number | null; onChange: () => void
+}) {
+  const [righe, setRighe] = useState<any[]>([])
+  const [assente, setAssente] = useState(false)
+  const [tipo, setTipo] = useState('TELEFONO')
+  const [val, setVal] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function carica() {
+    const { data, error } = await supabase.from('recapito')
+      .select('id, tipo, valore, principale').eq('contatto_id', contattoId)
+      .order('tipo').order('principale', { ascending: false }).order('id')
+    if (error) { setAssente(true); return }
+    setAssente(false); setRighe(data || [])
+  }
+  useEffect(() => { carica() }, [contattoId])
+
+  async function aggiungi() {
+    const valore = val.trim()
+    if (!valore) return
+    const norm = normRecapito(tipo, valore)
+    if (!norm) { setErr('Valore non valido.'); return }
+    setBusy(true); setErr(null)
+    const primo = !righe.some(r => r.tipo === tipo)
+    const { error } = await supabase.from('recapito').insert({
+      azienda_id: aziendaId, contatto_id: contattoId, tipo, valore, valore_norm: norm, principale: primo,
+    })
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setVal(''); await carica(); onChange()
+  }
+
+  async function rendiPrincipale(r: any) {
+    // Un solo principale per tipo: azzera i fratelli, poi imposta questo.
+    await supabase.from('recapito').update({ principale: false })
+      .eq('contatto_id', contattoId).eq('tipo', r.tipo)
+    await supabase.from('recapito').update({ principale: true }).eq('id', r.id)
+    await carica(); onChange()
+  }
+
+  async function elimina(r: any) {
+    if (!confirm(`Eliminare il recapito «${r.valore}»?`)) return
+    const { error } = await supabase.from('recapito').delete().eq('id', r.id)
+    if (error) { setErr(error.message); return }
+    await carica(); onChange()
+  }
+
+  if (assente) return (
+    <div className="pw-card"><div className="pw-card-head"><h3>Recapiti</h3></div>
+      <div className="pw-card-body pw-muted" style={{ fontSize: 13 }}>
+        Tabella recapiti non ancora disponibile: lancia la migrazione (recapito) per gestire più
+        telefoni ed email.
+      </div></div>
+  )
+
+  const gruppi: [string, string][] = [['TELEFONO', 'Telefoni'], ['EMAIL', 'Email']]
+  return (
+    <div className="pw-card">
+      <div className="pw-card-head"><h3>Recapiti</h3></div>
+      <div className="pw-card-body pw-stack" style={{ gap: 12, fontSize: 14 }}>
+        {gruppi.map(([t, lab]) => {
+          const del = righe.filter(r => r.tipo === t)
+          return (
+            <div key={t} className="pw-stack" style={{ gap: 4 }}>
+              <div className="pw-muted" style={{ fontSize: 12 }}>{lab}</div>
+              {del.length === 0 && <div style={{ color: 'var(--fg-2)' }}>—</div>}
+              {del.map(r => (
+                <div key={r.id} className="pw-row" style={{ gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--fg)' }}>
+                    {r.valore}{r.principale && <span className="pw-badge ok" style={{ marginLeft: 6 }}>principale</span>}
+                  </span>
+                  <span className="pw-row" style={{ gap: 6 }}>
+                    {!r.principale && <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => rendiPrincipale(r)}>Rendi principale</button>}
+                    <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(r)}>✕</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+        <div className="pw-row" style={{ gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select className="pw-select pw-btn-sm" value={tipo} onChange={e => setTipo(e.target.value)} style={{ width: 'auto' }}>
+            <option value="TELEFONO">Telefono</option>
+            <option value="EMAIL">Email</option>
+          </select>
+          <input className="pw-input pw-btn-sm" style={{ flex: 1, minWidth: 160 }} placeholder="Nuovo recapito"
+            value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && aggiungi()} />
+          <button className="pw-btn pw-btn-primary pw-btn-sm" disabled={busy} onClick={aggiungi}>{busy ? '…' : 'Aggiungi'}</button>
+        </div>
+        {err && <div className="pw-error">{err}</div>}
+      </div>
     </div>
   )
 }
@@ -359,16 +466,16 @@ function Kv({ k, v }: { k: string; v?: string | null }) {
 
 function EditContatto({ c, onClose, onSalvato }: any) {
   const [f, setF] = useState({
-    nome: c.nome || '', cognome: c.cognome || '', ruolo: c.ruolo || '', telefono: c.telefono || '',
-    email: c.email || '', note: c.note || '',
+    nome: c.nome || '', cognome: c.cognome || '', ruolo: c.ruolo || '', note: c.note || '',
   })
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: string) => setF({ ...f, [k]: v })
   async function salva() {
     setBusy(true); setErr(null)
+    // Telefono/email NON qui: sono recapiti multipli, si gestiscono nella card «Recapiti».
     const { error } = await supabase.from('contatti').update({
       nome: f.nome.trim() || null, cognome: f.cognome.trim() || null, ruolo: f.ruolo.trim() || null,
-      telefono: f.telefono.trim() || null, email: f.email.trim() || null, note: f.note.trim() || null,
+      note: f.note.trim() || null,
     }).eq('id', c.id)
     setBusy(false); if (error) setErr(error.message); else onSalvato()
   }
@@ -380,10 +487,7 @@ function EditContatto({ c, onClose, onSalvato }: any) {
         <div className="pw-field" style={{ flex: 1 }}><label>Cognome</label><input className="pw-input" value={f.cognome} onChange={e => set('cognome', e.target.value)} /></div>
       </div>
       <div className="pw-field"><label>Ruolo</label><input className="pw-input" value={f.ruolo} onChange={e => set('ruolo', e.target.value)} /></div>
-      <div className="pw-row" style={{ gap: 12 }}>
-        <div className="pw-field" style={{ flex: 1 }}><label>Telefono</label><input className="pw-input" value={f.telefono} onChange={e => set('telefono', e.target.value)} /></div>
-        <div className="pw-field" style={{ flex: 1 }}><label>Email</label><input className="pw-input" value={f.email} onChange={e => set('email', e.target.value)} /></div>
-      </div>
+      <div className="pw-muted" style={{ fontSize: 12 }}>Telefoni ed email si gestiscono nella card «Recapiti» (più di uno per contatto).</div>
       <div className="pw-field"><label>Note (testo libero)</label>
         <textarea className="pw-input" rows={5} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
           placeholder="Contesto libero sul contatto (es. per un veterinario: nome animale, patologie, allergie…)"
