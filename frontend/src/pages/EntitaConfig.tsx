@@ -296,7 +296,7 @@ function Editor({ tipo, aziendaId, onClose, onSaved }: {
                 <div className="pw-field" style={{ flex: 2, minWidth: 180 }}>
                   <label>Etichetta del campo</label>
                   <input className="pw-input" value={c.label} placeholder="Es. Specie animale"
-                    onChange={e => patchCampo(i, { label: e.target.value, chiave: c.chiave || slug(e.target.value) })} />
+                    onChange={e => patchCampo(i, { label: e.target.value, chiave: slug(e.target.value) })} />
                 </div>
                 <div className="pw-field" style={{ minWidth: 150 }}>
                   <label>Tipo</label>

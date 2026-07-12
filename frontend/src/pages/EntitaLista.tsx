@@ -21,14 +21,15 @@ export default function EntitaLista() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [edit, setEdit] = useState<any | null>(null)
+  const [view, setView] = useState<any | null>(null)
   const [params] = useSearchParams()
 
-  // Arrivando da un contatto con ?open=<id>, apre direttamente quell'entità.
+  // Arrivando da un contatto con ?open=<id>, apre quell'entità in VISUALIZZAZIONE (non in modifica).
   useEffect(() => {
     const openId = params.get('open')
     if (openId && righe.length) {
       const r = righe.find(x => String(x.id) === openId)
-      if (r) setEdit(r)
+      if (r) setView(r)
     }
   }, [righe])   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -123,9 +124,41 @@ export default function EntitaLista() {
           )}
       </div>
 
+      {view && <ViewIstanza tipo={tipo} riga={view} onClose={() => setView(null)}
+        onEdit={() => { setEdit(view); setView(null) }} />}
       {edit && <EditIstanza tipo={tipo} riga={edit} onClose={() => setEdit(null)}
         onSaved={() => { setEdit(null); carica() }} />}
     </div>
+  )
+}
+
+function ViewIstanza({ tipo, riga, onClose, onEdit }: {
+  tipo: Tipo; riga: any; onClose: () => void; onEdit: () => void
+}) {
+  const v = riga.valoriObj || {}
+  const contatti = (riga.contatto_entita || []).map((l: any) => l.contatti).filter(Boolean)
+  return (
+    <Modal title={riga.etichetta || etichettaDa(tipo, v)} width={620} onClose={onClose}
+      footer={<><button className="pw-btn pw-btn-ghost" onClick={onClose}>Chiudi</button>
+               <button className="pw-btn pw-btn-primary" onClick={onEdit}>Modifica</button></>}>
+      {tipo.campi.map(c => (
+        <div key={c.chiave} className="pw-field">
+          <label>{c.label}</label>
+          <div style={{ padding: '4px 0', fontSize: 15, color: 'var(--fg)' }}>
+            {v[c.chiave] != null && v[c.chiave] !== '' ? String(v[c.chiave]) : '—'}
+          </div>
+        </div>
+      ))}
+      <div className="pw-field">
+        <label>Contatti collegati</label>
+        <div style={{ padding: '4px 0' }}>
+          {contatti.length
+            ? contatti.map((c: any, i: number) => (
+              <span key={c.id}>{i > 0 ? ', ' : ''}<Link to={`/contatti/${c.id}`}>{nomeContatto(c)}</Link></span>))
+            : '—'}
+        </div>
+      </div>
+    </Modal>
   )
 }
 

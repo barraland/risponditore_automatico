@@ -10,6 +10,7 @@ massima per contatto, e produce il blocco di prompt che dice all'assistente cosa
 
 import json
 import logging
+import re
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,41 @@ def campi(tipo: EntitaTipo) -> list[dict]:
         return val if isinstance(val, list) else []
     except Exception:
         return []
+
+
+def _slug(s: str) -> str:
+    s = (s or "").strip().lower()
+    return re.sub(r"[^0-9a-zà-ù]+", "_", s).strip("_")
+
+
+def _normalizza_valori(tipo: EntitaTipo, valori: dict) -> dict:
+    """Rimappa le chiavi di `valori` (come le manda l'LLM: 'nome', 'specie', 'Nome'…) alle chiavi
+    ESATTE dei campi configurati. L'LLM non conosce sempre lo slug interno (es. 's' per «Specie
+    animale»): riconosciamo la chiave esatta, il suo slug, la label, lo slug della label o il PRIMO
+    token dello slug della label (es. 'specie' → «Specie animale»). Le chiavi non riconosciute
+    restano invariate (nessuna perdita di dati)."""
+    defs = campi(tipo)
+    if not defs:
+        return dict(valori or {})
+    alias: dict[str, str] = {}
+    for c in defs:
+        ch = (c.get("chiave") or "").strip()
+        lab = (c.get("label") or "").strip()
+        if not ch:
+            continue
+        for a in (ch, _slug(ch), lab.lower(), _slug(lab)):
+            if a:
+                alias.setdefault(a, ch)
+        toks = _slug(lab).split("_")
+        if toks and toks[0]:
+            alias.setdefault(toks[0], ch)     # primo token della label (es. 'specie_animale' → 'specie')
+    out: dict = {}
+    for k, v in (valori or {}).items():
+        target = alias.get(k) or alias.get((k or "").strip().lower()) or alias.get(_slug(k or "")) or k
+        if target in out and v in (None, ""):
+            continue
+        out[target] = v
+    return out
 
 
 def _valori(ent: Entita) -> dict:
@@ -110,7 +146,8 @@ def registra(db: Session, azienda_id: int | None, contatto_id: int, valori: dict
         if not c:
             return {"ok": False, "errore": "Contatto inesistente."}
         aid = azienda_id or c.azienda_id
-        valori = {k: v for k, v in (valori or {}).items() if v not in (None, "")}
+        valori = _normalizza_valori(tipo, valori or {})   # chiavi LLM → chiavi esatte dei campi
+        valori = {k: v for k, v in valori.items() if v not in (None, "")}
 
         def _aggiorna(e: Entita) -> dict:
             v = _valori(e)
@@ -181,14 +218,21 @@ def blocco_prompt(db: Session, azienda_id: int | None) -> str:
     defs = campi(tipo)
     if not defs:
         return ""
-    obb = [c.get("label") or c.get("chiave") for c in defs if c.get("obbligatorio")]
-    opz = [c.get("label") or c.get("chiave") for c in defs if not c.get("obbligatorio")]
+    def _f(c: dict) -> str:
+        lab = c.get("label") or c.get("chiave")
+        opts = c.get("opzioni") or []
+        suff = f" [valori ammessi: {', '.join(opts)}]" if opts else ""
+        return f'{lab} → chiave "{c.get("chiave")}"{suff}'
+
+    obb = [_f(c) for c in defs if c.get("obbligatorio")]
+    opz = [_f(c) for c in defs if not c.get("obbligatorio")]
     card = ("una sola" if tipo.max_per_contatto == 1 else "più di una (chiedi se ce ne sono altre)")
     righe = [f"\n\n=== {tipo.nome_singolare.upper()} DEL CLIENTE (da raccogliere e registrare) ==="]
     righe.append(f"Ogni cliente può avere {card} «{tipo.nome_singolare}».")
     if obb:
-        righe.append("Chiedi SEMPRE (obbligatori): " + ", ".join(obb) + ".")
+        righe.append("Chiedi SEMPRE (obbligatori): " + "; ".join(obb) + ".")
     if opz:
-        righe.append("Raccogli se emergono (opzionali): " + ", ".join(opz) + ".")
-    righe.append(f"Registra i dati con lo strumento dedicato, un record per «{tipo.nome_singolare}».")
+        righe.append("Raccogli se emergono (opzionali): " + "; ".join(opz) + ".")
+    righe.append(f"Registra i dati con lo strumento dedicato (un record per «{tipo.nome_singolare}»), "
+                 f"passando in `valori` ESATTAMENTE le chiavi indicate qui sopra (tra virgolette).")
     return "\n".join(righe)
