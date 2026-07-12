@@ -74,7 +74,9 @@ export default function EntitaLista() {
     )
   }
 
-  const colonne = tipo.campi.slice(0, 3)
+  // Il campo-etichetta è già la 1ª colonna "Nome": escludilo dalle altre per non duplicarlo.
+  const campoEt = tipo.campi.find(c => c.chiave === tipo.campo_etichetta)
+  const colonne = tipo.campi.filter(c => c.chiave !== tipo.campo_etichetta).slice(0, 3)
 
   return (
     <div className="pw-stack">
@@ -99,7 +101,7 @@ export default function EntitaLista() {
             <div style={{ overflowX: 'auto' }}>
               <table className="pw-table">
                 <thead><tr>
-                  <th>Nome</th>
+                  <th>{campoEt?.label || 'Nome'}</th>
                   {colonne.map(c => <th key={c.chiave}>{c.label}</th>)}
                   <th>Contatti</th><th>Creato</th><th></th>
                 </tr></thead>
