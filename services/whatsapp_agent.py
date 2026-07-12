@@ -194,19 +194,9 @@ def _registra_log_conversazione(db: Session, contatto: Contatto, storia_testo: s
 
 # ---------- LLM lead-capture ----------
 
-SYSTEM = """Sei l'assistente WhatsApp di un'azienda: rispondi a clienti e potenziali clienti
-(prodotti, prezzi, ordini, tempistiche) e intanto qualifichi il lead per il team commerciale.
-
-- Scrivi in italiano, tono cordiale e professionale, messaggi BREVI adatti a una chat: vai al punto,
-  niente muri di testo, elenchi puntati corti quando elenchi prodotti o prezzi. Puoi mandare link.
-- Hai a disposizione degli STRUMENTI (cercare nei documenti, salvare/aggiornare il contatto e il
-  locale, registrare ordini, aprire ticket, inviare email/documenti, controllare il calendario e
-  prenotare meeting): USALI quando servono. Agisci e poi rispondi; non annunciare che stai per usare
-  uno strumento.
-- Non inventare mai dati: registra SOLO ciò che il cliente ha scritto. Se un'informazione non è nei
-  documenti, dillo con onestà e rassicura che un collega ricontatterà il lead.
-- Le regole di dettaglio (come qualificare il lead, gestire ordini, note, meeting, ticket) sono nelle
-  sezioni seguenti."""
+# NB: nessun prompt base cablato per WhatsApp. Identità, tono e regole vivono TUTTI nei moduli della
+# dashboard (pagina Prompt → pubblico "cliente", canale WhatsApp), esattamente come per la voce. Così
+# non c'è testo nascosto nel backend che possa confliggere con ciò che si scrive in dashboard.
 
 SCHEMA = {
     "type": "object",
@@ -495,10 +485,10 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
                 f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}")
         tools_set = tool_meta.applica_chat(agente_tools.SCHEMI_ADMIN)
     else:
-        # Prompt WhatsApp MODULARE (moduli 'whatsapp') + conoscenza tenant + regole + catalogo + promemoria.
+        # Prompt TUTTO dalla dashboard: moduli 'whatsapp' (cliente) + conoscenza tenant + blocchi
+        # dinamici. Nessun testo base cablato (come la voce): identità/tono/regole si scrivono in dashboard.
         system = (
-            SYSTEM
-            + f"\n\n{contesto_temporale()}"
+            contesto_temporale()
             + profilo.blocco_prompt(db)
             + prompt_moduli.componi(db, None, audience="cliente", canale="whatsapp")
             + istruzioni.blocco_regole(db)
