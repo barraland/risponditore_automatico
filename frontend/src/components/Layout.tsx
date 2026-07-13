@@ -5,6 +5,19 @@ import { useTenant } from '../lib/tenant'
 import { supabase } from '../lib/supabase'
 import Modal from './Modal'
 import GoogleConnect from './GoogleConnect'
+import { DESIGN_SYSTEMS, getDesignSystem, setDesignSystem, type DesignSystem } from '../lib/designSystem'
+
+// Selettore del DESIGN SYSTEM (aspetto della dashboard). Cambio immediato, persistito per-browser.
+function DesignSystemSwitcher() {
+  const [ds, setDs] = useState<DesignSystem>(getDesignSystem())
+  return (
+    <select className="pw-select pw-btn-sm" style={{ width: '100%' }} value={ds}
+      title="Aspetto della dashboard (design system)"
+      onChange={e => { const v = e.target.value as DesignSystem; setDs(v); setDesignSystem(v) }}>
+      {DESIGN_SYSTEMS.map(d => <option key={d.id} value={d.id}>🎨 {d.nome}</option>)}
+    </select>
+  )
+}
 
 // Icona SVG (stile Feather, eredita currentColor).
 function Ic({ children }: { children: ReactNode }) {
@@ -139,6 +152,7 @@ export default function Layout() {
 
         <div className="pw-side-foot">
           <TenantSwitcher />
+          <DesignSystemSwitcher />
           <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
             onClick={() => setConfig(true)}>⚙️ Personalizza</button>
         </div>

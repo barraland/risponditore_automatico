@@ -1,0 +1,121 @@
+/* ============================================================
+   Pipework — tema "Medicale" (bianco, professionale, moderno).
+   Layer di OVERRIDE: si attiva con <html data-ds="medicale">. Non tocca il tema
+   di default (index.css = "Technical dark"). Stessa struttura, stesse classi pw-*:
+   qui cambiano solo i token e le poche regole decorative "hardcoded".
+   Palette: bianco + teal clinico + slate; niente griglia/neon, ombre morbide,
+   Inter ovunque (via i token font).
+   ============================================================ */
+
+:root[data-ds="medicale"] {
+  /* Superfici: pagina grigio-freddo tenue, card bianche */
+  --bg: #F4F7FA; --bg-2: #FFFFFF; --bg-3: #F1F5F9; --bg-soft: #F7FAFC;
+  --border: #E4EAF0; --border-2: #D3DDE7;
+  /* Testo: slate profondo, non nero puro */
+  --fg: #0F2C43; --fg-2: #3A5266; --fg-3: #6A7E90; --fg-4: #9BABB8;
+  /* Accento: teal clinico + blu calmo per i link */
+  --acc-1: #0F9E8E; --acc-1-dim: #0C8375; --acc-2: #1F86C9; --acc-2-dim: #166699;
+  --acc-grad: linear-gradient(135deg, #0F9E8E 0%, #1F86C9 100%);
+  --acc-grad-soft: linear-gradient(135deg, rgba(15,158,142,.12) 0%, rgba(31,134,201,.12) 100%);
+  --danger: #E5484D; --warn: #C2740B; --ok: #12A150;
+  /* Raggi leggermente più contenuti (meno "pill", più app clinica) */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-full: 999px;
+  /* Font: label in sans (via var), niente mono a etichettare tutto */
+  --font-label: var(--font-sans);
+  --e-out: cubic-bezier(.16,1,.3,1); --t-fast: .16s;
+}
+
+/* ---------- Sfondo: pulito, niente griglia né glow ---------- */
+html[data-ds="medicale"] body { color: var(--fg-2); }
+html[data-ds="medicale"] body::before,
+html[data-ds="medicale"] body::after { display: none !important; }
+
+html[data-ds="medicale"] ::selection { background: var(--acc-1); color: #fff; }
+html[data-ds="medicale"] a { color: var(--acc-2); }
+html[data-ds="medicale"] a:hover { color: var(--acc-1); }
+html[data-ds="medicale"] code {
+  font-family: var(--font-mono); color: var(--acc-2-dim);
+  background: var(--bg-3); border: 1px solid var(--border); border-radius: 5px;
+}
+
+/* ---------- Etichette: da mono/uppercase-tech a sans pulito ---------- */
+html[data-ds="medicale"] .pw-eyebrow {
+  font: 600 12px/1 var(--font-sans); letter-spacing: .06em; color: var(--acc-1-dim);
+}
+html[data-ds="medicale"] .pw-field > label {
+  font: 600 12px/1 var(--font-sans); letter-spacing: .01em; text-transform: none; color: var(--fg-3);
+}
+html[data-ds="medicale"] .pw-table th {
+  font: 600 .74rem/1 var(--font-sans); letter-spacing: .02em; color: var(--fg-3);
+  background: var(--bg-soft); border-bottom: 1px solid var(--border);
+}
+html[data-ds="medicale"] .pw-badge { font: 600 11px/1 var(--font-sans); letter-spacing: .01em; }
+
+/* ---------- Navbar / sidebar / topbar: da vetro scuro a vetro chiaro ---------- */
+html[data-ds="medicale"] .pw-nav,
+html[data-ds="medicale"] .pw-side {
+  background: rgba(255,255,255,.82); border-color: var(--border);
+  backdrop-filter: blur(14px) saturate(120%);
+}
+html[data-ds="medicale"] .pw-topbar {
+  background: rgba(255,255,255,.7); border-color: var(--border);
+  backdrop-filter: blur(12px) saturate(120%);
+}
+html[data-ds="medicale"] .pw-nav-links a:hover,
+html[data-ds="medicale"] .pw-nav-right a:hover,
+html[data-ds="medicale"] .pw-side-nav a:hover { background: rgba(15,44,67,.05); color: var(--fg); }
+html[data-ds="medicale"] .pw-side-nav a:hover svg { color: var(--acc-1); }
+html[data-ds="medicale"] .pw-nav-links a.active,
+html[data-ds="medicale"] .pw-nav-right a.active,
+html[data-ds="medicale"] .pw-side-nav a.active {
+  background: var(--acc-grad-soft); color: var(--acc-1-dim);
+  box-shadow: inset 0 0 0 1px rgba(15,158,142,.22);
+}
+html[data-ds="medicale"] .pw-side-nav a.active svg { color: var(--acc-1); }
+html[data-ds="medicale"] .pw-burger {
+  background: rgba(255,255,255,.9); color: var(--fg-2); border-color: var(--border-2);
+}
+
+/* ---------- Card: bianca, bordo tenue, ombra morbida (niente gradiente scuro) ---------- */
+html[data-ds="medicale"] .pw-card {
+  background: var(--bg-2); border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(15,44,67,.04), 0 12px 28px -18px rgba(15,44,67,.18);
+}
+html[data-ds="medicale"] .pw-card-head { border-bottom: 1px solid var(--border); }
+
+/* ---------- Bottoni: primario teal con testo bianco, raggio più contenuto ---------- */
+html[data-ds="medicale"] .pw-btn { border-radius: var(--r-md); }
+html[data-ds="medicale"] .pw-btn-primary { background: var(--acc-1); color: #fff; }
+html[data-ds="medicale"] .pw-btn-primary:hover {
+  background: var(--acc-1-dim); box-shadow: 0 10px 26px -10px rgba(15,158,142,.5); transform: translateY(-1px);
+}
+html[data-ds="medicale"] .pw-btn-ghost { background: #fff; color: var(--fg-2); border-color: var(--border-2); }
+html[data-ds="medicale"] .pw-btn-ghost:hover { color: var(--acc-1); border-color: var(--acc-1); background: #fff; }
+
+/* ---------- Form: input bianchi, focus teal ---------- */
+html[data-ds="medicale"] .pw-input,
+html[data-ds="medicale"] .pw-select {
+  background: #fff; border: 1px solid var(--border-2); color: var(--fg);
+}
+html[data-ds="medicale"] .pw-input::placeholder { color: var(--fg-4); }
+html[data-ds="medicale"] .pw-input:focus,
+html[data-ds="medicale"] .pw-select:focus {
+  border-color: var(--acc-1); box-shadow: 0 0 0 3px rgba(15,158,142,.15);
+}
+html[data-ds="medicale"] .pw-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%236A7E90' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+/* ---------- Badge: pastelli morbidi su bianco ---------- */
+html[data-ds="medicale"] .pw-badge.ok   { background: rgba(18,161,80,.10);  color: var(--ok);    border-color: rgba(18,161,80,.28); }
+html[data-ds="medicale"] .pw-badge.warn { background: rgba(194,116,11,.10); color: var(--warn);  border-color: rgba(194,116,11,.28); }
+html[data-ds="medicale"] .pw-badge.lime { background: rgba(15,158,142,.10); color: var(--acc-1-dim); border-color: rgba(15,158,142,.28); }
+html[data-ds="medicale"] .pw-badge.cy   { background: rgba(31,134,201,.10); color: var(--acc-2-dim); border-color: rgba(31,134,201,.28); }
+html[data-ds="medicale"] .pw-badge.mute { background: var(--bg-3); color: var(--fg-3); border-color: var(--border-2); }
+
+/* ---------- Tabella: righe chiare, hover tenue ---------- */
+html[data-ds="medicale"] .pw-table td { border-bottom: 1px solid var(--border); color: var(--fg-2); }
+html[data-ds="medicale"] .pw-table tbody tr:hover td { background: var(--bg-soft); color: var(--fg); }
+
+html[data-ds="medicale"] .pw-error { background: rgba(229,72,77,.07); border-color: rgba(229,72,77,.28); color: var(--danger); }
+html[data-ds="medicale"] .pw-tenant-tag { background: rgba(15,158,142,.12); color: var(--acc-1-dim); }
