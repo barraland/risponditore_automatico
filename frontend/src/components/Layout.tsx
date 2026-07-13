@@ -147,7 +147,7 @@ export default function Layout() {
           <NavLink to="/entita"><Ic>{ICON.entita}</Ic><span>Configurazione Entità</span></NavLink>
           <NavLink to="/prompt"><Ic>{ICON.assistente}</Ic><span>System prompt</span></NavLink>
           <NavLink to="/tools"><Ic>{ICON.mcp}</Ic><span>MCP server</span></NavLink>
-          {isSuperAdmin && <NavLink to="/clienti"><Ic>{ICON.clienti}</Ic><span>Seleziona Demo</span></NavLink>}
+          {isSuperAdmin && <NavLink to="/clienti"><Ic>{ICON.clienti}</Ic><span>Configurazione Demo</span></NavLink>}
         </nav>
 
         <div className="pw-side-foot">
