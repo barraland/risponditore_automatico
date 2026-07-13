@@ -138,9 +138,9 @@ export default function Inoltri() {
                     <td>{r.ruolo || '—'}</td>
                     <td>{r.admin ? <span className="pw-tenant-tag" style={{ fontSize: 11 }}>admin</span> : '—'}</td>
                     <td>{r.telefono}</td>
-                    <td style={{ color: 'var(--fg-2)', fontSize: 13, maxWidth: 240, whiteSpace: 'pre-wrap' }}>{r.regole || '—'}</td>
+                    <td style={{ color: 'var(--fg-2)', fontSize: 13, minWidth: 240, maxWidth: 360, whiteSpace: 'pre-wrap' }}>{r.regole || '—'}</td>
                     <td style={{ fontSize: 13 }}>{r.calendar_id ? nomeCal(r.calendar_id) : <span className="pw-muted">azienda</span>}</td>
-                    <td style={{ color: 'var(--fg-2)', fontSize: 13, maxWidth: 240, whiteSpace: 'pre-wrap' }}>{r.regole_prenotazione || '—'}</td>
+                    <td style={{ color: 'var(--fg-2)', fontSize: 13, minWidth: 240, maxWidth: 360, whiteSpace: 'pre-wrap' }}>{r.regole_prenotazione || '—'}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => modifica(r)}>Modifica</button>
                       <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => elimina(r.id)}>Elimina</button>

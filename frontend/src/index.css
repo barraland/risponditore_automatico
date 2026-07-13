@@ -61,7 +61,7 @@ code { font-family: var(--font-mono); color: var(--acc-2); background: var(--bg-
 .pw-nav-links a:hover, .pw-nav-right a:hover { color: var(--fg); background: rgba(255,255,255,.04); }
 .pw-nav-links a.active, .pw-nav-right a.active { color: var(--fg); background: var(--acc-grad-soft); box-shadow: inset 0 0 0 1px var(--border); }
 .pw-nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-.pw-container { max-width: 1240px; margin: 0 auto; padding: 28px 30px 64px; }
+.pw-container { max-width: 1600px; margin: 0 auto; padding: 28px 34px 64px; }
 
 /* ---------- Sidebar verticale ---------- */
 .pw-app { display: flex; align-items: flex-start; min-height: 100vh; }
