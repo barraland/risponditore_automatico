@@ -7,9 +7,11 @@ import App from './App'
 import './index.css'
 import './themes/medicale.css'
 import { applicaDesignSystem } from './lib/designSystem'
+import { applyUiScale } from './lib/uiScale'
 
-// Applica il design system scelto PRIMA del render (niente flash del tema sbagliato).
+// Applica design system e zoom scelti PRIMA del render (niente flash).
 applicaDesignSystem()
+applyUiScale()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

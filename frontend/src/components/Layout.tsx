@@ -6,6 +6,25 @@ import { supabase } from '../lib/supabase'
 import Modal from './Modal'
 import GoogleConnect from './GoogleConnect'
 import { DESIGN_SYSTEMS, getDesignSystem, setDesignSystem, type DesignSystem } from '../lib/designSystem'
+import { getUiScale, setUiScale, UI_SCALE } from '../lib/uiScale'
+
+// Densità/zoom dell'area contenuti (comodo su portatile vs 4K). Persistito per-browser.
+function DimensioneTesto() {
+  const [s, setS] = useState(getUiScale())
+  const step = (d: number) => setS(setUiScale(s + d))
+  return (
+    <div className="pw-row" style={{ gap: 8, width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span className="pw-muted" style={{ fontSize: 12 }}>Dimensione</span>
+      <div className="pw-row" style={{ gap: 4, alignItems: 'center' }}>
+        <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Riduci" disabled={s <= UI_SCALE.MIN}
+          style={{ padding: '4px 10px' }} onClick={() => step(-UI_SCALE.STEP)}>A−</button>
+        <span style={{ fontSize: 12, minWidth: 38, textAlign: 'center' }}>{Math.round(s * 100)}%</span>
+        <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Ingrandisci" disabled={s >= UI_SCALE.MAX}
+          style={{ padding: '4px 10px' }} onClick={() => step(UI_SCALE.STEP)}>A+</button>
+      </div>
+    </div>
+  )
+}
 
 // Selettore del DESIGN SYSTEM (aspetto della dashboard). Cambio immediato, persistito per-browser.
 function DesignSystemSwitcher() {
@@ -155,6 +174,7 @@ export default function Layout() {
           <DesignSystemSwitcher />
           <button className="pw-btn pw-btn-ghost pw-btn-sm" title="Personalizza dashboard"
             onClick={() => setConfig(true)}>⚙️ Personalizza</button>
+          <DimensioneTesto />
         </div>
       </aside>
 
