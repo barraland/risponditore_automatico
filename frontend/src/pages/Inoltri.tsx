@@ -130,7 +130,7 @@ export default function Inoltri() {
         {righe.length === 0 ? <div className="pw-empty">Nessun destinatario di inoltro.</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table className="pw-table">
-              <thead><tr><th>Nome</th><th>Ruolo</th><th>Admin</th><th>Telefono</th><th>Calendario</th><th>Regole prenotazione</th><th></th></tr></thead>
+              <thead><tr><th>Nome</th><th>Ruolo</th><th>Admin</th><th>Telefono</th><th>Regole inoltro</th><th>Calendario</th><th>Regole prenotazione</th><th></th></tr></thead>
               <tbody>
                 {righe.map(r => (
                   <tr key={r.id} style={{ cursor: 'default' }}>
@@ -138,6 +138,7 @@ export default function Inoltri() {
                     <td>{r.ruolo || '—'}</td>
                     <td>{r.admin ? <span className="pw-tenant-tag" style={{ fontSize: 11 }}>admin</span> : '—'}</td>
                     <td>{r.telefono}</td>
+                    <td style={{ color: 'var(--fg-2)', fontSize: 13, maxWidth: 240, whiteSpace: 'pre-wrap' }}>{r.regole || '—'}</td>
                     <td style={{ fontSize: 13 }}>{r.calendar_id ? nomeCal(r.calendar_id) : <span className="pw-muted">azienda</span>}</td>
                     <td style={{ color: 'var(--fg-2)', fontSize: 13, maxWidth: 240, whiteSpace: 'pre-wrap' }}>{r.regole_prenotazione || '—'}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
