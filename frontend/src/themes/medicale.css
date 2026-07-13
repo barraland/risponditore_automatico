@@ -93,9 +93,11 @@ html[data-ds="medicale"] .pw-btn-ghost { background: #fff; color: var(--fg-2); b
 html[data-ds="medicale"] .pw-btn-ghost:hover { color: var(--acc-1); border-color: var(--acc-1); background: #fff; }
 
 /* ---------- Form: input bianchi, focus teal ---------- */
+/* NB: usare background-COLOR (non lo shorthand `background`), altrimenti si azzerano
+   background-repeat/position/size e la freccia SVG della select viene ripetuta a tappeto. */
 html[data-ds="medicale"] .pw-input,
 html[data-ds="medicale"] .pw-select {
-  background: #fff; border: 1px solid var(--border-2); color: var(--fg);
+  background-color: #fff; border: 1px solid var(--border-2); color: var(--fg);
 }
 html[data-ds="medicale"] .pw-input::placeholder { color: var(--fg-4); }
 html[data-ds="medicale"] .pw-input:focus,
@@ -103,6 +105,7 @@ html[data-ds="medicale"] .pw-select:focus {
   border-color: var(--acc-1); box-shadow: 0 0 0 3px rgba(15,158,142,.15);
 }
 html[data-ds="medicale"] .pw-select {
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 12px 12px;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%236A7E90' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
