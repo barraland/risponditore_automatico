@@ -144,10 +144,10 @@ export default function Layout() {
             <NavLink key={to} to={to}><Ic>{ICON[key(to)]}</Ic><span>{label}</span></NavLink>
           ))}
           <div className="pw-side-sep" />
-          <NavLink to="/entita"><Ic>{ICON.entita}</Ic><span>Entità</span></NavLink>
-          <NavLink to="/prompt"><Ic>{ICON.assistente}</Ic><span>Assistente</span></NavLink>
+          <NavLink to="/entita"><Ic>{ICON.entita}</Ic><span>Configurazione Entità</span></NavLink>
+          <NavLink to="/prompt"><Ic>{ICON.assistente}</Ic><span>System prompt</span></NavLink>
           <NavLink to="/tools"><Ic>{ICON.mcp}</Ic><span>MCP server</span></NavLink>
-          {isSuperAdmin && <NavLink to="/clienti"><Ic>{ICON.clienti}</Ic><span>Clienti</span></NavLink>}
+          {isSuperAdmin && <NavLink to="/clienti"><Ic>{ICON.clienti}</Ic><span>Seleziona Demo</span></NavLink>}
         </nav>
 
         <div className="pw-side-foot">
