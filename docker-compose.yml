@@ -1,7 +1,7 @@
 services:
   # ---------- Applicazione FastAPI ----------
   app:
-    build: .
+    build: ./mcp_server
     image: risponditore-automatico-app:latest
     container_name: automatico-app
     restart: unless-stopped

@@ -47,7 +47,7 @@ echo "==> 2) Build immagine (in cloud) + deploy iniziale"
 az containerapp up \
   --name "$APP" --resource-group "$RG" --location "$LOC" \
   --environment "$ENVNAME" \
-  --source . \
+  --source mcp_server \
   --ingress external --target-port 9999
 
 echo "==> 3) Secret + env (passo solo i valori presenti nel .env; gli altri li salto)"
