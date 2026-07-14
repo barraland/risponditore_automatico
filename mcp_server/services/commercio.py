@@ -11,11 +11,19 @@ import json
 import logging
 from decimal import Decimal
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import CatalogItem, Order, OrderItem, OrderStatus, Contatto
 
 logger = logging.getLogger(__name__)
+
+
+def _is_postgres(db: Session) -> bool:
+    try:
+        return db.bind.dialect.name == "postgresql"
+    except Exception:
+        return False
 
 
 # --- helper JSON (le colonne aliases/attributes/category_path sono Text con dentro JSON) ---
@@ -69,17 +77,51 @@ def _item_dict(item) -> dict:
     }
 
 
+def _passa_filtri_json(it, cat_l: str, fmt_l: str,
+                       prezzo_conf_min, prezzo_conf_max) -> bool:
+    """Filtri che vivono nel JSON (categoria in category_path, formato/prezzo_confezione in attributes)."""
+    if cat_l and cat_l not in " ".join(str(c).lower() for c in _cat(it)):
+        return False
+    attrs = _attrs(it)
+    if fmt_l and fmt_l not in str(attrs.get("formato", "")).lower():
+        return False
+    pc = _to_float(attrs.get("prezzo_confezione"))
+    if prezzo_conf_min is not None and (pc is None or pc < prezzo_conf_min):
+        return False
+    if prezzo_conf_max is not None and (pc is None or pc > prezzo_conf_max):
+        return False
+    return True
+
+
 def cerca(db: Session, azienda_id: int | None, testo: str = "", marca: str = "",
           categoria: str = "", unita_vendita: str = "", formato: str = "",
           prezzo_min: float | None = None, prezzo_max: float | None = None,
           prezzo_conf_min: float | None = None, prezzo_conf_max: float | None = None,
           limite: int = 30) -> dict:
-    """Cerca nel catalogo del tenant. Filtri colonna (marca/unità/prezzo unitario) in SQL,
-    filtri su JSON (categoria/formato/prezzo confezione) e testo libero in Python.
+    """Ricerca IBRIDA nel catalogo del tenant. I filtri strutturati (marca/unità/prezzo in SQL,
+    categoria/formato/prezzo confezione su JSON) sono vincoli hard; se c'è `testo` i risultati sono
+    ORDINATI per similarità semantica (embedding) invece che per nome — così "una bionda leggera"
+    trova le birre giuste anche senza parole esatte. Senza `testo`, ordine per nome.
 
-    Ritorna {ok, n, troncato, prodotti:[...]}. Non solleva.
+    Ritorna {ok, n, altri_disponibili, prodotti:[...]}. Non solleva.
     """
     try:
+        cat_l = categoria.strip().lower()
+        fmt_l = formato.strip().lower()
+
+        # Ramo SEMANTICO: testo libero + Postgres/pgvector. Se non rende risultati (es. catalogo non
+        # ancora indicizzato) si ricade sul ramo testuale sotto.
+        if testo.strip() and _is_postgres(db):
+            try:
+                sem = _cerca_semantica(db, azienda_id, testo, marca, unita_vendita,
+                                       prezzo_min, prezzo_max, cat_l, fmt_l,
+                                       prezzo_conf_min, prezzo_conf_max, limite)
+                if sem is not None and sem["n"] > 0:
+                    return sem
+            except Exception as e:
+                logger.warning("ricerca semantica catalogo fallita, fallback testuale: %s", e)
+
+        # Ramo TESTUALE/strutturato (fallback e caso senza testo): substring su nome/marca/alias.
         q = db.query(CatalogItem)
         if azienda_id:
             q = q.filter(CatalogItem.azienda_id == azienda_id)
@@ -92,21 +134,10 @@ def cerca(db: Session, azienda_id: int | None, testo: str = "", marca: str = "",
         if prezzo_max is not None:
             q = q.filter(CatalogItem.price <= prezzo_max)
 
-        cat_l = categoria.strip().lower()
-        fmt_l = formato.strip().lower()
         txt_l = testo.strip().lower()
-
         out = []
         for it in q.order_by(CatalogItem.name).all():
-            if cat_l and cat_l not in " ".join(str(c).lower() for c in _cat(it)):
-                continue
-            attrs = _attrs(it)
-            if fmt_l and fmt_l not in str(attrs.get("formato", "")).lower():
-                continue
-            pc = _to_float(attrs.get("prezzo_confezione"))
-            if prezzo_conf_min is not None and (pc is None or pc < prezzo_conf_min):
-                continue
-            if prezzo_conf_max is not None and (pc is None or pc > prezzo_conf_max):
+            if not _passa_filtri_json(it, cat_l, fmt_l, prezzo_conf_min, prezzo_conf_max):
                 continue
             if txt_l:
                 hay = " ".join([
@@ -117,11 +148,127 @@ def cerca(db: Session, azienda_id: int | None, testo: str = "", marca: str = "",
                     continue
             out.append(_item_dict(it))
             if len(out) >= limite:
-                return {"ok": True, "n": len(out), "troncato": True, "prodotti": out}
-        return {"ok": True, "n": len(out), "troncato": False, "prodotti": out}
+                return {"ok": True, "n": len(out), "altri_disponibili": True, "prodotti": out}
+        return {"ok": True, "n": len(out), "altri_disponibili": False, "prodotti": out}
     except Exception as ex:
         logger.error("cerca catalogo fallita (tenant %s): %s", azienda_id, ex)
         return {"ok": False, "errore": "Errore interno nella ricerca del catalogo.", "prodotti": []}
+
+
+# --- ricerca semantica (embedding + pgvector), riusa l'infra dei documenti (services.vettore) ---
+
+def _embed_text(item) -> str:
+    """Testo da embeddare per un prodotto: nome, marca, categorie, alias, formato, unità, descrizione."""
+    a = _attrs(item)
+    parti = [item.name, item.brand]
+    parti += [str(c) for c in _cat(item)]
+    parti += [str(x) for x in _aliases(item)]
+    if a.get("formato"):
+        parti.append(f"formato {a['formato']}")
+    if item.unit_of_sale:
+        parti.append(item.unit_of_sale)
+    if item.description:
+        parti.append(item.description)
+    return " | ".join(p for p in (str(x).strip() for x in parti if x) if p)
+
+
+def _cerca_semantica(db, azienda_id, testo, marca, unita_vendita,
+                     prezzo_min, prezzo_max, cat_l, fmt_l,
+                     prezzo_conf_min, prezzo_conf_max, limite) -> dict | None:
+    """Top-K per similarità coseno (pgvector) DENTRO ai vincoli strutturati. Ritorna None se il ramo
+    non è applicabile (nessun embedding), così il chiamante ripiega sul testuale."""
+    from services import vettore
+    qemb = vettore.embed_uno(testo.strip())
+
+    where = ["embedding_vec is not null"]
+    params = {"q": vettore._vec_literal(qemb), "k": max(limite * 4, 40)}
+    if azienda_id:
+        where.append("azienda_id = :aid"); params["aid"] = azienda_id
+    if marca.strip():
+        where.append("brand ilike :marca"); params["marca"] = f"%{marca.strip()}%"
+    if unita_vendita.strip():
+        where.append("unit_of_sale ilike :uv"); params["uv"] = f"%{unita_vendita.strip()}%"
+    if prezzo_min is not None:
+        where.append("price >= :pmin"); params["pmin"] = prezzo_min
+    if prezzo_max is not None:
+        where.append("price <= :pmax"); params["pmax"] = prezzo_max
+
+    sql = text(
+        "select id, 1 - (embedding_vec <=> cast(:q as vector)) as score "
+        "from catalog_items where " + " and ".join(where) +
+        " order by embedding_vec <=> cast(:q as vector) limit :k"
+    )
+    rows = db.execute(sql, params).mappings().all()
+    if not rows:
+        return None   # catalogo non indicizzato o nessun match nei vincoli → prova il testuale
+
+    score_by = {r["id"]: round(float(r["score"]), 4) for r in rows}
+    ids = [r["id"] for r in rows]
+    by_id = {it.id: it for it in db.query(CatalogItem).filter(CatalogItem.id.in_(ids)).all()}
+
+    out = []
+    for iid in ids:   # preserva l'ordine di rilevanza restituito da pgvector
+        it = by_id.get(iid)
+        if not it or not _passa_filtri_json(it, cat_l, fmt_l, prezzo_conf_min, prezzo_conf_max):
+            continue
+        d = _item_dict(it)
+        d["rilevanza"] = score_by.get(iid)
+        out.append(d)
+        if len(out) >= limite:
+            return {"ok": True, "n": len(out), "altri_disponibili": True, "prodotti": out}
+    return {"ok": True, "n": len(out), "altri_disponibili": False, "prodotti": out}
+
+
+def _conta(db, azienda_id, solo_indicizzati: bool) -> int:
+    sql = "select count(*) from catalog_items where 1=1"
+    params = {}
+    if azienda_id:
+        sql += " and azienda_id = :aid"; params["aid"] = azienda_id
+    if solo_indicizzati:
+        sql += " and embedding_vec is not null"
+    return int(db.execute(text(sql), params).scalar() or 0)
+
+
+def indicizza(db: Session, azienda_id: int | None = None, full: bool = False) -> dict:
+    """(Ri)calcola gli embedding dei prodotti e li salva in `embedding_vec` (pgvector).
+    `full=False` indicizza solo i non ancora indicizzati; `full=True` rifà tutto. Idempotente."""
+    if not _is_postgres(db):
+        return {"ok": False, "errore": "Indicizzazione disponibile solo su Postgres/Supabase."}
+    try:
+        from services import vettore
+        # Auto-provisioning: crea la colonna pgvector se manca (l'estensione 'vector' è già attiva
+        # per i documenti). Idempotente → niente migrazione manuale.
+        db.execute(text("alter table catalog_items add column if not exists embedding_vec vector(1536)"))
+        db.commit()
+
+        base = "select id from catalog_items where 1=1"
+        params = {}
+        if azienda_id:
+            base += " and azienda_id = :aid"; params["aid"] = azienda_id
+        if not full:
+            base += " and embedding_vec is null"
+        ids = [r[0] for r in db.execute(text(base), params).all()]
+
+        n = 0
+        if ids:
+            for i in range(0, len(ids), 200):     # a blocchi, per non tenere troppo in RAM
+                lotto = ids[i:i + 200]
+                items = db.query(CatalogItem).filter(CatalogItem.id.in_(lotto)).all()
+                embs = vettore.embed_batch([_embed_text(it) for it in items])
+                for it, emb in zip(items, embs):
+                    db.execute(
+                        text("update catalog_items set embedding_vec = cast(:v as vector) where id = :id"),
+                        {"v": vettore._vec_literal(emb), "id": it.id})
+                    n += 1
+                db.commit()
+        totali = _conta(db, azienda_id, solo_indicizzati=False)
+        indicizzati = _conta(db, azienda_id, solo_indicizzati=True)
+        logger.info("Catalogo indicizzato (tenant %s): +%d, ora %d/%d", azienda_id, n, indicizzati, totali)
+        return {"ok": True, "nuovi": n, "indicizzati": indicizzati, "totali": totali}
+    except Exception as ex:
+        logger.error("indicizza catalogo fallita (tenant %s): %s", azienda_id, ex)
+        db.rollback()
+        return {"ok": False, "errore": "Errore interno nell'indicizzazione del catalogo."}
 
 
 def _valori_distinti(db: Session, azienda_id: int | None):

@@ -418,16 +418,18 @@ def cerca_catalogo(testo: str = "", marca: str = "", categoria: str = "",
     da usare poi in `crea_ordine`, il prezzo unitario e il prezzo della confezione).
 
     Combina liberamente i filtri (tutti opzionali):
-    - `testo`: ricerca libera su nome, marca e sinonimi (es. "moretti 33").
+    - `testo`: ricerca SEMANTICA (per significato, non parole esatte): "una bionda leggera",
+      "qualcosa di analcolico", "vino rosso corposo". I risultati tornano ordinati per pertinenza.
     - `marca`, `categoria`, `unita_vendita`, `formato`: usa i valori ESATTI elencati nel blocco
       "CATALOGO PRODOTTI" del contesto (sono tutti i valori presenti a listino).
     - Range di prezzo: `prezzo_min`/`prezzo_max` sul PREZZO UNITARIO, e
       `prezzo_conf_min`/`prezzo_conf_max` sul PREZZO della CONFEZIONE (in euro). Passa solo gli estremi
       che servono (es. solo `prezzo_max=1.0` per "sotto 1 euro a pezzo").
 
-    Ritorna {ok, n, troncato, prodotti:[{catalog_item_id, nome, marca, categoria, unita_vendita,
-    formato, prezzo_unitario, prezzo_confezione, ...}]}. Se `troncato` è true ci sono più risultati:
-    affina i filtri. NON inventare prodotti o prezzi: usa solo ciò che la ricerca restituisce."""
+    Ritorna {ok, n, altri_disponibili, prodotti:[{catalog_item_id, nome, marca, categoria,
+    unita_vendita, formato, prezzo_unitario, prezzo_confezione, ...}]}. Se `altri_disponibili` è true
+    ci sono più articoli oltre a questi: proponi qualche esempio e, se serve, chiedi di restringere.
+    NON inventare prodotti o prezzi: usa solo ciò che la ricerca restituisce."""
     _log_tool("cerca_catalogo", testo=testo, marca=marca, categoria=categoria,
               unita_vendita=unita_vendita, formato=formato)
     db = SessionLocal()

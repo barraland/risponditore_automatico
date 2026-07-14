@@ -424,3 +424,14 @@ alter table public.catalog_items add column if not exists vat_rate numeric(5,2);
 alter table public.catalog_items add column if not exists aliases text;         -- JSON array di sinonimi
 alter table public.catalog_items add column if not exists attributes text;      -- JSON: attributi flessibili (formato, pezzi/conf, ...)
 alter table public.catalog_items add column if not exists category_path text;   -- JSON array: categorizzazione (["birra","lager"])
+
+-- =====================================================================
+-- Ricerca semantica sul CATALOGO (pgvector). NB: la colonna viene creata
+-- automaticamente al primo "Indice ricerca AI" dalla dashboard (endpoint
+-- /api/catalogo/indicizza), quindi questo blocco è solo documentativo/manuale.
+-- =====================================================================
+create extension if not exists vector;
+alter table catalog_items add column if not exists embedding_vec vector(1536);
+-- Indice opzionale (con ~1k prodotti la scansione è già istantanea):
+-- create index if not exists catalog_items_embvec_idx
+--   on catalog_items using hnsw (embedding_vec vector_cosine_ops);

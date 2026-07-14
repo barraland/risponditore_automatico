@@ -4,6 +4,8 @@ import { useTenant } from '../lib/tenant'
 import { useCommercioLabels, DEFAULT_LABELS, type CommercioLabels } from '../lib/commercioLabels'
 import Modal from '../components/Modal'
 
+const API = (import.meta.env.VITE_API_BASE as string || '').replace(/\/$/, '')
+
 type Item = {
   id: number; name: string; description: string | null; price: number | string | null
   brand?: string | null; sku?: string | null; unit_of_sale?: string | null
@@ -31,6 +33,30 @@ export default function Catalogo() {
   const [nuovo, setNuovo] = useState(false)
   const [rinomina, setRinomina] = useState(false)
   const [importa, setImporta] = useState(false)
+  const [idxBusy, setIdxBusy] = useState(false)
+  const [idxMsg, setIdxMsg] = useState<string | null>(null)
+
+  // Calcola gli embedding del catalogo (ricerca semantica dell'assistente). full=true rifà tutto.
+  async function indicizza(full = false) {
+    if (!aziendaId) return
+    if (!API) { setErr('VITE_API_BASE non configurato: serve il backend per l\'indice di ricerca.'); return }
+    setIdxBusy(true); setIdxMsg(null); setErr(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API}/api/catalogo/indicizza`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ azienda_id: aziendaId, full }),
+      })
+      const j = await res.json()
+      if (!res.ok || j.ok === false) throw new Error(j.errore || j.detail || `HTTP ${res.status}`)
+      setIdxMsg(`Ricerca semantica pronta: ${j.indicizzati}/${j.totali} prodotti indicizzati${j.nuovi ? ` (+${j.nuovi} nuovi)` : ''}.`)
+    } catch (e: any) {
+      setErr(`Indicizzazione fallita: ${e.message}`)
+    } finally {
+      setIdxBusy(false)
+    }
+  }
 
   async function carica() {
     if (!aziendaId) { setLoading(false); return }
@@ -62,12 +88,15 @@ export default function Catalogo() {
         </div>
         <div className="pw-row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setRinomina(true)}>✎ Rinomina etichette</button>
+          <button className="pw-btn pw-btn-ghost pw-btn-sm" disabled={idxBusy} title="Calcola gli embedding per la ricerca semantica dell'assistente"
+            onClick={() => indicizza(false)}>{idxBusy ? '⟳ Indicizzo…' : '⟳ Indice ricerca AI'}</button>
           <button className="pw-btn pw-btn-ghost pw-btn-sm" onClick={() => setImporta(true)}>⬆ Importa CSV</button>
           <button className="pw-btn pw-btn-primary pw-btn-sm" onClick={() => setNuovo(true)}>+ {labels.catalogo.sing}</button>
         </div>
       </div>
 
       {err && <div className="pw-error">{err}</div>}
+      {idxMsg && <div className="pw-badge ok">{idxMsg}</div>}
 
       <div className="pw-card">
         {righe.length === 0
@@ -109,7 +138,7 @@ export default function Catalogo() {
       {rinomina && <RinominaLabels aziendaId={aziendaId} current={labels}
         onClose={() => setRinomina(false)} onSaved={() => { setRinomina(false); reloadLabels() }} />}
       {importa && <ImportCSV aziendaId={aziendaId} labels={labels}
-        onClose={() => setImporta(false)} onDone={() => { setImporta(false); carica() }} />}
+        onClose={() => setImporta(false)} onDone={() => { setImporta(false); carica(); indicizza(false) }} />}
     </div>
   )
 }

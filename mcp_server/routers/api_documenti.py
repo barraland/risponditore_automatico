@@ -214,6 +214,19 @@ async def reindex(authorization: str | None = Header(None), db: Session = Depend
     return {"reindicizzati": out}
 
 
+@router.post("/catalogo/indicizza")
+async def catalogo_indicizza(payload: dict = Body(default={}),
+                             authorization: str | None = Header(None),
+                             db: Session = Depends(get_db)):
+    """(Ri)calcola gli embedding del catalogo per la ricerca semantica dell'assistente.
+    Body: {azienda_id?, full?}. Da chiamare dopo un import CSV o quando cambiano i prodotti."""
+    await _verify_user(authorization)
+    from services import commercio
+    azienda = tenant_service.risolvi(db, tenant=payload.get("azienda_id"))
+    return commercio.indicizza(db, azienda_id=azienda.id if azienda else None,
+                               full=bool(payload.get("full", False)))
+
+
 @router.post("/retriever/test")
 async def retriever_test(
     payload: dict = Body(...),
