@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, DateTime,
+    create_engine, Column, Integer, String, Float, Numeric, DateTime,
     ForeignKey, Enum, Text, Boolean, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -88,6 +88,22 @@ class StatoOrdine(str, enum.Enum):
 class OrigineOrdine(str, enum.Enum):
     CLIENTE = "cliente"        # inserito da un contatto del locale
     AGENTE = "agente"          # inserito da un agente di commercio
+
+
+# ---------- Catalogo & ordini GENERICI (riusabili su più verticali) ----------
+# Nomi tabella neutri (catalog_items/orders/order_items): le label mostrate in GUI arrivano dalla
+# config del tenant (azienda.commercio_labels), come per contatti/entità. NON hardcodare label qui.
+
+class ItemType(str, enum.Enum):
+    PRODUCT = "product"        # HORECA: prodotto
+    SERVICE = "service"        # altri verticali: servizio (non usato ancora)
+
+
+class OrderStatus(str, enum.Enum):
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 # ---------- Modelli ----------
@@ -502,6 +518,63 @@ class RigaOrdine(Base):
         if self.prezzo_unitario is None:
             return None
         return round((self.quantita or 0) * self.prezzo_unitario, 2)
+
+
+class CatalogItem(Base):
+    """Ciò che il tenant offre (HORECA: prodotti; altri verticali: servizi). Nome tabella generico."""
+    __tablename__ = "catalog_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    price = Column(Numeric(10, 2), nullable=True)
+    item_type = Column(Enum(ItemType), default=ItemType.PRODUCT, nullable=False)   # 'product' per ora
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Order(Base):
+    """L'evento richiesto dal cliente (HORECA: ordine; altri verticali: prenotazione)."""
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
+    contatto_id = Column(Integer, ForeignKey("contatti.id"), nullable=False, index=True)
+    # Collegamento all'entità (animale/società): predisposto, resta vuoto per ora.
+    entita_id = Column(Integer, ForeignKey("entita.id"), nullable=True, index=True)
+    status = Column(Enum(OrderStatus), default=OrderStatus.DRAFT, nullable=False, index=True)
+    total = Column(Numeric(10, 2), nullable=True)          # somma delle righe (denormalizzato)
+    notes = Column(Text, nullable=True)
+    created_by = Column(String(120), nullable=True)        # "assistente" o l'utente che l'ha creato
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    contatto = relationship("Contatto")
+    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan",
+                         order_by="OrderItem.id")
+
+
+class OrderItem(Base):
+    """Riga di un ordine (1:N con orders). `unit_price` è COPIATO dal catalogo al momento della
+    creazione: se il listino cambia, lo storico resta immutabile."""
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    catalog_item_id = Column(Integer, ForeignKey("catalog_items.id"), nullable=False, index=True)
+    quantity = Column(Integer, default=1, nullable=False)
+    unit_price = Column(Numeric(10, 2), nullable=True)     # prezzo copiato dal catalogo (storico)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    order = relationship("Order", back_populates="items")
+    catalog_item = relationship("CatalogItem")
+
+    @property
+    def subtotal(self):
+        if self.unit_price is None:
+            return None
+        return round(float(self.unit_price) * (self.quantity or 0), 2)
 
 
 # ---------- Documenti (parcheggiati: base di conoscenza per riuso futuro) ----------

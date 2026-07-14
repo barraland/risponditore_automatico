@@ -375,3 +375,42 @@ do $$ begin
       for each row execute function public.sync_recapito_cache();
   end if;
 end $$;
+
+-- ===================================================================================================
+-- CATALOGO & ORDINI generici (catalog_items / orders / order_items).
+-- Le tabelle + i tipi enum li crea SQLAlchemy (create_all) al deploy: qui SOLO RLS + colonna label.
+-- ===================================================================================================
+-- Label rinominabili per vertical (mostrate in GUI). JSON su azienda; NULL => default (Prodotti/Ordini/Righe).
+alter table public.azienda add column if not exists commercio_labels text;
+
+-- RLS: catalog_items e orders = tabelle-tenant dirette (azienda_id).
+do $$ declare t text; begin
+  foreach t in array array['catalog_items','orders'] loop
+    if to_regclass('public.'||t) is null then continue; end if;
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists tenant_all on public.%I', t);
+    execute format('create policy tenant_all on public.%I for all to authenticated '
+                   'using (public.can_see_tenant(azienda_id)) with check (public.can_see_tenant(azienda_id))', t);
+  end loop;
+  if to_regclass('public.catalog_items') is not null then
+    create index if not exists ix_catalog_items_azienda on public.catalog_items(azienda_id);
+  end if;
+  if to_regclass('public.orders') is not null then
+    create index if not exists ix_orders_azienda  on public.orders(azienda_id);
+    create index if not exists ix_orders_contatto on public.orders(contatto_id);
+  end if;
+end $$;
+
+-- order_items non ha azienda_id: tenant risolto via l'ordine padre.
+do $$ begin
+  if to_regclass('public.order_items') is not null then
+    alter table public.order_items enable row level security;
+    drop policy if exists tenant_all on public.order_items;
+    create policy tenant_all on public.order_items for all to authenticated
+      using (exists (select 1 from public.orders o
+                     where o.id = order_items.order_id and public.can_see_tenant(o.azienda_id)))
+      with check (exists (select 1 from public.orders o
+                          where o.id = order_items.order_id and public.can_see_tenant(o.azienda_id)));
+    create index if not exists ix_order_items_order on public.order_items(order_id);
+  end if;
+end $$;

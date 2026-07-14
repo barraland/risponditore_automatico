@@ -390,6 +390,25 @@ def registra_entita(telefono: str = "", valori: dict | None = None, entita_id: i
 
 @mcp.tool()
 @_loggato
+def crea_ordine(telefono: str = "", righe: list | None = None, note: str = "", tenant: str = "") -> dict:
+    """Crea un ordine per il cliente identificato da `telefono`. `righe` = LISTA di voci, una per
+    prodotto: ogni voce è {catalog_item_id, quantita}. Usa i catalog_item_id indicati nel contesto
+    (catalogo del tenant). Crea ordine + righe in un colpo solo, copiando i prezzi dal listino al
+    momento (lo storico resta corretto anche se il prezzo cambia). Passa `note` se il cliente aggiunge
+    indicazioni (consegna, richieste particolari). NON inventare prodotti o quantità: solo ciò che il
+    cliente ha detto. L'ordine nasce come BOZZA."""
+    _log_tool("crea_ordine", telefono=telefono, righe=righe)
+    db = SessionLocal()
+    try:
+        c = _contatto(db, telefono, tenant)
+        from services import commercio
+        return commercio.crea_ordine(db, _aid(tenant), c.id, righe or [], note=note, created_by="assistente")
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
 def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "", tenant: str = "") -> dict:
     """INOLTRA la chiamata a una persona della rubrica inoltri (es. responsabile spedizioni).
     `telefono` = numero del chiamante; `motivo` = cosa vuole il cliente; indica il destinatario per
