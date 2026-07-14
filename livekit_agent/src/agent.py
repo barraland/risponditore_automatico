@@ -161,11 +161,18 @@ class MargheritaAgent(Agent):
         self._saluto = saluto
 
     async def on_enter(self):
+        # NB: con GPT-Realtime `session.say` NON produce audio (servirebbe un TTS separato, con voce
+        # diversa) → usiamo generate_reply con istruzione RIGIDA: apri col saluto ALLA LETTERA e senza
+        # aggiungere domande, così niente doppio "come posso aiutarla". Poi si mette in ascolto.
         if self._saluto:
-            # Diciamo il saluto ALLA LETTERA: niente LLM che parafrasa o aggiunge "come posso aiutarla".
-            # add_to_chat_ctx=True (default) => l'LLM SA di averlo detto e non lo ripete. Poi ASPETTA
-            # che il cliente parli (nessuna auto-risposta dopo un say).
-            await self.session.say(self._saluto, allow_interruptions=True)
+            await self.session.generate_reply(
+                instructions=(
+                    "Apri la conversazione dicendo ESATTAMENTE questo, parola per parola, senza "
+                    "aggiungere né togliere nulla, senza parafrasare e SENZA fare domande dopo "
+                    f"(niente 'come posso aiutarla' o simili):\n«{self._saluto}»"
+                ),
+                allow_interruptions=True,
+            )
         else:
             await self.session.generate_reply(
                 instructions="Saluta brevemente in italiano e chiedi come puoi aiutare.",
