@@ -17,7 +17,8 @@ import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, Form, Header, HTTPException, BackgroundTasks, Body
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto, Ordine, Promemoria
+from database import (SessionLocal, Documento, Sezione, StatoDocumento, Azienda, Contatto,
+                      Ordine, Order, OrderItem, Promemoria)
 from services import documenti as documenti_service
 from services import ingestion
 from services import tenant as tenant_service
@@ -168,26 +169,33 @@ async def elimina_contatto(
     authorization: str | None = Header(None),
     db: Session = Depends(get_db),
 ):
-    """Elimina un contatto e la sua storia (messaggi, chiamate, ticket via cascade ORM).
+    """Elimina un contatto e la sua storia (messaggi, chiamate, ticket, recapiti, entità via cascade ORM).
 
-    Gli ordini restano (sono ancorati alla società): vengono solo scollegati dal contatto.
-    Fatto lato backend perché le tabelle storiche hanno FK NOT NULL: non si può cancellare
-    direttamente via Supabase senza violare i vincoli.
+    In demo l'eliminazione è IN CASCATA: i suoi ORDINI (con le relative righe) vengono cancellati.
+    Fatto lato backend perché le tabelle hanno FK NOT NULL: non si può cancellare direttamente via
+    Supabase senza violare i vincoli.
     """
     await _verify_user(authorization)
     c = db.get(Contatto, contatto_id)
     if not c:
         return {"ok": True}
-    # Ordini (in dismissione): se la tabella esiste ancora, scollega; se è stata droppata, ignora.
+    # Ordini LEGACY (Ordine, in dismissione): se la tabella esiste ancora scollega; se droppata,
+    # rollback e ignora. (Prima dei nuovi, così un eventuale rollback non annulla la loro cancellazione.)
     try:
         db.query(Ordine).filter(Ordine.contatto_id == contatto_id).update({Ordine.contatto_id: None})
         db.flush()
     except Exception:
         db.rollback()
         c = db.get(Contatto, contatto_id)
+    # Ordini NUOVI (orders): eliminazione a cascata col contatto — prima le righe, poi gli ordini.
+    oids = [r[0] for r in db.query(Order.id).filter(Order.contatto_id == contatto_id).all()]
+    if oids:
+        db.query(OrderItem).filter(OrderItem.order_id.in_(oids)).delete(synchronize_session=False)
+        db.query(Order).filter(Order.id.in_(oids)).delete(synchronize_session=False)
+        db.flush()
     # I promemoria hanno una FK a contatti NON gestita da cascade ORM: rimuovili esplicitamente.
     db.query(Promemoria).filter(Promemoria.contatto_id == contatto_id).delete()
-    db.delete(c)  # cascade ORM: messaggi_chat, chiamate_voce, ticket, contatto_entita
+    db.delete(c)  # cascade ORM: messaggi_chat, chiamate_voce, ticket, contatto_entita, recapiti
     db.commit()
     return {"ok": True}
 
