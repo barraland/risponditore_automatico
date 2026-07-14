@@ -113,8 +113,10 @@ async def _on_session_end(ctx: JobContext) -> None:
             return
         summary = await _summarize(chat)
         caller = ""
+        tenant = ""
         try:
             caller = ctx.proc.userdata.get("caller", "") or ""
+            tenant = ctx.proc.userdata.get("tenant", "") or ""
         except Exception:
             pass
         started = getattr(report, "started_at", None)
@@ -131,7 +133,7 @@ async def _on_session_end(ctx: JobContext) -> None:
                     "start_time_unix_secs": int(started) if started else None,
                 },
                 "conversation_initiation_client_data": {
-                    "dynamic_variables": {"telefono_chiamante": caller},
+                    "dynamic_variables": {"telefono_chiamante": caller, "tenant": tenant},
                 },
             },
         }
@@ -212,6 +214,12 @@ async def entrypoint(ctx: JobContext):
     init_vars = await _fetch_init_vars(caller, called, call_id)
     configurazione = init_vars.get("configurazione", "")
     saluto = init_vars.get("saluto", "")
+    # Tenant risolto dal backend: lo salviamo per rimandarlo nel post-call (così il backend salva la
+    # trascrizione nel tenant giusto e non confonde gli admin tra tenant diversi).
+    try:
+        ctx.proc.userdata["tenant"] = str(init_vars.get("tenant", "") or "")
+    except Exception:
+        pass
     logger.info("PROMPT: configurazione=%d char | saluto=%r", len(configurazione), saluto)
 
     # GPT-Realtime full-duplex: niente STT separato → capisce l'italiano direttamente.

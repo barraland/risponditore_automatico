@@ -279,6 +279,9 @@ async def post_call(request: Request):
     meta = data.get("metadata") or {}
     dvars = ((data.get("conversation_initiation_client_data") or {}).get("dynamic_variables") or {})
     telefono = (dvars.get("telefono_chiamante") or meta.get("phone_number") or "").strip()
+    # Tenant della chiamata (dalle dynamic_variables impostate all'init): serve per NON confondere
+    # gli admin di un tenant con quelli di un altro e per salvare la chiamata nel tenant giusto.
+    tenant = str(dvars.get("tenant") or "").strip()
 
     trascr = _testo_trascrizione(data.get("transcript") or [])
     riassunto = ((data.get("analysis") or {}).get("transcript_summary") or "").strip() or None
@@ -291,11 +294,15 @@ async def post_call(request: Request):
         # Se chiama un AMMINISTRATORE non lo registriamo come contatto (come fa voice.py):
         # niente anagrafica-fantasma né log chiamata con la trascrizione.
         from services import promemoria
+        aid = tenant_service.da_id(db, tenant)
+        aid = aid.id if aid else None
         telefonia.pulisci_admin(telefono)   # chiamata finita: scade il flag admin del registro
-        if promemoria.is_admin(telefono, db):
-            logger.info("ElevenLabs post-call: chiamante AMMINISTRATORE (%s) — niente registrazione", telefono)
+        # Admin ristretto AL TENANT della chiamata (un admin del tenant A non blocca le call del tenant B).
+        if promemoria.is_admin(telefono, db, azienda_id=aid):
+            logger.info("ElevenLabs post-call: chiamante AMMINISTRATORE (%s, tenant %s) — niente registrazione",
+                        telefono, aid)
             return {"ok": True, "admin": True}
-        contatto = whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto")
+        contatto = whatsapp_agent.trova_o_crea_contatto(db, telefono or "sconosciuto", azienda_id=aid)
         # POST-PROCESSING: il ticket di follow-up lo decide il back-office sulla trascrizione
         # (dedup: aggiorna quello già aperto, non lo duplica). Poi collega la chiamata al ticket.
         from services import ticket_auto
