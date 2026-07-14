@@ -162,10 +162,10 @@ class MargheritaAgent(Agent):
 
     async def on_enter(self):
         if self._saluto:
-            await self.session.generate_reply(
-                instructions=f"Apri la conversazione con questo saluto: «{self._saluto}»",
-                allow_interruptions=True,
-            )
+            # Diciamo il saluto ALLA LETTERA: niente LLM che parafrasa o aggiunge "come posso aiutarla".
+            # add_to_chat_ctx=True (default) => l'LLM SA di averlo detto e non lo ripete. Poi ASPETTA
+            # che il cliente parli (nessuna auto-risposta dopo un say).
+            await self.session.say(self._saluto, allow_interruptions=True)
         else:
             await self.session.generate_reply(
                 instructions="Saluta brevemente in italiano e chiedi come puoi aiutare.",
