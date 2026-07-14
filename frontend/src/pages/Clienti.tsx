@@ -9,12 +9,22 @@ type Riga = {
   whatsapp_phone_id: string | null
 }
 
+// Colonne "profilo" dell'azienda da clonare in un nuovo cliente (prompt + impostazioni, NON identità/routing).
+// Solo quelle presenti nella riga sorgente vengono copiate → nessun errore se una colonna non esiste.
+const CLONE_COLS = [
+  'saluto', 'saluto_sconosciuto', 'saluto_admin', 'saluto_varianti',
+  'descrizione_servizi', 'istruzioni_admin', 'regole_commerciali', 'prompt_whatsapp',
+  'contatto_obbligatori', 'commercio_labels', 'mostra_ordini', 'mostra_agenti', 'mostra_calendario',
+]
+
 export default function Clienti() {
-  const { isSuperAdmin, ready, reload, aziende } = useTenant()
+  const { isSuperAdmin, ready, reload, aziende, aziendaId } = useTenant()
   const [righe, setRighe] = useState<Riga[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [nuovo, setNuovo] = useState({ nome: '', numeri_voce: '', whatsapp_phone_id: '' })
+  const [copiaDa, setCopiaDa] = useState<number | ''>('')
+  useEffect(() => { if (aziendaId) setCopiaDa(aziendaId) }, [aziendaId])
 
   async function carica() {
     setLoading(true)
@@ -31,12 +41,34 @@ export default function Clienti() {
   async function crea() {
     setErr(null)
     if (!nuovo.nome.trim()) { setErr('Il nome del cliente è obbligatorio.'); return }
-    const { error } = await supabase.from('azienda').insert({
+
+    // 1) Impostazioni azienda copiate dal tenant-template scelto (prompt/saluti/ecc.).
+    const base: any = {}
+    if (copiaDa) {
+      const { data: src } = await supabase.from('azienda').select('*').eq('id', copiaDa).maybeSingle()
+      if (src) for (const k of CLONE_COLS) if (k in (src as any)) base[k] = (src as any)[k]
+    }
+
+    // 2) Crea l'azienda (identità/routing dal form; il resto dal template).
+    const { data: created, error } = await supabase.from('azienda').insert({
+      ...base,
       nome: nuovo.nome.trim(),
       numeri_voce: nuovo.numeri_voce.trim() || null,
       whatsapp_phone_id: nuovo.whatsapp_phone_id.trim() || null,
-    })
+    }).select('id').single()
     if (error) { setErr(error.message); return }
+
+    // 3) Clona i MODULI prompt (testo + ordine + attivo + canali/varianti) dal template.
+    if (copiaDa && created?.id) {
+      const { data: mods } = await supabase.from('prompt_modulo')
+        .select('chiave, titolo, ordine, attivo, testo, canali, testi_canale').eq('azienda_id', copiaDa)
+      if (mods && mods.length) {
+        const copie = mods.map((m: any) => ({ ...m, azienda_id: created.id }))
+        const { error: e2 } = await supabase.from('prompt_modulo').insert(copie)
+        if (e2) { setErr(`Cliente creato, ma copia dei moduli prompt fallita: ${e2.message}`) }
+      }
+    }
+
     setNuovo({ nome: '', numeri_voce: '', whatsapp_phone_id: '' })
     await carica()
     await reload() // aggiorna il selettore in alto
@@ -91,7 +123,16 @@ export default function Clienti() {
             value={nuovo.numeri_voce} onChange={e => setNuovo({ ...nuovo, numeri_voce: e.target.value })} />
           <input className="pw-input" placeholder="WhatsApp Phone Number ID" style={{ maxWidth: 220 }}
             value={nuovo.whatsapp_phone_id} onChange={e => setNuovo({ ...nuovo, whatsapp_phone_id: e.target.value })} />
+          <select className="pw-select" style={{ maxWidth: 240 }} value={copiaDa}
+            title="Copia prompt e impostazioni da un cliente esistente" onChange={e => setCopiaDa(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">— profilo vuoto (default di sistema) —</option>
+            {aziende.map(a => <option key={a.id} value={a.id}>Parti da: {a.nome}</option>)}
+          </select>
           <button className="pw-btn pw-btn-primary" onClick={crea}>Crea cliente</button>
+        </div>
+        <div className="pw-muted" style={{ fontSize: 12, marginTop: 8 }}>
+          «Parti da» copia i moduli prompt (testo, numero d'ordine, flag attivo, voce/WhatsApp) e le impostazioni
+          (saluti, descrizione, istruzioni, ecc.) dal cliente scelto. Il nuovo profilo poi si personalizza in autonomia.
         </div>
       </div>
 
