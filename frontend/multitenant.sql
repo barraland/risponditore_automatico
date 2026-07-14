@@ -414,3 +414,13 @@ do $$ begin
     create index if not exists ix_order_items_order on public.order_items(order_id);
   end if;
 end $$;
+
+-- Campi estesi del catalogo (universali + strutturati + flessibili). Colonne su catalog_items
+-- esistente (ereditano la RLS della tabella). Il backend non le usa: sono dati/GUI.
+alter table public.catalog_items add column if not exists brand text;           -- marca
+alter table public.catalog_items add column if not exists sku text;             -- EAN/codice, nome neutro
+alter table public.catalog_items add column if not exists unit_of_sale text;    -- unità di vendita (cartone/seduta/pezzo)
+alter table public.catalog_items add column if not exists vat_rate numeric(5,2);-- aliquota IVA (%)
+alter table public.catalog_items add column if not exists aliases text;         -- JSON array di sinonimi
+alter table public.catalog_items add column if not exists attributes text;      -- JSON: attributi flessibili (formato, pezzi/conf, ...)
+alter table public.catalog_items add column if not exists category_path text;   -- JSON array: categorizzazione (["birra","lager"])
