@@ -1,6 +1,9 @@
 import logging
 import os
 import json
+import time
+import hmac
+import hashlib
 import asyncio
 import aiohttp
 
@@ -9,8 +12,10 @@ from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
+    ChatContext,
     JobContext,
     cli,
+    inference,
     mcp,
     room_io,
     utils,
@@ -22,7 +27,7 @@ logger = logging.getLogger("agent-margherita")
 
 load_dotenv(".env.local")
 
-# Endpoint del backend (Azure). Il prompt + i dati cliente arrivano da /elevenlabs/init; i tool da /mcp.
+# Endpoint del backend (Azure). init = prompt + dati cliente; mcp = tool; post-call = trascrizione+riassunto.
 INIT_URL = os.getenv(
     "INIT_URL",
     "https://horeca-app.ashymushroom-7f7b92f9.westeurope.azurecontainerapps.io/elevenlabs/init",
@@ -31,7 +36,13 @@ MCP_URL = os.getenv(
     "MCP_URL",
     "https://horeca-app.ashymushroom-7f7b92f9.westeurope.azurecontainerapps.io/mcp",
 )
+POSTCALL_URL = os.getenv(
+    "POSTCALL_URL",
+    "https://horeca-app.ashymushroom-7f7b92f9.westeurope.azurecontainerapps.io/elevenlabs/post-call",
+)
 INIT_WEBHOOK_TOKEN = os.getenv("INIT_WEBHOOK_TOKEN", "")
+# Stesso segreto HMAC che il backend usa per verificare il post-call (ELEVENLABS_WEBHOOK_SECRET).
+POSTCALL_SECRET = os.getenv("ELEVENLABS_WEBHOOK_SECRET", "")
 
 
 async def _fetch_init_vars(caller: str, called: str, call_id: str) -> dict:
@@ -56,6 +67,86 @@ async def _fetch_init_vars(caller: str, called: str, call_id: str) -> dict:
     except Exception as e:
         logger.error("init webhook fallito: %s", e)
         return {}
+
+
+def _transcript_turns(chat_ctx) -> list:
+    """Trascrizione come lista di turni {role, message} nel formato atteso dal backend."""
+    turns = []
+    for item in getattr(chat_ctx, "items", []):
+        if getattr(item, "type", None) == "message" and getattr(item, "role", None) in ("user", "assistant"):
+            msg = (item.text_content or "").strip()
+            if msg:
+                turns.append({"role": "user" if item.role == "user" else "agent", "message": msg})
+    return turns
+
+
+async def _summarize(chat_ctx) -> str:
+    """Riassunto breve della chiamata (via LiveKit Inference). Vuoto se fallisce."""
+    try:
+        turns = _transcript_turns(chat_ctx)
+        if not turns:
+            return ""
+        sctx = ChatContext()
+        sctx.add_message(
+            role="system",
+            content=("Riassumi in italiano questa telefonata a una clinica veterinaria: motivo del "
+                     "contatto, dati raccolti (persona/animale), esito e eventuale follow-up. Max 4 frasi."),
+        )
+        for t in turns:
+            sctx.add_message(role="user", content=f"{t['role']}: {t['message']}")
+        r = await inference.LLM(model="openai/gpt-5.2-chat-latest").chat(chat_ctx=sctx).collect()
+        return (r.text or "").strip()
+    except Exception as e:
+        logger.warning("summary fallito: %s", e)
+        return ""
+
+
+async def _on_session_end(ctx: JobContext) -> None:
+    """A fine chiamata invia trascrizione + riassunto al backend (/elevenlabs/post-call), firmato HMAC.
+    Non bloccante: qualsiasi errore viene solo loggato."""
+    try:
+        report = ctx.make_session_report()
+        chat = report.chat_history
+        turns = _transcript_turns(chat)
+        if not turns:
+            logger.info("post-call: nessuna trascrizione, salto")
+            return
+        summary = await _summarize(chat)
+        caller = ""
+        try:
+            caller = ctx.proc.userdata.get("caller", "") or ""
+        except Exception:
+            pass
+        started = getattr(report, "started_at", None)
+        duration = int(time.time() - started) if started else None
+
+        body = {
+            "type": "post_call_transcription",
+            "data": {
+                "transcript": turns,
+                "analysis": {"transcript_summary": summary},
+                "metadata": {
+                    "phone_number": caller,
+                    "call_duration_secs": duration,
+                    "start_time_unix_secs": int(started) if started else None,
+                },
+                "conversation_initiation_client_data": {
+                    "dynamic_variables": {"telefono_chiamante": caller},
+                },
+            },
+        }
+        raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if POSTCALL_SECRET:
+            ts = str(int(time.time()))
+            mac = hmac.new(POSTCALL_SECRET.encode(), f"{ts}.".encode() + raw, hashlib.sha256).hexdigest()
+            headers["elevenlabs-signature"] = f"t={ts},v0={mac}"
+        http = utils.http_context.http_session()
+        resp = await http.post(POSTCALL_URL, data=raw, headers=headers, timeout=aiohttp.ClientTimeout(total=20))
+        logger.info("post-call HTTP %s (turni=%d, summary=%d char)", resp.status, len(turns), len(summary))
+        await resp.release()
+    except Exception as e:
+        logger.warning("post-call fallito (non bloccante): %s", e)
 
 
 class MargheritaAgent(Agent):
@@ -85,7 +176,7 @@ class MargheritaAgent(Agent):
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="margherita")
+@server.rtc_session(agent_name="margherita", on_session_end=_on_session_end)
 async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {"room": ctx.room.name}
 
@@ -103,6 +194,12 @@ async def entrypoint(ctx: JobContext):
         call_id = attrs.get("sip.callID") or attrs.get("sip.callId") or ""
     except Exception as e:
         logger.warning("attributi SIP non letti: %s", e)
+
+    # Salva il numero per il post-call di fine chiamata.
+    try:
+        ctx.proc.userdata["caller"] = caller
+    except Exception:
+        pass
 
     init_vars = await _fetch_init_vars(caller, called, call_id)
     configurazione = init_vars.get("configurazione", "")
