@@ -7,6 +7,7 @@ import Modal from './Modal'
 import GoogleConnect from './GoogleConnect'
 import { DESIGN_SYSTEMS, getDesignSystem, setDesignSystem, type DesignSystem } from '../lib/designSystem'
 import { getUiScale, setUiScale, UI_SCALE } from '../lib/uiScale'
+import { useCommercioLabels } from '../lib/commercioLabels'
 
 // Densità/zoom dell'area contenuti (comodo su portatile vs 4K). Persistito per-browser.
 function DimensioneTesto() {
@@ -60,6 +61,7 @@ const ICON: Record<string, ReactNode> = {
   assistente: <><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z" /></>,
   mcp: <><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></>,
   clienti: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /></>,
+  catalogo: <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></>,
 }
 
 function TenantSwitcher() {
@@ -124,6 +126,7 @@ export default function Layout() {
   const [entTipo, setEntTipo] = useState<{ singolare: string; plurale: string } | null>(null)
   const attiva = aziende.find(a => a.id === aziendaId)
   const mostra = (campo: string) => (attiva as any)?.[campo] !== false  // default: visibile
+  const [labels] = useCommercioLabels(aziendaId)
 
   // Tipo-entità ATTIVO del tenant → diventa una voce di menù dinamica (es. "Animali", "Società").
   useEffect(() => {
@@ -159,6 +162,8 @@ export default function Layout() {
         <nav className="pw-side-nav" onClick={() => setMenu(false)}>
           <NavLink to="/contatti"><Ic>{ICON.contatti}</Ic><span>Contatti</span></NavLink>
           {entTipo && <NavLink to="/entita-lista"><Ic>{ICON.entita}</Ic><span>{entTipo.plurale}</span></NavLink>}
+          {mostra('mostra_ordini') && <NavLink to="/catalogo"><Ic>{ICON.catalogo}</Ic><span>{labels.catalogo.plur}</span></NavLink>}
+          {mostra('mostra_ordini') && <NavLink to="/ordini"><Ic>{ICON.ordini}</Ic><span>{labels.ordine.plur}</span></NavLink>}
           {VOCI.filter(([, , show]) => show).map(([to, label]) => (
             <NavLink key={to} to={to}><Ic>{ICON[key(to)]}</Ic><span>{label}</span></NavLink>
           ))}

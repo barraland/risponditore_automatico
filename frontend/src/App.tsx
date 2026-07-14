@@ -19,6 +19,8 @@ import Prompt from './pages/Prompt'
 import EntitaConfig from './pages/EntitaConfig'
 import EntitaLista from './pages/EntitaLista'
 import ToolsMCP from './pages/ToolsMCP'
+import Catalogo from './pages/Catalogo'
+import Ordini from './pages/Ordini'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session, loading } = useAuth()
@@ -39,6 +41,8 @@ export default function App() {
         <Route path="/entita-lista" element={<EntitaLista />} />
         <Route path="/contatti" element={<ContattiList />} />
         <Route path="/contatti/:id" element={<ContattoDetail />} />
+        <Route path="/catalogo" element={<Catalogo />} />
+        <Route path="/ordini" element={<Ordini />} />
         <Route path="/ticket" element={<TicketList />} />
         <Route path="/documenti" element={<Documenti />} />
         <Route path="/documenti/test" element={<RetrieverTest />} />
