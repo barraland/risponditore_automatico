@@ -9,6 +9,7 @@ non referenziato live — così modificare un prezzo a listino NON altera gli or
 
 import json
 import logging
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -317,6 +318,76 @@ def blocco_prompt(db: Session, azienda_id: int | None) -> str:
         f"- Formato: {_lista(formati)}\n"
         "Non inventare prodotti o prezzi: se un prodotto non compare nella ricerca, dillo al cliente."
     )
+
+
+def _parse_data(s: str):
+    """Parsa una data (preferito AAAA-MM-GG; accetta anche GG/MM/AAAA e ISO). None se vuota/illegibile."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s[:10], fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def leggi_ordini(db: Session, azienda_id: int | None, contatto_id: int,
+                 data_da: str = "", data_a: str = "", catalog_item_ids: list | None = None,
+                 limite: int = 5) -> dict:
+    """Storico ordini DEL contatto (per riordini e recap). Filtri: periodo (data_da/data_a),
+    lista di prodotti (catalog_item_ids), e numero massimo (limite, i più recenti prima).
+
+    Ogni ordine include le righe con `catalog_item_id` (per riordinare) + nome/quantità/prezzo.
+    Ritorna {ok, n, ordini:[...]}. Non solleva.
+    """
+    try:
+        q = db.query(Order).filter(Order.contatto_id == contatto_id)
+        if azienda_id:
+            q = q.filter(Order.azienda_id == azienda_id)
+        dd = _parse_data(data_da)
+        if dd:
+            q = q.filter(Order.created_at >= dd)
+        da = _parse_data(data_a)
+        if da:
+            q = q.filter(Order.created_at < da + timedelta(days=1))   # data_a inclusiva
+        ids = [int(x) for x in (catalog_item_ids or []) if str(x).strip().lstrip("-").isdigit()]
+        if ids:
+            sub = db.query(OrderItem.order_id).filter(OrderItem.catalog_item_id.in_(ids))
+            q = q.filter(Order.id.in_(sub))
+
+        q = q.order_by(Order.created_at.desc())
+        if limite and limite > 0:
+            q = q.limit(limite)
+        ordini = q.all()
+
+        out = []
+        for o in ordini:
+            righe = db.query(OrderItem).filter(OrderItem.order_id == o.id).all()
+            catids = [r.catalog_item_id for r in righe]
+            nomi = ({it.id: it.name for it in
+                     db.query(CatalogItem).filter(CatalogItem.id.in_(catids)).all()} if catids else {})
+            out.append({
+                "ordine_id": o.id,
+                "data": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
+                "stato": o.status.value if o.status else None,
+                "totale": _to_float(o.total),
+                "note": o.notes,
+                "righe": [{
+                    "catalog_item_id": r.catalog_item_id,
+                    "nome": nomi.get(r.catalog_item_id),
+                    "quantita": r.quantity,
+                    "prezzo_unitario": _to_float(r.unit_price),
+                } for r in righe],
+            })
+        return {"ok": True, "n": len(out), "ordini": out}
+    except Exception as ex:
+        logger.error("leggi_ordini fallita (contatto %s): %s", contatto_id, ex)
+        return {"ok": False, "errore": "Errore interno nella lettura degli ordini.", "ordini": []}
 
 
 def crea_ordine(db: Session, azienda_id: int | None, contatto_id: int, righe: list,

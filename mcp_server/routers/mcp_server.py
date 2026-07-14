@@ -409,6 +409,38 @@ def crea_ordine(telefono: str = "", righe: list | None = None, note: str = "", t
 
 @mcp.tool()
 @_loggato
+def leggi_ordini(telefono: str = "", data_da: str = "", data_a: str = "",
+                 catalog_item_ids: list | None = None, limite: int = 5, tenant: str = "") -> dict:
+    """Legge lo STORICO ORDINI del cliente identificato da `telefono` (per riordini e riepiloghi).
+    Usalo quando il cliente dice cose come "cosa ho ordinato la settimana scorsa", "l'ultimo ordine",
+    o "la stessa cosa dell'ultima volta".
+
+    Filtri (tutti opzionali, combinabili):
+    - `limite`: numero massimo di ordini, dal più recente (es. 1 per "l'ultima volta"). Default 5.
+    - `data_da` / `data_a`: periodo, in formato AAAA-MM-GG (data_a inclusa). Calcola tu le date dal
+      giorno di OGGI indicato nel contesto (es. "settimana scorsa" = lunedì-domenica precedenti).
+    - `catalog_item_ids`: lista di id prodotto per trovare gli ordini che li contengono.
+
+    Ritorna {ok, n, ordini:[{ordine_id, data, stato, totale, note,
+    righe:[{catalog_item_id, nome, quantita, prezzo_unitario}]}]}, i più recenti prima.
+    Il `catalog_item_id` nelle righe serve per RIORDINARE: per "la stessa cosa ma N in più", prendi
+    quel prodotto dall'ultimo ordine e passalo a `crea_ordine` con la quantità aggiornata. NON inventare
+    ordini passati: se non ce ne sono, dillo."""
+    _log_tool("leggi_ordini", telefono=telefono, data_da=data_da, data_a=data_a,
+              catalog_item_ids=catalog_item_ids, limite=limite)
+    db = SessionLocal()
+    try:
+        c = _contatto(db, telefono, tenant)
+        from services import commercio
+        return commercio.leggi_ordini(db, _aid(tenant), c.id, data_da=data_da, data_a=data_a,
+                                      catalog_item_ids=catalog_item_ids,
+                                      limite=max(1, min(int(limite or 5), 50)))
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
 def cerca_catalogo(testo: str = "", marca: str = "", categoria: str = "",
                    unita_vendita: str = "", formato: str = "",
                    prezzo_min: float | None = None, prezzo_max: float | None = None,
