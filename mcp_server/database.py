@@ -528,8 +528,16 @@ class CatalogItem(Base):
     azienda_id = Column(Integer, ForeignKey("azienda.id"), nullable=True, index=True)  # tenant
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    price = Column(Numeric(10, 2), nullable=True)
+    price = Column(Numeric(10, 2), nullable=True)               # prezzo unitario
     item_type = Column(Enum(ItemType), default=ItemType.PRODUCT, nullable=False)   # 'product' per ora
+    # Campi estesi (universali + strutturati + flessibili). Nomi neutri, cross-vertical.
+    brand = Column(String(200), nullable=True)                 # marca
+    sku = Column(String(120), nullable=True)                   # EAN/codice, nome neutro
+    unit_of_sale = Column(String(60), nullable=True)           # unità di vendita
+    vat_rate = Column(Numeric(5, 2), nullable=True)            # aliquota IVA %
+    aliases = Column(Text, nullable=True)                      # JSON array di sinonimi
+    attributes = Column(Text, nullable=True)                   # JSON: attributi flessibili (formato, pezzi/conf, prezzo_confezione, ...)
+    category_path = Column(Text, nullable=True)                # JSON array: categorizzazione (["birra","lager"])
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

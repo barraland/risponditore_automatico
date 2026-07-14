@@ -28,6 +28,7 @@ from services import documenti as documenti_service
 from services import entita as entita_service
 from services import promemoria
 from services import inoltri
+from services import commercio
 from services import telefonia
 from services import tenant as tenant_service
 
@@ -202,6 +203,7 @@ async def init_conversazione(request: Request):
                                     + documenti_service.testo_sempre_presente(db, azienda_id=aid)
                                     + profilo.contatto_campi_prompt(db, aid)
                                     + entita_service.blocco_prompt(db, aid)
+                                    + commercio.blocco_prompt(db, aid)
                                     + inoltri.blocco_prompt(db, azienda_id=aid)).strip()
             if contatto:  # promemoria mirati lasciati dall'amministratore per questo cliente
                 dv["configurazione"] += promemoria.blocco_prompt(db, contatto.id)

@@ -39,6 +39,7 @@ from services import agente_tools
 from services import tool_meta
 from services import retriever
 from services import crm
+from services import commercio
 from services import email as email_service
 from services import documenti as documenti_service
 from services import entita as entita_service
@@ -507,6 +508,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             + documenti_service.testo_sempre_presente(db)
             + profilo.contatto_campi_prompt(db)
             + entita_service.blocco_prompt(db, None)
+            + commercio.blocco_prompt(db, None)
             + promemoria.blocco_prompt(db, contatto.id)
         )
         _soc = crm.societa_di_contatto(db, contatto)

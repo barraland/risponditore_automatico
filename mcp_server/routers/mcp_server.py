@@ -409,6 +409,43 @@ def crea_ordine(telefono: str = "", righe: list | None = None, note: str = "", t
 
 @mcp.tool()
 @_loggato
+def cerca_catalogo(testo: str = "", marca: str = "", categoria: str = "",
+                   unita_vendita: str = "", formato: str = "",
+                   prezzo_min: float | None = None, prezzo_max: float | None = None,
+                   prezzo_conf_min: float | None = None, prezzo_conf_max: float | None = None,
+                   limite: int = 30, tenant: str = "") -> dict:
+    """Cerca prodotti nel catalogo del cliente e restituisce i loro dati (incluso il `catalog_item_id`
+    da usare poi in `crea_ordine`, il prezzo unitario e il prezzo della confezione).
+
+    Combina liberamente i filtri (tutti opzionali):
+    - `testo`: ricerca libera su nome, marca e sinonimi (es. "moretti 33").
+    - `marca`, `categoria`, `unita_vendita`, `formato`: usa i valori ESATTI elencati nel blocco
+      "CATALOGO PRODOTTI" del contesto (sono tutti i valori presenti a listino).
+    - Range di prezzo: `prezzo_min`/`prezzo_max` sul PREZZO UNITARIO, e
+      `prezzo_conf_min`/`prezzo_conf_max` sul PREZZO della CONFEZIONE (in euro). Passa solo gli estremi
+      che servono (es. solo `prezzo_max=1.0` per "sotto 1 euro a pezzo").
+
+    Ritorna {ok, n, troncato, prodotti:[{catalog_item_id, nome, marca, categoria, unita_vendita,
+    formato, prezzo_unitario, prezzo_confezione, ...}]}. Se `troncato` è true ci sono più risultati:
+    affina i filtri. NON inventare prodotti o prezzi: usa solo ciò che la ricerca restituisce."""
+    _log_tool("cerca_catalogo", testo=testo, marca=marca, categoria=categoria,
+              unita_vendita=unita_vendita, formato=formato)
+    db = SessionLocal()
+    try:
+        from services import commercio
+        return commercio.cerca(
+            db, _aid(tenant), testo=testo, marca=marca, categoria=categoria,
+            unita_vendita=unita_vendita, formato=formato,
+            prezzo_min=prezzo_min, prezzo_max=prezzo_max,
+            prezzo_conf_min=prezzo_conf_min, prezzo_conf_max=prezzo_conf_max,
+            limite=max(1, min(int(limite or 30), 100)),
+        )
+    finally:
+        db.close()
+
+
+@mcp.tool()
+@_loggato
 def inoltra_chiamata(telefono: str, motivo: str, nome_destinatario: str = "", ruolo: str = "", tenant: str = "") -> dict:
     """INOLTRA la chiamata a una persona della rubrica inoltri (es. responsabile spedizioni).
     `telefono` = numero del chiamante; `motivo` = cosa vuole il cliente; indica il destinatario per
