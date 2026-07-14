@@ -469,9 +469,21 @@ def _chiama_llm(client: OpenAI, system: str, user: str) -> str:
     return resp.choices[0].message.content or "{}"
 
 
-def gestisci(db: Session, telefono: str, testo: str) -> dict:
-    """Gestisce un messaggio WhatsApp end-to-end. Ritorna {"risposta": str}. Non solleva."""
-    contatto = trova_o_crea_contatto(db, telefono)
+def gestisci(db: Session, telefono: str, testo: str,
+             phone_number_id: str = "", display_phone_number: str = "") -> dict:
+    """Gestisce un messaggio WhatsApp end-to-end. Ritorna {"risposta": str}. Non solleva.
+
+    `phone_number_id`/`display_phone_number`: il numero business che ha ricevuto il messaggio
+    (dal metadata Meta) → identifica il TENANT (azienda.whatsapp_phone_id).
+    """
+    from services import tenant as tenant_service
+    _az_tenant = tenant_service.da_whatsapp(db, phone_number_id, display_phone_number)
+    aid = _az_tenant.id if _az_tenant else None
+    tenant = str(aid) if aid else ""
+    if not aid:
+        logger.warning("WhatsApp: tenant non risolto (pid=%s, num=%s) → comportamento default",
+                       phone_number_id, display_phone_number)
+    contatto = trova_o_crea_contatto(db, telefono, azienda_id=aid)
     _log(db, contatto.id, DirezioneMessaggio.IN, testo)
 
     if not OPENAI_API_KEY:
@@ -483,15 +495,15 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
 
     # Se scrive un AMMINISTRATORE (numero in amministratori o inoltro flaggato admin), usa il prompt
     # admin (voce_admin + moduli 'admin') e il toolset admin (promemoria). Altrimenti flusso cliente.
-    admin = promemoria.is_admin(telefono, db)
+    admin = promemoria.is_admin(telefono, db, azienda_id=aid)
     from routers import elevenlabs  # _riassunto / sostituzioni (import pigro)
 
     if admin:
         # Prompt dai moduli del PUBBLICO "admin", canale whatsapp (+ regole). Tutto in dashboard.
-        system = (prompt_moduli.componi(db, None, audience="admin", canale="whatsapp")
-                  + istruzioni.blocco_regole(db))
-        for _k, _v in {"telefono_chiamante": telefono or "", "tenant": "",
-                       "azienda": profilo.nome_azienda(db)}.items():
+        system = (prompt_moduli.componi(db, aid, audience="admin", canale="whatsapp")
+                  + istruzioni.blocco_regole(db, azienda_id=aid))
+        for _k, _v in {"telefono_chiamante": telefono or "", "tenant": tenant,
+                       "azienda": profilo.nome_azienda(db, aid)}.items():
             system = system.replace("{{" + _k + "}}", _v or "")
         user = ("Stai parlando con l'AMMINISTRATORE (canale WhatsApp).\n\n"
                 f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}")
@@ -501,14 +513,14 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         # dinamici. Nessun testo base cablato (come la voce): identità/tono/regole si scrivono in dashboard.
         system = (
             contesto_temporale()
-            + profilo.blocco_prompt(db)
-            + prompt_moduli.componi(db, None, audience="cliente", canale="whatsapp")
-            + istruzioni.blocco_regole(db)
-            + documenti_service.catalogo_prompt(db)
-            + documenti_service.testo_sempre_presente(db)
-            + profilo.contatto_campi_prompt(db)
-            + entita_service.blocco_prompt(db, None)
-            + commercio.blocco_prompt(db, None)
+            + profilo.blocco_prompt(db, azienda_id=aid)
+            + prompt_moduli.componi(db, aid, audience="cliente", canale="whatsapp")
+            + istruzioni.blocco_regole(db, azienda_id=aid)
+            + documenti_service.catalogo_prompt(db, azienda_id=aid)
+            + documenti_service.testo_sempre_presente(db, azienda_id=aid)
+            + profilo.contatto_campi_prompt(db, aid)
+            + entita_service.blocco_prompt(db, aid)
+            + commercio.blocco_prompt(db, aid)
             + promemoria.blocco_prompt(db, contatto.id)
         )
         _soc = crm.societa_di_contatto(db, contatto)
@@ -521,12 +533,12 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             "cliente_conosciuto": "sì" if _known else "no",
             "riassunto_cliente": _riass,
             "telefono_chiamante": (contatto.telefono or telefono or ""),
-            "tenant": "",  # WhatsApp single-tenant; il tool riceve il tenant dal codice
+            "tenant": tenant,
             "nome": contatto.nome or "", "cognome": contatto.cognome or "",
             "titolo": contatto.titolo or "", "nome_cliente": (contatto.nome_completo if _known else ""),
             "societa": (_soc.nome if _soc else (contatto.ragione_sociale or "")),
             "ruolo": contatto.ruolo or "", "email_cliente": contatto.email or "",
-            "azienda": profilo.nome_azienda(db), "saluto": "", "configurazione": "",
+            "azienda": profilo.nome_azienda(db, aid), "saluto": "", "configurazione": "",
         }
         for _k, _v in _dv.items():
             system = system.replace("{{" + _k + "}}", _v or "")
@@ -537,11 +549,11 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         _apertura = ""
         _tempo = _tempo_da_ultimo(db, contatto.id)
         if _tempo == "primo messaggio in assoluto":
-            _az = profilo.get_azienda(db)
+            _az = profilo.get_azienda(db, aid)
             _slot = "saluto" if _known else "saluto_sconosciuto"
             _base = (((_az.saluto if _known else _az.saluto_sconosciuto) or "").strip()) if _az else ""
             # Variante WhatsApp se impostata in dashboard, altrimenti il testo base. Vuoto → niente saluto.
-            _tmpl = profilo.saluto_testo(db, _slot, "whatsapp", _base)
+            _tmpl = profilo.saluto_testo(db, _slot, "whatsapp", _base, azienda_id=aid)
             if _tmpl:
                 _apertura = elevenlabs._componi_saluto(
                     _tmpl, contatto if _known else None, (_az.nome if _az else "") or "")
@@ -552,7 +564,7 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
             _riga_apertura
             + f"TEMPO DAL MESSAGGIO PRECEDENTE DEL CLIENTE: {_tempo}\n\n"
             f"DATI GIÀ NOTI DEL CONTATTO:\n{_scheda_contatto(contatto)}\n\n"
-            f"{entita_service.contesto_contatto(db, contatto.id)}\n\n"
+            f"{entita_service.contesto_contatto(db, contatto.id, azienda_id=aid)}\n\n"
             f"ULTIMI ORDINI DEL CLIENTE (per disambiguare prodotti e riordinare):\n{_scheda_ordini(db, contatto)}\n\n"
             f"TICKET DI FOLLOW-UP GIÀ APERTO: {'sì (aggiornalo, non duplicarlo)' if ticket_esistente else 'no'}\n\n"
             f"STORICO CONVERSAZIONE (ultimo messaggio in fondo):\n{storia_testo}"
@@ -565,8 +577,8 @@ def gestisci(db: Session, telefono: str, testo: str) -> dict:
         "output": f"Contatto id {contatto.id} — {contatto.nome_completo} ({contatto.stato.value})",
     }]
 
-    # Loop di function-calling: gli stessi tool MCP della voce. telefono/tenant iniettati dal codice.
-    tenant = ""  # WhatsApp single-tenant per ora (tenant da phone_number_id = step futuro)
+    # Loop di function-calling: gli stessi tool MCP della voce. telefono/tenant iniettati dal codice
+    # (`tenant` è già risolto in cima dal phone_number_id del webhook Meta).
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     risposta = ""
     try:

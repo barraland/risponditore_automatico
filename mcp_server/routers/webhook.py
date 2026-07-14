@@ -32,14 +32,18 @@ async def verify_webhook(
     return PlainTextResponse(content="Forbidden", status_code=403)
 
 
-async def _gestisci_messaggio(telefono: str, testo: str):
+async def _gestisci_messaggio(telefono: str, testo: str, phone_number_id: str = "",
+                              display_phone_number: str = ""):
     """Processa il messaggio con l'agente di lead capture e invia la risposta.
 
-    Sessione DB propria; la chiamata LLM (bloccante) gira nel threadpool.
+    `phone_number_id`/`display_phone_number`: il numero business che ha ricevuto il messaggio
+    (dal metadata Meta) → identifica il TENANT. Sessione DB propria; la chiamata LLM (bloccante)
+    gira nel threadpool.
     """
     db = SessionLocal()
     try:
-        out = await run_in_threadpool(whatsapp_agent.gestisci, db, telefono, testo)
+        out = await run_in_threadpool(whatsapp_agent.gestisci, db, telefono, testo,
+                                      phone_number_id, display_phone_number)
         if out.get("risposta"):
             await invia_messaggio(telefono, out["risposta"])
     except Exception as e:
@@ -48,7 +52,8 @@ async def _gestisci_messaggio(telefono: str, testo: str):
         db.close()
 
 
-async def _gestisci_audio(telefono: str, media_id: str):
+async def _gestisci_audio(telefono: str, media_id: str, phone_number_id: str = "",
+                          display_phone_number: str = ""):
     """Trascrive un messaggio vocale WhatsApp con Whisper, poi lo processa come un testo normale
     (stesso canale/agente). Se la trascrizione fallisce, chiede al cliente di riprovare."""
     testo = await run_in_threadpool(trascrivi_audio, media_id)
@@ -57,7 +62,7 @@ async def _gestisci_audio(telefono: str, media_id: str):
                                         "Può riprovare o scrivermelo?")
         return
     logger.info("Audio da %s trascritto: %s", telefono, testo[:100])
-    await _gestisci_messaggio(telefono, testo)
+    await _gestisci_messaggio(telefono, testo, phone_number_id, display_phone_number)
 
 
 @router.post("/webhook")
@@ -78,6 +83,10 @@ async def receive_webhook(
         for change in changes:
             value = change.get("value", {})
             messages = value.get("messages", [])
+            # Il numero business che ha RICEVUTO il messaggio → identifica il tenant.
+            meta = value.get("metadata", {}) or {}
+            phone_number_id = meta.get("phone_number_id", "") or ""
+            display_phone_number = meta.get("display_phone_number", "") or ""
 
             for message in messages:
                 tipo = message.get("type")
@@ -91,15 +100,18 @@ async def receive_webhook(
                     testo = message.get("text", {}).get("body", "")
                     if not testo:
                         continue
-                    logger.info("Messaggio ricevuto da %s: %s", telefono, testo[:100])
-                    background_tasks.add_task(_gestisci_messaggio, telefono, testo)
+                    logger.info("Messaggio da %s (verso pid=%s / %s): %s",
+                                telefono, phone_number_id, display_phone_number, testo[:100])
+                    background_tasks.add_task(_gestisci_messaggio, telefono, testo,
+                                              phone_number_id, display_phone_number)
                 elif tipo == "audio":
                     # Messaggio vocale/audio: trascrivi con Whisper, poi stesso flusso del testo.
                     media_id = (message.get("audio") or {}).get("id")
                     if not media_id:
                         continue
                     logger.info("Audio WhatsApp da %s (media %s) → trascrizione", telefono, media_id)
-                    background_tasks.add_task(_gestisci_audio, telefono, media_id)
+                    background_tasks.add_task(_gestisci_audio, telefono, media_id,
+                                              phone_number_id, display_phone_number)
                 # altri tipi (immagini, documenti, ecc.) per ora ignorati
 
     # Rispondi sempre 200 OK a Meta

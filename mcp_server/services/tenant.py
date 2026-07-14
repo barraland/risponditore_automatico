@@ -48,11 +48,21 @@ def da_numero_voce(db: Session, numero: str) -> Azienda | None:
     return None
 
 
-def da_whatsapp(db: Session, phone_id: str) -> Azienda | None:
+def da_whatsapp(db: Session, phone_id: str, display_number: str = "") -> Azienda | None:
+    """Tenant dal WhatsApp del webhook Meta. Prova il `phone_number_id` (match esatto) e, in fallback,
+    il numero visualizzato (`display_phone_number`) confrontando solo le cifre — così funziona sia se
+    in dashboard è salvato il Phone Number ID sia se è stato inserito il numero (+1555...)."""
     pid = (phone_id or "").strip()
-    if not pid:
-        return None
-    return db.query(Azienda).filter(Azienda.whatsapp_phone_id == pid).first()
+    if pid:
+        az = db.query(Azienda).filter(Azienda.whatsapp_phone_id == pid).first()
+        if az:
+            return az
+    dn = _norm(display_number)
+    if dn:
+        for az in db.query(Azienda).filter(Azienda.whatsapp_phone_id.isnot(None)).all():
+            if _norm(az.whatsapp_phone_id) == dn:
+                return az
+    return None
 
 
 def risolvi(db: Session, tenant=None, numero_chiamato: str = "", whatsapp_phone_id: str = "") -> Azienda | None:
