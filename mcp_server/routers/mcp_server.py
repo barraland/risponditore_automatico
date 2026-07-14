@@ -396,7 +396,11 @@ def crea_ordine(telefono: str = "", righe: list | None = None, note: str = "", t
     (catalogo del tenant). Crea ordine + righe in un colpo solo, copiando i prezzi dal listino al
     momento (lo storico resta corretto anche se il prezzo cambia). Passa `note` se il cliente aggiunge
     indicazioni (consegna, richieste particolari). NON inventare prodotti o quantità: solo ciò che il
-    cliente ha detto. L'ordine nasce come BOZZA."""
+    cliente ha detto. L'ordine nasce come BOZZA.
+
+    Ritorna {ok, ordine_id, total, n_righe, righe:[{catalog_item_id, nome, quantita, prezzo_unitario,
+    subtotale}]}: usa `righe` (con il subtotale per articolo) e `total` per il riepilogo e la mail di
+    conferma."""
     _log_tool("crea_ordine", telefono=telefono, righe=righe)
     db = SessionLocal()
     try:

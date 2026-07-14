@@ -409,7 +409,7 @@ def crea_ordine(db: Session, azienda_id: int | None, contatto_id: int, righe: li
         db.flush()   # per avere ordine.id
 
         total = Decimal("0")
-        n = 0
+        righe_out = []
         for r in (righe or []):
             cid = r.get("catalog_item_id") or r.get("catalogo_id")
             try:
@@ -423,18 +423,25 @@ def crea_ordine(db: Session, azienda_id: int | None, contatto_id: int, righe: li
                 continue      # id non valido o di un altro tenant → salta
             up = item.price   # COPIA il prezzo al momento dell'ordine (storico immutabile)
             db.add(OrderItem(order_id=ordine.id, catalog_item_id=item.id, quantity=qty, unit_price=up))
-            if up is not None:
-                total += Decimal(str(up)) * qty
-            n += 1
+            subtot = Decimal(str(up)) * qty if up is not None else None
+            if subtot is not None:
+                total += subtot
+            righe_out.append({
+                "catalog_item_id": item.id, "nome": item.name, "quantita": qty,
+                "prezzo_unitario": _to_float(up),
+                "subtotale": float(subtot) if subtot is not None else None,
+            })
 
-        if n == 0:
+        if not righe_out:
             db.rollback()
             return {"ok": False, "errore": "Nessuna riga valida (catalog_item_id inesistente)."}
 
         ordine.total = total
         db.commit()
-        logger.info("Ordine %s creato per contatto %s (%d righe, tot %s)", ordine.id, contatto_id, n, total)
-        return {"ok": True, "ordine_id": ordine.id, "total": float(total), "n_righe": n}
+        logger.info("Ordine %s creato per contatto %s (%d righe, tot %s)",
+                    ordine.id, contatto_id, len(righe_out), total)
+        return {"ok": True, "ordine_id": ordine.id, "total": float(total),
+                "n_righe": len(righe_out), "righe": righe_out}
     except Exception as ex:
         logger.error("crea_ordine fallito (contatto %s): %s", contatto_id, ex)
         db.rollback()
