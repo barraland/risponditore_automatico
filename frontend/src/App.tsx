@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import Home from './pages/Home'
 import SocietaList from './pages/SocietaList'
 import SocietaDetail from './pages/SocietaDetail'
 import ContattiList from './pages/ContattiList'
@@ -34,7 +35,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
-        <Route path="/" element={<Navigate to="/societa" replace />} />
+        <Route path="/" element={<Home />} />
         <Route path="/societa" element={<SocietaList />} />
         <Route path="/societa/:id" element={<SocietaDetail />} />
         <Route path="/entita" element={<EntitaConfig />} />
@@ -55,7 +56,7 @@ export default function App() {
         <Route path="/inoltri" element={<Inoltri />} />
         <Route path="/calendario" element={<Calendario />} />
       </Route>
-      <Route path="*" element={<Navigate to="/societa" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
