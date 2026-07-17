@@ -9,6 +9,7 @@ non referenziato live — così modificare un prezzo a listino NON altera gli or
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -18,6 +19,11 @@ from sqlalchemy.orm import Session
 from database import CatalogItem, Order, OrderItem, OrderStatus, Contatto
 
 logger = logging.getLogger(__name__)
+
+# Rilevanza minima (similarità coseno) perché un risultato semantico sia considerato PERTINENTE.
+# Misurato sul catalogo bevande: match reali 0.45-0.75; rumore (prodotto inesistente) 0.23-0.29.
+# Sotto soglia si preferisce "non l'abbiamo" a proporre un articolo a caso.
+RILEVANZA_MIN = float(os.getenv("CATALOGO_RILEVANZA_MIN", "0.35"))
 
 
 def _is_postgres(db: Session) -> bool:
@@ -182,13 +188,21 @@ def _cerca_semantica(db, azienda_id, testo, marca, unita_vendita,
     qemb = vettore.embed_uno(testo.strip())
 
     where = ["embedding_vec is not null"]
-    params = {"q": vettore._vec_literal(qemb), "k": max(limite * 4, 40)}
+    params = {"q": vettore._vec_literal(qemb), "k": max(limite * 4, 40),
+              # Distanza coseno = 1 - similarità: taglia i risultati sotto la rilevanza minima,
+              # così una richiesta senza corrispondenze NON restituisce articoli a caso.
+              "maxdist": 1.0 - RILEVANZA_MIN}
+    where.append("(embedding_vec <=> cast(:q as vector)) <= :maxdist")
     if azienda_id:
         where.append("azienda_id = :aid"); params["aid"] = azienda_id
     if marca.strip():
         where.append("brand ilike :marca"); params["marca"] = f"%{marca.strip()}%"
     if unita_vendita.strip():
         where.append("unit_of_sale ilike :uv"); params["uv"] = f"%{unita_vendita.strip()}%"
+    # Categoria come filtro SQL (non post-filtro): altrimenti il troncamento del top-K vettoriale
+    # può perdere articoli validi della categoria (es. 3 succhi su 4).
+    if cat_l:
+        where.append("category_path ilike :cat"); params["cat"] = f"%{cat_l}%"
     if prezzo_min is not None:
         where.append("price >= :pmin"); params["pmin"] = prezzo_min
     if prezzo_max is not None:
