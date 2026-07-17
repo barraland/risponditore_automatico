@@ -50,6 +50,37 @@ SCHEMI = [
         {"valori": {"type": "object", "description": "Campi dell'entità {chiave: valore}."},
          "entita_id": {"type": "integer", "description": "Solo per aggiornare un'entità già nota."}},
         ["valori"]),
+    _fn("cerca_catalogo",
+        "Cerca prodotti nel CATALOGO e ritorna i loro dati, incluso il `catalog_item_id` da usare poi "
+        "in `crea_ordine`, il prezzo unitario e quello della confezione. `testo` è una ricerca "
+        "SEMANTICA (per significato: «una bionda leggera», «qualcosa di analcolico»). "
+        "`marca`/`categoria`/`unita_vendita`/`formato`: usa i valori ESATTI elencati nel blocco "
+        "«CATALOGO PRODOTTI» del contesto. Range di prezzo: `prezzo_min`/`prezzo_max` (unitario) e "
+        "`prezzo_conf_min`/`prezzo_conf_max` (confezione). Se non trova nulla dillo: non proporre "
+        "articoli a caso.",
+        {"testo": {"type": "string"}, "marca": {"type": "string"}, "categoria": {"type": "string"},
+         "unita_vendita": {"type": "string"}, "formato": {"type": "string"},
+         "prezzo_min": {"type": "number"}, "prezzo_max": {"type": "number"},
+         "prezzo_conf_min": {"type": "number"}, "prezzo_conf_max": {"type": "number"},
+         "limite": {"type": "integer"}}),
+    _fn("crea_ordine",
+        "Crea un ordine per il cliente. `righe` = lista di {catalog_item_id, quantita}, usando i "
+        "catalog_item_id trovati con `cerca_catalogo`. UNA sola chiamata con TUTTE le righe insieme. "
+        "`note` per richieste particolari (consegna, ecc.). Ritorna il totale e il dettaglio per riga "
+        "(con subtotale) da usare nel riepilogo e nella mail di conferma.",
+        {"righe": {"type": "array", "description": "Righe dell'ordine.",
+                   "items": {"type": "object", "properties": {
+                       "catalog_item_id": {"type": "integer"}, "quantita": {"type": "integer"}},
+                       "required": ["catalog_item_id", "quantita"]}},
+         "note": {"type": "string"}},
+        ["righe"]),
+    _fn("leggi_ordini",
+        "Storico ordini del cliente (per riepiloghi e riordini). `limite` = quanti ordini più recenti "
+        "(1 = l'ultimo). `data_da`/`data_a` = periodo in formato AAAA-MM-GG (calcola tu le date dal "
+        "giorno di OGGI nel contesto). `catalog_item_ids` = solo gli ordini che contengono quei "
+        "prodotti. Le righe includono il `catalog_item_id`, che serve per riordinare con `crea_ordine`.",
+        {"limite": {"type": "integer"}, "data_da": {"type": "string"}, "data_a": {"type": "string"},
+         "catalog_item_ids": {"type": "array", "items": {"type": "integer"}}}),
     _fn("invia_mail",
         "Invia un'email a testo libero al cliente. `testo` obbligatorio (lo scrivi tu). "
         "`categoria_allegato` opzionale per allegare documenti di quella categoria.",
@@ -122,6 +153,16 @@ def esegui(nome: str, args: dict, telefono: str, tenant: str = "") -> dict:
         if nome == "registra_entita":
             return m.registra_entita(telefono=telefono, valori=a.get("valori") or {},
                                      entita_id=int(a.get("entita_id", 0) or 0), tenant=tenant)
+        if nome == "cerca_catalogo":
+            return m.cerca_catalogo(tenant=tenant, **a)
+        if nome == "crea_ordine":
+            return m.crea_ordine(telefono=telefono, righe=a.get("righe") or [],
+                                 note=a.get("note", ""), tenant=tenant)
+        if nome == "leggi_ordini":
+            return m.leggi_ordini(telefono=telefono, data_da=a.get("data_da", ""),
+                                  data_a=a.get("data_a", ""),
+                                  catalog_item_ids=a.get("catalog_item_ids") or [],
+                                  limite=int(a.get("limite") or 5), tenant=tenant)
         if nome == "invia_mail":
             return m.invia_mail(telefono=telefono, testo=a.get("testo", ""), oggetto=a.get("oggetto", ""),
                                 categoria_allegato=a.get("categoria_allegato", ""), tenant=tenant)
